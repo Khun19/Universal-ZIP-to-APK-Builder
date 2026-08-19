@@ -1,0 +1,6 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node"] },
+  "include": ["src/**/*"],
+  "references": [{ "path": "../lib/build-engine" }, { "path": "../lib/security" }, { "path": "../lib/shared" }]
+}

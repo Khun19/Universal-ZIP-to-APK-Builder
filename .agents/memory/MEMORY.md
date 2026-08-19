@@ -1,0 +1,1 @@
+- [Android build truth](android-build-truth.md) — APK success must be gated by isolated execution, structural validation, and SHA-256; never synthesize artifacts or progress.

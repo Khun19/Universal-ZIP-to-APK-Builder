@@ -1,0 +1,10 @@
+{
+  "name": "@workspace/build-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": { "@workspace/shared": "workspace:*" },
+  "devDependencies": { "@types/node": "catalog:" }
+}

@@ -10,6 +10,12 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: projects
+    description: Uploaded project operations
+  - name: builds
+    description: Android build operations
+  - name: artifacts
+    description: Generated APK operations
 paths:
   /healthz:
     get:
@@ -24,7 +30,166 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List uploaded projects
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a project upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a project
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+  /projects/{id}/upload:
+    post:
+      operationId: uploadProject
+      tags: [projects]
+      summary: Upload a ZIP project
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Uploaded project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /projects/{id}/analyze:
+    post:
+      operationId: analyzeProject
+      tags: [projects]
+      summary: Analyze a project
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+  /projects/{id}/analysis:
+    get:
+      operationId: getProjectAnalysis
+      tags: [projects]
+      summary: Get project analysis
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+  /projects/{id}/build:
+    post:
+      operationId: createBuild
+      tags: [builds]
+      summary: Queue an APK build
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "202":
+          description: Build queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildJob"
+  /builds/{id}:
+    get:
+      operationId: getBuild
+      tags: [builds]
+      summary: Get build status
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Build job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildJob"
+  /builds/{id}/logs:
+    get:
+      operationId: getBuildLogs
+      tags: [builds]
+      summary: Get real build logs
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Build logs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [logs]
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      type: string
+  /artifacts/{id}/download:
+    get:
+      operationId: downloadArtifact
+      tags: [artifacts]
+      summary: Download a validated APK
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: APK bytes
+          content:
+            application/vnd.android.package-archive:
+              schema:
+                type: string
+                format: binary
 components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +198,51 @@ components:
           type: string
       required:
         - status
+    ProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+    Project:
+      type: object
+      required: [id, name, fileSize, uploadStatus, analysisStatus, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        fileSize: { type: number, minimum: 0 }
+        uploadStatus: { type: string, enum: [PENDING, UPLOADED, REJECTED] }
+        analysisStatus: { type: string, enum: [PENDING, COMPLETE, FAILED] }
+        createdAt: { type: string, format: date-time }
+    Analysis:
+      type: object
+      required: [projectId, framework, buildTool, language, packageManager, confidence, compatibilityScore, warnings, blockers, recommendedStrategy, evidence]
+      properties:
+        projectId: { type: string }
+        framework: { type: string }
+        version: { type: ["string", "null"] }
+        buildTool: { type: string }
+        language: { type: string }
+        packageManager: { type: string }
+        projectType: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 100 }
+        compatibilityScore: { type: number, minimum: 0, maximum: 100 }
+        warnings: { type: array, items: { type: string } }
+        blockers: { type: array, items: { type: string } }
+        recommendedStrategy: { type: string }
+        evidence: { type: array, items: { type: string } }
+    BuildJob:
+      type: object
+      required: [id, projectId, status, progress, logs, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        status: { type: string, enum: [QUEUED, ANALYZING, PREPARING, BUILDING, VALIDATING, SUCCESS, FAILED] }
+        progress: { type: number, minimum: 0, maximum: 100 }
+        logs: { type: array, items: { type: string } }
+        error: { type: ["string", "null"] }
+        artifactId: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
 

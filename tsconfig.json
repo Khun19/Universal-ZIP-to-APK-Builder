@@ -11,6 +11,18 @@
     },
     {
       "path": "./lib/api-zod"
+    },
+    {
+      "path": "./lib/shared"
+    },
+    {
+      "path": "./lib/analyzer"
+    },
+    {
+      "path": "./lib/security"
+    },
+    {
+      "path": "./lib/build-engine"
     }
   ]
 }
