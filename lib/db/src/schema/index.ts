@@ -46,10 +46,18 @@ export const buildJobs = pgTable("build_jobs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({ projectIdx: index("build_jobs_project_idx").on(table.projectId) }));
 
+export const buildLogs = pgTable("build_logs", {
+  id: text("id").primaryKey(),
+  buildId: text("build_id").notNull().references(() => buildJobs.id),
+  line: text("line").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({ buildIdx: index("build_logs_build_idx").on(table.buildId, table.createdAt) }));
+
 export const artifacts = pgTable("artifacts", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id),
   buildJobId: text("build_job_id").notNull().references(() => buildJobs.id),
+  filename: text("filename").notNull(),
   filePath: text("file_path").notNull(),
   size: integer("size").notNull(),
   sha256: text("sha256").notNull(),
