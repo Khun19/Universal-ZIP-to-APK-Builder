@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./repository": "./src/repository.ts"
   },
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",
@@ -15,7 +16,8 @@
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.22.0",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@workspace/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

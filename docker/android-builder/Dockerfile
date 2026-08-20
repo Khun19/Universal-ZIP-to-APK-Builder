@@ -13,4 +13,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl unzip git 
 
 USER builder
 WORKDIR /workspace
+COPY --chown=builder:builder run-build.mjs /opt/worker/run-build.mjs
 ENTRYPOINT ["node", "/opt/worker/run-build.mjs"]

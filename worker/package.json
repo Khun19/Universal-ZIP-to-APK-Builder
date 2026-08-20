@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@workspace/build-engine": "workspace:*",
+    "@workspace/build-queue": "workspace:*",
+    "@workspace/db": "workspace:*",
     "@workspace/security": "workspace:*",
     "@workspace/shared": "workspace:*",
     "bullmq": "^6.1.2",

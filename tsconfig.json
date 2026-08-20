@@ -23,6 +23,9 @@
     },
     {
       "path": "./lib/build-engine"
+    },
+    {
+      "path": "./lib/build-queue"
     }
   ]
 }
