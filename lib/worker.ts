@@ -6,6 +6,7 @@ import { BuildStrategy } from './strategy.ts';
 import { injectAndroidWrapper } from './template.ts';
 
 const execAsync = promisify(exec);
+const BUILD_TIMEOUT_MS = Number(process.env.BUILD_TIMEOUT_MS ?? 300000);
 
 export interface BuildJobResult {
   success: boolean;
@@ -51,7 +52,7 @@ export async function executeBuildJob(
 
     try {
       if (hasGradlew || fs.existsSync(path.join(projectPath, 'app'))) {
-        const { stdout, stderr } = await execAsync(command, { cwd: projectPath, timeout: 300000 });
+        const { stdout, stderr } = await execAsync(command, { cwd: projectPath, timeout: BUILD_TIMEOUT_MS });
         if (stdout) logs.push(`[Gradle Output]: ${stdout.slice(0, 500)}...`);
         if (stderr) logs.push(`[Gradle Warning/Stderr]: ${stderr.slice(0, 300)}...`);
       } else {
@@ -62,7 +63,7 @@ export async function executeBuildJob(
     }
 
     // Set up output artifact path safely
-    const expectedApkPath = path.join(projectPath, 'app/build/outputs/apk/debug/app-debug.apk');
+    const expectedApkPath = path.join(projectPath, 'app/build/outputs/apk/debug/app-wrapper-debug.apk');
     const fallbackApkPath = path.join(projectPath, `artifacts/${strategy.outputArtifact}`);
 
     let finalOutputPath = expectedApkPath;
