@@ -1,0 +1,16 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Using AGP 7.4.2 for maximum compatibility without strict AGP 8 requirements
+        classpath 'com.android.tools.build:gradle:7.4.2'
+    }
+}
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

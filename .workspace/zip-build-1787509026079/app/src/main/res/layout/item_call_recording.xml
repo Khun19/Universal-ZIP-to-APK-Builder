@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/card_recording"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="16dp"
+    android:layout_marginEnd="16dp"
+    android:layout_marginTop="6dp"
+    android:layout_marginBottom="6dp"
+    app:cardBackgroundColor="@color/color_surface"
+    app:cardCornerRadius="12dp"
+    app:strokeColor="@color/color_card_stroke"
+    app:strokeWidth="1dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <ImageView
+            android:id="@+id/iv_call_type"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@drawable/ic_call_incoming"
+            android:contentDescription="@string/call_incoming"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/tv_contact_or_number"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_marginEnd="8dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="+1 (555) 019-2834"
+            android:textColor="@color/color_on_surface"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toStartOf="@+id/tv_call_time"
+            app:layout_constraintStart_toEndOf="@+id/iv_call_type"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/tv_phone_number_sub"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginEnd="8dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Incoming Call • 02:45"
+            android:textColor="@color/color_on_surface_secondary"
+            android:textSize="13sp"
+            app:layout_constraintEnd_toStartOf="@+id/iv_backup_status"
+            app:layout_constraintStart_toEndOf="@+id/iv_call_type"
+            app:layout_constraintTop_toBottomOf="@+id/tv_contact_or_number" />
+
+        <TextView
+            android:id="@+id/tv_call_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="10:30 AM"
+            android:textColor="@color/color_on_surface_tertiary"
+            android:textSize="12sp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <ImageView
+            android:id="@+id/iv_backup_status"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginTop="4dp"
+            android:src="@drawable/ic_check_circle"
+            app:tint="@color/color_success"
+            android:contentDescription="@string/backup_status_backed_up"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/tv_call_time" />
+
+        <!-- Quick Action Buttons: Play, Timeline, Options -->
+        <LinearLayout
+            android:id="@+id/layout_item_actions"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="@+id/tv_phone_number_sub"
+            app:layout_constraintTop_toBottomOf="@+id/tv_phone_number_sub">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_play_audio"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="14dp"
+                android:text="Play"
+                android:textColor="@color/color_primary"
+                android:textSize="12sp"
+                app:backgroundTint="@color/color_surface_variant"
+                app:cornerRadius="18dp"
+                app:icon="@drawable/ic_play_arrow"
+                app:iconSize="16dp"
+                app:iconTint="@color/color_primary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_view_timeline"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="Timeline"
+                android:textColor="@color/color_on_surface_secondary"
+                android:textSize="12sp"
+                app:icon="@drawable/ic_history"
+                app:iconSize="16dp"
+                app:iconTint="@color/color_on_surface_secondary" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/btn_share_recording"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_share"
+                app:tint="@color/color_on_surface_secondary"
+                android:contentDescription="@string/btn_share" />
+
+            <ImageButton
+                android:id="@+id/btn_delete_recording"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_delete"
+                app:tint="@color/color_on_surface_secondary"
+                android:contentDescription="@string/btn_delete" />
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</com.google.android.material.card.MaterialCardView>

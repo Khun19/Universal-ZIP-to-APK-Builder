@@ -1,0 +1,6 @@
+{
+  "name": "AI Headshot Photographer",
+  "description": "Transform casual selfies into studio-grade executive headshots with facial fidelity preservation, multi-style studio backdrops, and customizable attire.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

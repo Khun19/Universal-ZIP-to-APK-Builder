@@ -1,0 +1,7 @@
+com.builder.app-pngs-0 /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787507332057/app/build/generated/res/pngs/debug
+com.builder.app-resValues-1 /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787507332057/app/build/generated/res/resValues/debug
+com.builder.app-packageDebugResources-2 /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787507332057/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.builder.app-packageDebugResources-3 /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787507332057/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.builder.app-debug-4 /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787507332057/app/build/intermediates/merged_res/debug/mergeDebugResources
+com.builder.app-debug-5 /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787507332057/app/src/debug/res
+com.builder.app-main-6 /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787507332057/app/src/main/res

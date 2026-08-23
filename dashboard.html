@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal ZIP-to-APK Builder</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .file-input-wrapper { margin: 20px 0; padding: 20px; border: 2px dashed #007bff; border-radius: 8px; background: #f9fbff; }
+        input[type="file"] { width: 100%; }
+        button { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+        #status { margin-top: 20px; font-size: 14px; text-align: center; padding: 15px; border-radius: 6px; display: none; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .download-btn { display: inline-block; margin-top: 15px; padding: 10px 20px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
+        .download-btn:hover { background-color: #218838; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>🚀 ZIP to APK Builder</h2>
+        <p>Upload your web app (.zip) to build a native Android APK.</p>
+        
+        <div class="file-input-wrapper">
+            <input type="file" id="zipFile" accept=".zip" />
+        </div>
+        
+        <button id="uploadBtn" onclick="uploadZip()">Build APK</button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        async function uploadZip() {
+            const fileInput = document.getElementById('zipFile');
+            const statusDiv = document.getElementById('status');
+            const btn = document.getElementById('uploadBtn');
+
+            if (!fileInput.files[0]) {
+                statusDiv.style.display = 'block';
+                statusDiv.className = 'error';
+                statusDiv.innerHTML = '⚠️ Please select a .zip file first.';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            btn.disabled = true;
+            btn.innerText = '⚙️ Building APK (Please wait)...';
+            statusDiv.style.display = 'block';
+            statusDiv.className = '';
+            statusDiv.innerHTML = '⏳ Processing... Do not close this page.';
+
+            try {
+                const response = await fetch('/api/upload-zip', { method: 'POST', body: formData });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const downloadUrl = `/api/download?path=${encodeURIComponent(result.apkPath)}`;
+                    statusDiv.className = 'success';
+                    statusDiv.innerHTML = `
+                        ✅ <b>Build Successful!</b><br>
+                        <a href="${downloadUrl}" class="download-btn" download="app-debug.apk">⬇️ Download APK</a>
+                    `;
+                } else {
+                    statusDiv.className = 'error';
+                    statusDiv.innerHTML = `❌ <b>Error:</b> ${result.error}`;
+                }
+            } catch (error) {
+                statusDiv.className = 'error';
+                statusDiv.innerHTML = `❌ <b>Network Error:</b> ${error.message}`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Build Another APK';
+                fileInput.value = ''; // Reset input
+            }
+        }
+    </script>
+</body>
+</html>

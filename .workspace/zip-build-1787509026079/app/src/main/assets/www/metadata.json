@@ -1,0 +1,6 @@
+{
+  "name": "Ry CallRecorder",
+  "description": "Automated background call recording app with version-adaptive engine, timeline correlation, exclude list, bottom-sheet audio player, and cloud backup.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

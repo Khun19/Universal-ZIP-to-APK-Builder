@@ -1,0 +1,54 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:2:1-12:12
+INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:2:1-12:12
+INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:2:1-12:12
+INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:2:1-12:12
+	package
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:2:70-95
+		INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml
+	android:versionName
+		INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml
+	android:versionCode
+		INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:2:11-69
+uses-permission#android.permission.INTERNET
+ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:3:5-67
+	android:name
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:3:22-64
+application
+ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:4:5-11:19
+INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:4:5-11:19
+	android:extractNativeLibs
+		INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml
+	android:supportsRtl
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:4:74-100
+	android:label
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:4:18-46
+	android:allowBackup
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:4:47-73
+activity#com.builder.app.MainActivity
+ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:5:9-10:20
+	android:exported
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:5:48-71
+	android:name
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:5:19-47
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:6:13-9:29
+action#android.intent.action.MAIN
+ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:7:17-69
+	android:name
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:7:25-66
+category#android.intent.category.LAUNCHER
+ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:8:17-77
+	android:name
+		ADDED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml:8:27-74
+uses-sdk
+INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml
+INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder/.workspace/real-build-1787505893615/app/src/main/AndroidManifest.xml

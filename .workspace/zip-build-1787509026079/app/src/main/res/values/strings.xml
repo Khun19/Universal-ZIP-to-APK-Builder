@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ry CallRecorder</string>
+    <string name="app_tagline">Automated 2-Way Background Call Recording</string>
+    
+    <!-- Onboarding -->
+    <string name="onboarding_title">Welcome to Ry CallRecorder</string>
+    <string name="onboarding_subtitle">Configure essential system permissions to enable automatic background call recording.</string>
+    <string name="onboarding_step_format">Step %1$d of %2$d</string>
+
+    <string name="step_record_audio_title">Microphone Access</string>
+    <string name="step_record_audio_desc">Required to capture crystal-clear audio during phone calls.</string>
+    <string name="step_phone_state_title">Phone State Access</string>
+    <string name="step_phone_state_desc">Detects when calls start, connect, and end to automate recording.</string>
+    <string name="step_call_log_title">Call Log Access</string>
+    <string name="step_call_log_desc">Correlates recording files with phone numbers and call directions.</string>
+    <string name="step_contacts_title">Contacts Access</string>
+    <string name="step_contacts_desc">Displays contact names instead of raw numbers in recording history.</string>
+    <string name="step_notifications_title">Notifications</string>
+    <string name="step_notifications_desc">Displays foreground recording status and controls.</string>
+    <string name="step_battery_title">Battery Optimization</string>
+    <string name="step_battery_desc">Prevents Android from killing recording engine mid-call.</string>
+    <string name="step_battery_opt_title">Battery Optimization</string>
+    <string name="step_battery_opt_desc">Prevents Android from stopping recording mid-call.</string>
+    <string name="step_dialer_title">Default Dialer Role</string>
+    <string name="step_dialer_desc">Unlocks full two-way call recording audio streams on Android 10+.</string>
+    <string name="step_default_dialer_title">Default Dialer Role</string>
+    <string name="step_default_dialer_desc">Unlocks full two-way call recording audio streams on Android 10+.</string>
+    <string name="step_overlay_title">Display Over Other Apps</string>
+    <string name="step_overlay_desc">Allows active in-call floating recording controls (optional).</string>
+    <string name="step_draw_overlay_title">Display Over Other Apps</string>
+    <string name="step_draw_overlay_desc">Allows active in-call floating recording controls (optional).</string>
+    
+    <string name="btn_grant">Grant Permission</string>
+    <string name="btn_skip">Skip Step</string>
+    <string name="btn_get_started">Get Started</string>
+    <string name="btn_proceed">Proceed</string>
+    <string name="btn_settings">App Settings</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_add">Add Number</string>
+    <string name="btn_delete">Delete</string>
+    <string name="btn_share">Share</string>
+    <string name="btn_backup_now">Backup Pending Recordings</string>
+    <string name="btn_autostart_guide">OEM Autostart Guide</string>
+    <string name="btn_test_recording">Add Test Record</string>
+
+    <!-- Navigation & Titles -->
+    <string name="nav_history">Recordings</string>
+    <string name="nav_exclude">Exclude</string>
+    <string name="nav_settings">Settings</string>
+    <string name="title_call_history">Recent Calls</string>
+    <string name="title_call_detail">Call Timeline</string>
+    <string name="title_exclude_list">Exclude List</string>
+    <string name="title_settings">Settings &amp; Backup</string>
+
+    <!-- Call History & Details -->
+    <string name="empty_history_title">No Recordings Yet</string>
+    <string name="empty_history_desc">Your call recordings will automatically appear here once phone calls take place.</string>
+    <string name="empty_exclude_title">No Excluded Numbers</string>
+    <string name="empty_exclude_desc">Calls from numbers added here will not be recorded.</string>
+    <string name="empty_timeline_title">No Timeline Entries</string>
+    <string name="empty_timeline_desc">No prior recordings found for this contact number.</string>
+    
+    <string name="search_hint">Search by name or number...</string>
+    <string name="call_incoming">Incoming Call</string>
+    <string name="call_outgoing">Outgoing Call</string>
+    <string name="call_missed">Missed Call</string>
+    <string name="call_unknown">Call</string>
+
+    <string name="fallback_banner_text">Limited recording mode active. Default Dialer role is required for full two-way audio.</string>
+    <string name="fallback_banner_action">Enable</string>
+
+    <!-- Player -->
+    <string name="player_title">Recording Player</string>
+    <string name="player_duration_zero">00:00</string>
+    <string name="player_file_error">Audio file cannot be loaded</string>
+    
+    <!-- Settings -->
+    <string name="settings_recording_mode">Recording Engine Mode</string>
+    <string name="settings_recording_mode_summary">Dynamic mode based on system API and permissions</string>
+    <string name="settings_auto_backup">Cloud Auto-Backup</string>
+    <string name="settings_auto_backup_summary">Automatically upload completed recordings to Google Drive</string>
+    <string name="settings_wifi_only">Backup on Wi-Fi Only</string>
+    <string name="settings_wifi_only_summary">Uploads only when connected to an unmetered Wi-Fi network</string>
+    <string name="settings_storage_location">Storage Location</string>
+    <string name="settings_storage_location_summary">App-specific external storage: Recordings/</string>
+    <string name="settings_oem_optimization">Background Reliability</string>
+    <string name="settings_oem_optimization_summary">Configure OEM battery &amp; autostart settings for Xiaomi, Samsung, Huawei</string>
+    
+    <!-- Dialogs & Prompts -->
+    <string name="dialog_add_exclude_title">Exclude Phone Number</string>
+    <string name="dialog_add_exclude_hint">Enter phone number (e.g. +1234567890)</string>
+    <string name="dialog_add_exclude_name_hint">Contact name (optional)</string>
+    <string name="dialog_delete_recording_title">Delete Recording</string>
+    <string name="dialog_delete_recording_msg">Are you sure you want to delete this recording file? This action cannot be undone.</string>
+    <string name="dialog_delete_exclude_title">Remove from Blacklist</string>
+    <string name="dialog_delete_exclude_msg">Calls to and from %1$s will be recorded again.</string>
+    <string name="dialog_oem_title">OEM Background Autostart</string>
+    <string name="dialog_oem_desc">To ensure recordings never get cut off by battery managers, please enable Autostart and set Battery Saver to No Restrictions.</string>
+    <string name="dialog_oem_open">Open Settings</string>
+    <string name="dialog_delete_action">Delete</string>
+    <string name="dialog_cancel_action">Cancel</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_name">Call Recording Status</string>
+    <string name="notification_channel_desc">Shows ongoing status when call audio is being recorded</string>
+    <string name="notification_recording_title">Ry CallRecorder Active</string>
+    <string name="notification_recording_body">Recording call with %1$s…</string>
+
+    <string name="backup_status_backed_up">Backed up</string>
+    <string name="backup_status_pending">Pending backup</string>
+    <string name="mode_full">Full 2-Way (InCall/Dialer)</string>
+    <string name="mode_legacy">Legacy (Voice Call)</string>
+    <string name="mode_mic_fallback">Mic Fallback (Microphone)</string>
+</resources>

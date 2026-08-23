@@ -1,0 +1,95 @@
+<div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-950">
+  
+  <!-- Global Header -->
+  <app-header />
+
+  <!-- Global Stepper Tracker -->
+  <app-stepper />
+
+  <!-- Main Content Viewport -->
+  <main class="flex-1">
+    @switch (service.currentStep()) {
+      @case ('upload') {
+        <app-upload-screen />
+      }
+      @case ('style') {
+        <app-style-selection />
+      }
+      @case ('attire') {
+        <app-attire-options />
+      }
+      @case ('processing') {
+        <app-processing-screen />
+      }
+      @case ('results') {
+        <app-results-screen />
+      }
+    }
+  </main>
+
+  <!-- Interactive Comparison Slider Modal -->
+  <app-comparison-slider />
+
+  <!-- Full High-Res Lightbox Modal -->
+  <app-lightbox-modal />
+
+  <!-- Toast Notification Bar -->
+  @if (service.toastMessage(); as toast) {
+    <div
+      id="global-toast-notification"
+      class="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md border transition-all duration-300 animate-in slide-in-from-bottom-5"
+      [class.bg-slate-900]="toast.type === 'info'"
+      [class.border-slate-700]="toast.type === 'info'"
+      [class.text-slate-100]="toast.type === 'info'"
+      [class.bg-emerald-950]="toast.type === 'success'"
+      [class.border-emerald-700]="toast.type === 'success'"
+      [class.text-emerald-100]="toast.type === 'success'"
+      [class.bg-rose-950]="toast.type === 'error'"
+      [class.border-rose-700]="toast.type === 'error'"
+      [class.text-rose-100]="toast.type === 'error'"
+    >
+      @if (toast.type === 'success') {
+        <mat-icon class="text-emerald-400 text-lg">check_circle</mat-icon>
+      } @else if (toast.type === 'error') {
+        <mat-icon class="text-rose-400 text-lg">error</mat-icon>
+      } @else {
+        <mat-icon class="text-amber-400 text-lg">info</mat-icon>
+      }
+
+      <span class="text-xs font-medium">{{ toast.text }}</span>
+
+      <button
+        type="button"
+        (click)="service.toastMessage.set(null)"
+        class="ml-2 text-slate-400 hover:text-white p-1"
+      >
+        <mat-icon class="text-xs">close</mat-icon>
+      </button>
+    </div>
+  }
+
+  <!-- Footer -->
+  <footer class="w-full bg-slate-950 border-t border-slate-900 py-8 px-4 text-center text-xs text-slate-500">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <div class="w-5 h-5 rounded bg-amber-400 text-slate-950 font-bold flex items-center justify-center text-[10px]">
+          AI
+        </div>
+        <span class="text-slate-400 font-medium">AI Headshot Photographer Studio</span>
+      </div>
+
+      <p>Photorealistic 85mm portrait synthesis with identity preservation & 24h automatic purge policy.</p>
+
+      <div class="flex items-center gap-4">
+        <button
+          type="button"
+          (click)="service.purgeSessionData()"
+          class="text-slate-400 hover:text-rose-400 transition-colors underline"
+        >
+          Purge Session Data
+        </button>
+      </div>
+    </div>
+  </footer>
+
+</div>

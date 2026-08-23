@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Universal ZIP-to-APK Builder Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+  <div class="max-w-4xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <header class="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
+        Universal ZIP-to-APK Builder
+      </h1>
+      <span class="text-xs bg-indigo-900 text-indigo-300 px-3 py-1 rounded-full border border-indigo-700">BMAD Engine v1.0</span>
+    </header>
+
+    <!-- Main Container -->
+    <main id="app" class="space-y-6">
+      
+      <!-- View 1: Upload View -->
+      <section id="view-upload" class="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center shadow-lg">
+        <div class="max-w-md mx-auto border-2 border-dashed border-slate-700 rounded-lg p-10 hover:border-indigo-500 transition cursor-pointer bg-slate-950/50" id="drop-zone">
+          <svg class="mx-auto h-12 w-12 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+          </svg>
+          <p class="text-lg font-medium text-slate-200 mb-1">Drop ZIP file here</p>
+          <p class="text-xs text-slate-400 mb-4">or choose from your device (Max size: 500 MB)</p>
+          <label class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-lg cursor-pointer transition shadow">
+            Choose ZIP
+            <input type="file" id="zip-file-input" class="hidden" accept=".zip">
+          </label>
+        </div>
+      </section>
+
+      <!-- View 2: Analysis & Build Strategy View (Hidden by default) -->
+      <section id="view-analysis" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-4">
+        <h2 class="text-xl font-semibold text-indigo-400">Project Analysis Result</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+          <div>
+            <p class="text-sm text-slate-400">Detected Project Type:</p>
+            <p id="res-project-type" class="text-lg font-bold text-emerald-400">-</p>
+          </div>
+          <div>
+            <p class="text-sm text-slate-400">Recommended Build Strategy:</p>
+            <p id="res-strategy" class="text-lg font-bold text-blue-400">-</p>
+          </div>
+        </div>
+        <div>
+          <p class="text-sm text-slate-400 mb-1">Warnings:</p>
+          <ul id="res-warnings" class="text-sm text-amber-300 list-disc list-inside bg-slate-950 p-3 rounded-lg border border-slate-800">
+            <li>None</li>
+          </ul>
+        </div>
+        <button id="btn-start-build" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg transition shadow-lg">
+          Start Build
+        </button>
+      </section>
+
+      <!-- View 3: Build & Logs View (Hidden by default) -->
+      <section id="view-build" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-4">
+        <div class="flex justify-between items-center">
+          <h2 class="text-xl font-semibold text-indigo-400">Build Execution & Logs</h2>
+          <span id="build-status-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-900 text-amber-300 border border-amber-700">Building...</span>
+        </div>
+        
+        <!-- Realtime Logs Box -->
+        <div id="log-container" class="bg-black font-mono text-xs text-emerald-400 p-4 rounded-lg h-64 overflow-y-auto border border-slate-800 space-y-1">
+          [12:41:02] Build initialized...
+        </div>
+
+        <!-- Download Action -->
+        <div id="download-section" class="hidden pt-2">
+          <a id="btn-download" href="#" class="block text-center bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg transition shadow-lg">
+            Download APK
+          </a>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('zip-file-input');
+    const viewUpload = document.getElementById('view-upload');
+    const viewAnalysis = document.getElementById('view-analysis');
+    const viewBuild = document.getElementById('view-build');
+    
+    const resProjectType = document.getElementById('res-project-type');
+    const resStrategy = document.getElementById('res-strategy');
+    const resWarnings = document.getElementById('res-warnings');
+    const btnStartBuild = document.getElementById('btn-start-build');
+    const logContainer = document.getElementById('log-container');
+    const buildStatusBadge = document.getElementById('build-status-badge');
+    const downloadSection = document.getElementById('download-section');
+    const btnDownload = document.getElementById('btn-download');
+
+    let currentPayload = null;
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // Mocking simulated file extraction payload for sample demo
+      currentPayload = {
+        files: [
+          { relativePath: 'package.json', content: '{"name": "web-app"}' },
+          { relativePath: 'vite.config.ts', content: 'export default {}' },
+          { relativePath: 'index.html', content: '<h1>Hello App</h1>' }
+        ]
+      };
+
+      viewUpload.classList.add('hidden');
+      viewAnalysis.classList.remove('hidden');
+
+      resProjectType.innerText = 'React/Vite Web App';
+      resStrategy.innerText = 'web-wrapper (Android WebView)';
+      resWarnings.innerHTML = '<li class="text-amber-400">• release signing not configured</li>';
+    });
+
+    btnStartBuild.addEventListener('click', async () => {
+      viewAnalysis.classList.add('hidden');
+      viewBuild.classList.remove('hidden');
+
+      logContainer.innerHTML = '[12:41:02] Build started\n[12:41:03] Extracting project files...';
+
+      try {
+        const response = await fetch('/api/build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentPayload)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          data.logs.forEach((log, idx) => {
+            setTimeout(() => {
+              logContainer.innerHTML += `\n[${new Date().toLocaleTimeString()}] ${log}`;
+              logContainer.scrollTop = logContainer.scrollHeight;
+            }, idx * 300);
+          });
+
+          setTimeout(() => {
+            buildStatusBadge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-emerald-900 text-emerald-300 border border-emerald-700';
+            buildStatusBadge.innerText = 'Success ✓';
+            downloadSection.classList.remove('hidden');
+            btnDownload.href = data.downloadUrl;
+          }, data.logs.length * 300 + 500);
+
+        } else {
+          buildStatusBadge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-rose-900 text-rose-300 border border-rose-700';
+          buildStatusBadge.innerText = 'Failed ✗';
+          logContainer.innerHTML += `\n[Error] ${data.error}`;
+        }
+      } catch (err) {
+        logContainer.innerHTML += `\n[Network Error] ${err.message}`;
+      }
+    });
+  </script>
+</body>
+</html>
