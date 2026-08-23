@@ -19,7 +19,7 @@ export function determineBuildStrategy(analysis: AnalysisResult): BuildStrategy 
           'Run ./gradlew assembleDebug',
           'Locate APK in build/outputs/apk/debug/'
         ],
-        outputArtifact: 'app-debug.apk'
+        outputArtifact: 'app-wrapper-debug.apk'
       };
 
     case 'React/Vite Web App':

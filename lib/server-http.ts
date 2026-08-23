@@ -39,7 +39,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (apkPath && fs.existsSync(apkPath) && apkPath.endsWith('.apk')) {
       res.writeHead(200, {
         'Content-Type': 'application/vnd.android.package-archive',
-        'Content-Disposition': 'attachment; filename="app-debug.apk"'
+        'Content-Disposition': 'attachment; filename="app-wrapper-debug.apk"'
       });
       const stream = fs.createReadStream(apkPath);
       stream.pipe(res);

@@ -16,6 +16,8 @@ test('Runs complete end-to-end build pipeline successfully', async () => {
 
   const result = await runBuildPipeline(buildInput);
 
+  console.log('FULL RESULT:', result);
+
   assert.strictEqual(result.success, true);
   assert.strictEqual(result.projectType, 'React/Vite Web App');
   assert.strictEqual(result.strategyName, 'web-wrapper');
