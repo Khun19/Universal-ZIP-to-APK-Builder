@@ -7,3 +7,4 @@ export interface ProjectAnalysis {
 }
 export interface ProjectRecord { id: string; name: string; fileSize: number; uploadStatus: "PENDING" | "UPLOADED" | "REJECTED"; analysisStatus: "PENDING" | "COMPLETE" | "FAILED"; createdAt: string; }
 export interface BuildRecord { id: string; projectId: string; status: JobStatus; progress: number; logs: string[]; error: string | null; artifactId: string | null; createdAt: string; }
+export { DEFAULT_BUILD_TIMEOUT_MS, parseBuildTimeoutMs } from "./build-config";

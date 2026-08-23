@@ -4,9 +4,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BuildStrategy } from './strategy.ts';
 import { injectAndroidWrapper } from './template.ts';
+import { parseBuildTimeoutMs } from '@workspace/shared';
 
 const execAsync = promisify(exec);
-const BUILD_TIMEOUT_MS = Number(process.env.BUILD_TIMEOUT_MS ?? 300000);
+const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
 
 export interface BuildJobResult {
   success: boolean;
