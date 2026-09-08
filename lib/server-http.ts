@@ -6,7 +6,6 @@ import * as fs from 'fs';
 import { executeBuildJob } from './worker.ts';
 import {
   analyzeProjectFiles,
-  validateZipEntry,
 } from './analyzer.ts';
 import { determineBuildStrategy } from './strategy.ts';
 import { URL } from 'url';
@@ -94,36 +93,10 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         const buildId = `zip-build-${Date.now()}`;
         const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
         
-        console.log(`\n📦 [${buildId}] Extracting...`);
-        const zip = new AdmZip(uploadedFile.filepath);
-        fs.mkdirSync(workspaceDir, { recursive: true });
-        const canonicalWorkspace = fs.realpathSync(workspaceDir);
-        const filePaths: string[] = [];
-
-        for (const entry of zip.getEntries()) {
-          if (entry.isDirectory) continue;
-
-          const relativePath = entry.entryName.replace(/\\/g, '/');
-          if (!validateZipEntry(relativePath)) {
-            throw new Error(`Blocked unsafe ZIP path: ${relativePath}`);
-          }
-
-          const destination = path.resolve(
-            canonicalWorkspace,
-            relativePath,
-          );
-
-          if (
-            !destination.startsWith(canonicalWorkspace + path.sep) &&
-            destination !== canonicalWorkspace
-          ) {
-            throw new Error(`Blocked ZIP path breakout: ${relativePath}`);
-          }
-
-          fs.mkdirSync(path.dirname(destination), { recursive: true });
-          fs.writeFileSync(destination, entry.getData());
-          filePaths.push(relativePath);
-        }
+          console.log(`\n📦 [${buildId}] Extracting...`);
+          const zip = new AdmZip(uploadedFile.filepath);
+          const extraction = safeExtractAdmZip(zip, workspaceDir);
+          const filePaths = extraction.filePaths;
 
         console.log(`🚀 Building APK...`);
         const analysis = analyzeProjectFiles(filePaths);

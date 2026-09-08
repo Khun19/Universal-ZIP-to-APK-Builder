@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
-import { validateZipEntry } from './analyzer.ts';
+import { safeExtractAdmZip } from './security/src/index.ts';
 import { handleBuildRequest } from './server.ts';
 
 async function main() {
@@ -24,33 +24,19 @@ async function main() {
   console.log(`\n📦 ZIP  : ${zipPath}`);
   console.log(`📁 Work : ${workDir}\n`);
 
-  // 1. Extract ZIP — binary-safe
-  let zip: AdmZip;
-  try { zip = new AdmZip(zipPath); }
-  catch (e: any) { console.error(`Bad ZIP: ${e.message}`); process.exit(1); }
-
-  fs.mkdirSync(workDir, { recursive: true });
-  const filePaths: string[] = [];
-
-  for (const entry of zip.getEntries()) {
-    if (entry.isDirectory) continue;
-    const rel = entry.entryName.replace(/\\/g, '/');
-    if (!validateZipEntry(rel)) {
-      console.error(`Blocked path: ${rel}`); process.exit(1);
+    // 1. Secure ZIP extraction
+    let filePaths: string[];
+    try {
+      const zip = new AdmZip(zipPath);
+      const extraction = safeExtractAdmZip(zip, workDir);
+      filePaths = extraction.filePaths;
+    } catch (e: any) {
+      console.error(`Blocked ZIP: ${e.message}`);
+      process.exit(1);
     }
-    const canonicalWorkDir = fs.realpathSync(workDir);
-    const dest = path.resolve(canonicalWorkDir, rel);
-    if (
-      !dest.startsWith(canonicalWorkDir + path.sep) &&
-      dest !== canonicalWorkDir
-    ) {
-      console.error(`Blocked path breakout: ${rel}`); process.exit(1);
-    }
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, entry.getData());
-    filePaths.push(rel);
-  }
-  console.log(`Extracted ${filePaths.length} files.\n`);
+
+    console.log(`Extracted ${filePaths.length} files.\n`);
+
 
   // 2. Analyze + Strategy + Build  (server.ts handles it all)
   const zipBaseName = path.basename(zipPath, path.extname(zipPath));
