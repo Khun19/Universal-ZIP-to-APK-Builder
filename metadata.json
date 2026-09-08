@@ -1,0 +1,6 @@
+{
+  "name": "Universal ZIP-to-APK Builder",
+  "description": "Developer platform for uploading ZIP archives, inspecting project structure, analyzing strategies, and tracking Android APK builds with topographic console visualization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

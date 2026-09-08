@@ -31,6 +31,19 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
+import { DashboardPage } from './pages/DashboardPage';
+import { NewBuildPage } from './pages/NewBuildPage';
+import { AnalyzingPage } from './pages/AnalyzingPage';
+import { ProjectAnalysisPage } from './pages/ProjectAnalysisPage';
+import { BuildConsolePage } from './pages/BuildConsolePage';
+import { BuildSuccessPage } from './pages/BuildSuccessPage';
+import { BuildFailedPage } from './pages/BuildFailedPage';
+import { BuildHistoryPage } from './pages/BuildHistoryPage';
+import { ProjectsPage } from './pages/ProjectsPage';
+import { EnvironmentPage } from './pages/EnvironmentPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { ThemeProvider } from './context/ThemeContext';
+import { BuildProvider } from './context/BuildContext';
 import './index.css';
 
 const queryClient = new QueryClient();
@@ -276,11 +289,64 @@ function ArtifactsPage({ project }: { project: Project }) {
 }
 
 function Router() {
-  return <ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={Dashboard} /><Route path="/dashboard" component={Dashboard} /><Route path="/projects/:id/analysis"><ProjectLoader>{(project) => <AnalysisPage project={project} />}</ProjectLoader></Route><Route path="/projects/:id/build"><ProjectLoader>{(project) => <BuildPage project={project} />}</ProjectLoader></Route><Route path="/projects/:id/artifacts"><ProjectLoader>{(project) => <ArtifactsPage project={project} />}</ProjectLoader></Route><Route path="/projects/:id"><ProjectLoader>{(project) => <Overview project={project} />}</ProjectLoader></Route><Route component={NotFound} /></Switch></ErrorBoundary>;
+  return (
+    <ErrorBoundary resetKey={window.location.pathname}>
+      <Switch>
+        {/* Core Universal ZIP-to-APK Builder Routes */}
+        <Route path="/" component={DashboardPage} />
+        <Route path="/dashboard" component={DashboardPage} />
+        <Route path="/new-build" component={NewBuildPage} />
+        <Route path="/build/new" component={NewBuildPage} />
+        <Route path="/history" component={BuildHistoryPage} />
+        <Route path="/build/history" component={BuildHistoryPage} />
+        <Route path="/inspect/:id" component={AnalyzingPage} />
+        <Route path="/build/:id/analyzing" component={AnalyzingPage} />
+        <Route path="/analysis/:id" component={ProjectAnalysisPage} />
+        <Route path="/build/:id/analysis" component={ProjectAnalysisPage} />
+        <Route path="/build/:id" component={BuildConsolePage} />
+        <Route path="/build/:id/console" component={BuildConsolePage} />
+        <Route path="/build/:id/success" component={BuildSuccessPage} />
+        <Route path="/build/:id/failed" component={BuildFailedPage} />
+        <Route path="/projects" component={ProjectsPage} />
+        <Route path="/environment" component={EnvironmentPage} />
+        <Route path="/settings" component={SettingsPage} />
+
+        {/* Existing / legacy project routes */}
+        <Route path="/projects/:id/analysis">
+          <ProjectLoader>{(project) => <AnalysisPage project={project} />}</ProjectLoader>
+        </Route>
+        <Route path="/projects/:id/build">
+          <ProjectLoader>{(project) => <BuildPage project={project} />}</ProjectLoader>
+        </Route>
+        <Route path="/projects/:id/artifacts">
+          <ProjectLoader>{(project) => <ArtifactsPage project={project} />}</ProjectLoader>
+        </Route>
+        <Route path="/projects/:id">
+          <ProjectLoader>{(project) => <Overview project={project} />}</ProjectLoader>
+        </Route>
+
+        {/* Fallback */}
+        <Route component={NotFound} />
+      </Switch>
+    </ErrorBoundary>
+  );
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <ThemeProvider>
+          <BuildProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </BuildProvider>
+        </ThemeProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
 }
 
 export default App;
