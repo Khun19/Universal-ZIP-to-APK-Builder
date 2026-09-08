@@ -4,6 +4,11 @@ import AdmZip from 'adm-zip';
 import * as path from 'path';
 import * as fs from 'fs';
 import { executeBuildJob } from './worker.ts';
+import {
+  analyzeProjectFiles,
+  validateZipEntry,
+} from './analyzer.ts';
+import { determineBuildStrategy } from './strategy.ts';
 import { URL } from 'url';
 
 const PORT = 3000;
@@ -35,13 +40,30 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   if (req.method === 'GET' && req.url?.startsWith('/api/download')) {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const apkPath = url.searchParams.get('path');
+    const workspaceRoot = path.resolve(process.cwd(), '.workspace');
 
-    if (apkPath && fs.existsSync(apkPath) && apkPath.endsWith('.apk')) {
+    let resolvedApkPath = '';
+    try {
+      if (apkPath) {
+        resolvedApkPath = fs.realpathSync(apkPath);
+      }
+    } catch {
+      resolvedApkPath = '';
+    }
+
+    const isInsideWorkspace =
+      resolvedApkPath.startsWith(workspaceRoot + path.sep);
+
+    if (
+      isInsideWorkspace &&
+      fs.existsSync(resolvedApkPath) &&
+      resolvedApkPath.endsWith('.apk')
+    ) {
       res.writeHead(200, {
         'Content-Type': 'application/vnd.android.package-archive',
         'Content-Disposition': 'attachment; filename="app-wrapper-debug.apk"'
       });
-      const stream = fs.createReadStream(apkPath);
+      const stream = fs.createReadStream(resolvedApkPath);
       stream.pipe(res);
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -74,14 +96,51 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         
         console.log(`\n📦 [${buildId}] Extracting...`);
         const zip = new AdmZip(uploadedFile.filepath);
-        zip.extractAllTo(workspaceDir, true);
+        fs.mkdirSync(workspaceDir, { recursive: true });
+        const canonicalWorkspace = fs.realpathSync(workspaceDir);
+        const filePaths: string[] = [];
+
+        for (const entry of zip.getEntries()) {
+          if (entry.isDirectory) continue;
+
+          const relativePath = entry.entryName.replace(/\\/g, '/');
+          if (!validateZipEntry(relativePath)) {
+            throw new Error(`Blocked unsafe ZIP path: ${relativePath}`);
+          }
+
+          const destination = path.resolve(
+            canonicalWorkspace,
+            relativePath,
+          );
+
+          if (
+            !destination.startsWith(canonicalWorkspace + path.sep) &&
+            destination !== canonicalWorkspace
+          ) {
+            throw new Error(`Blocked ZIP path breakout: ${relativePath}`);
+          }
+
+          fs.mkdirSync(path.dirname(destination), { recursive: true });
+          fs.writeFileSync(destination, entry.getData());
+          filePaths.push(relativePath);
+        }
 
         console.log(`🚀 Building APK...`);
-        const result = await executeBuildJob(workspaceDir, {
-          strategyName: 'web-wrapper',
-          outputArtifact: 'app-wrapper-debug.apk',
-          buildId: buildId
-        });
+        const analysis = analyzeProjectFiles(filePaths);
+        if (analysis.projectType === 'Unknown') {
+          throw new Error('Unable to determine project type');
+        }
+
+        const strategy = determineBuildStrategy(analysis);
+        const uploadedName =
+          typeof uploadedFile.originalFilename === 'string'
+            ? uploadedFile.originalFilename.replace(/\.zip$/i, '')
+            : 'GeneratedApp';
+        const result = await executeBuildJob(
+          workspaceDir,
+          strategy,
+          uploadedName,
+        );
 
         if (result.success) {
           res.writeHead(200, { 'Content-Type': 'application/json' });

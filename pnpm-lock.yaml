@@ -93,7 +93,6 @@ overrides:
   esbuild>@esbuild/win32-x64: '-'
   esbuild>@esbuild/aix-ppc64: '-'
   esbuild>@esbuild/android-arm: '-'
-  esbuild>@esbuild/android-arm64: '-'
   esbuild>@esbuild/android-x64: '-'
   esbuild>@esbuild/openharmony-arm64: '-'
   lightningcss>lightningcss-android-arm64: '-'
@@ -173,6 +172,9 @@ importers:
       '@types/formidable':
         specifier: ^3.5.1
         version: 3.5.1
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.9.5
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
@@ -197,9 +199,6 @@ importers:
       '@workspace/build-engine':
         specifier: workspace:*
         version: link:../../lib/build-engine
-      '@workspace/build-queue':
-        specifier: workspace:*
-        version: link:../../lib/build-queue
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -209,9 +208,6 @@ importers:
       '@workspace/shared':
         specifier: workspace:*
         version: link:../../lib/shared
-      bullmq:
-        specifier: ^6.1.2
-        version: 6.1.2(ioredis@6.0.0)(pg@8.22.0)
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -224,9 +220,6 @@ importers:
       express:
         specifier: ^5.2.1
         version: 5.2.1
-      ioredis:
-        specifier: ^6.0.0
-        version: 6.0.0
       multer:
         specifier: ^2.2.0
         version: 2.2.0
@@ -876,6 +869,12 @@ packages:
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
+
+  '@esbuild/android-arm64@0.27.3':
+    resolution: {integrity: sha512-YdghPYUmj/FX2SYKJ0OZxf+iaKgMsKHVPF1MAq/P8WirnSpCStzKJFjOjzsW0QQ7oIAiccHdcqjbHmJxRb/dmg==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [android]
 
   '@esbuild/linux-x64@0.27.3':
     resolution: {integrity: sha512-Czi8yzXUWIQYAtL/2y6vogER8pvcsOsk5cpwL4Gk5nJqH5UZiVByIY8Eorm5R13gq+DQKYg0+JyQoytLQas4dA==}
@@ -3559,6 +3558,9 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
+  '@esbuild/android-arm64@0.27.3':
+    optional: true
+
   '@esbuild/linux-x64@0.27.3':
     optional: true
 
@@ -5029,6 +5031,7 @@ snapshots:
 
   esbuild@0.27.3:
     optionalDependencies:
+      '@esbuild/android-arm64': 0.27.3
       '@esbuild/linux-x64': 0.27.3
 
   escalade@3.2.0: {}

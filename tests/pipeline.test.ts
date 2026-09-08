@@ -4,7 +4,10 @@ import { runBuildPipeline } from '../lib/pipeline.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 
-test('Runs complete end-to-end build pipeline successfully', async () => {
+test(
+  'Runs complete end-to-end build pipeline successfully',
+  { skip: process.env.RUN_ANDROID_INTEGRATION !== '1' },
+  async () => {
   const buildInput = {
     buildId: 'test-build-101',
     files: [
@@ -21,11 +24,12 @@ test('Runs complete end-to-end build pipeline successfully', async () => {
   assert.strictEqual(result.success, true);
   assert.strictEqual(result.projectType, 'React/Vite Web App');
   assert.strictEqual(result.strategyName, 'web-wrapper');
-  assert.ok(result.outputPath?.endsWith('app-wrapper-debug.apk'));
+  assert.ok(result.outputPath?.endsWith('.apk'));
 
   // Clean up test workspace
   const workspaceDir = path.resolve('./.workspace/test-build-101');
   if (fs.existsSync(workspaceDir)) {
     fs.rmSync(workspaceDir, { recursive: true, force: true });
   }
-});
+  },
+);

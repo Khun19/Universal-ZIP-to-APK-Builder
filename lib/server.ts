@@ -5,6 +5,7 @@ import { executeBuildJob } from './worker.ts';
 export interface BuildRequestPayload {
   projectPath: string;
   filePaths: string[];
+  appName?: string;
 }
 
 export interface BuildResponse {
@@ -47,7 +48,11 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
   const strategy = determineBuildStrategy(analysis);
 
   // 4. Build Worker Execution
-  const jobResult = await executeBuildJob(projectPath, strategy);
+  const jobResult = await executeBuildJob(
+    projectPath,
+    strategy,
+    payload.appName,
+  );
 
   return {
     success: jobResult.success,

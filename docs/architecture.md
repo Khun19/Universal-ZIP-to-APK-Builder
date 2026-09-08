@@ -10,8 +10,8 @@ The API creates a real job. A job may become `SUCCESS` only after the isolated A
 2. Inspect ZIP entries before extraction. Reject absolute paths, traversal, symlinks, excessive file count, oversized archives, and suspicious compression ratios.
 3. Extract into a per-job temporary directory.
 4. Run the detector registry and persist structured analysis.
-5. Queue a BullMQ job in Redis.
-6. Run the native Gradle project as-is, or the web-to-Capacitor strategy, inside `docker/android-builder`.
+5. Select the local build strategy and execute the build.
+6. Run the native Gradle project as-is, or the web-to-Capacitor strategy, locally using the Android SDK and Gradle available in Termux.
 7. Stream child-process output into the build log store.
 8. Validate the APK and persist artifact metadata.
 

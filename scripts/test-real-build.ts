@@ -9,7 +9,6 @@ async function testRealBuild() {
   console.log(`====================================================\n`);
 
   const sampleFiles = [
-    { relativePath: 'package.json', content: '{"name": "real-test-app", "version": "1.0.0"}' },
     { relativePath: 'index.html', content: '<html><body><h1>Hello from Real APK Build!</h1></body></html>' }
   ];
 

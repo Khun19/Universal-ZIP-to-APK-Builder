@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import multer from "multer";
 import { analyzeProject } from "@workspace/analyzer";
-import { buildQueue } from "@workspace/build-queue";
 import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload, createBuild as persistBuild } from "@workspace/db/repository";
 import { safeExtract } from "@workspace/security";
 
@@ -63,10 +62,11 @@ router.post("/projects/:id/build", async (req, res, next) => {
     if (!item || !analysis) return res.status(404).json({ error: "Project analysis required" });
     if (analysis.blockers.length) return res.status(409).json({ error: "Project is not compatible", blockers: analysis.blockers });
     const job = await persistBuild(projectId);
-    const queue = buildQueue();
-    await queue.add(job.id, { projectId, buildId: job.id, projectPath, projectType: analysis.projectType, strategy: analysis.recommendedStrategy });
-    await queue.close();
-    res.status(202).json(job);
+    res.status(202).json({
+      ...job,
+      status: "QUEUED",
+      message: "Legacy API build queue removed. Use the local Termux build executor."
+    });
   } catch (error) { return next(error); }
 });
 

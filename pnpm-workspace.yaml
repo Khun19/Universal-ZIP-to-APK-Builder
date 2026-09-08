@@ -69,6 +69,17 @@ catalog:
 
 autoInstallPeers: false
 
+# Keep the native esbuild binary needed by both the Replit/Linux development
+# host and Termux on Android/aarch64. Without this, pnpm installs esbuild's
+# JavaScript package but removes @esbuild/android-arm64.
+supportedArchitectures:
+  os:
+    - current
+    - android
+  cpu:
+    - current
+    - arm64
+
 onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
@@ -99,7 +110,6 @@ overrides:
   "esbuild>@esbuild/win32-x64": "-"
   "esbuild>@esbuild/aix-ppc64": '-'
   "esbuild>@esbuild/android-arm": '-'
-  "esbuild>@esbuild/android-arm64": '-'
   "esbuild>@esbuild/android-x64": '-'
   "esbuild>@esbuild/openharmony-arm64": '-'
   "lightningcss>lightningcss-android-arm64": "-"

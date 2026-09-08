@@ -28,3 +28,16 @@ test('Determines web wrapper strategy for React/Vite projects', () => {
   assert.strictEqual(strategy.strategyName, 'web-wrapper');
   assert.strictEqual(strategy.outputArtifact, 'app-wrapper-debug.apk');
 });
+
+test('Determines Capacitor strategy for Capacitor projects', () => {
+  const analysis: AnalysisResult = {
+    projectType: 'Capacitor',
+    confidence: 98,
+    evidence: ['Capacitor configuration detected'],
+    warnings: [],
+  };
+
+  const strategy = determineBuildStrategy(analysis);
+  assert.strictEqual(strategy.strategyName, 'capacitor');
+  assert.ok(strategy.buildSteps.some((step) => step.includes('Capacitor sync')));
+});

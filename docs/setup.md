@@ -1,11 +1,9 @@
 # Local setup
 
 1. Install Node 20+, pnpm, Docker, PostgreSQL, and Redis.
-2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `REDIS_URL`.
 3. Build the Android worker:
 
 ```bash
-docker build -t universal-zip-to-apk/android-builder:latest docker/android-builder
 ```
 
 4. Install and check the workspace:

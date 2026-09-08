@@ -4,7 +4,10 @@ import { handleBuildRequest } from '../lib/server.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 
-test('Handles complete build request pipeline successfully', async () => {
+test(
+  'Handles complete build request pipeline successfully',
+  { skip: process.env.RUN_ANDROID_INTEGRATION !== '1' },
+  async () => {
   const projectPath = path.resolve('./.tmp-server-test');
   fs.mkdirSync(path.join(projectPath, 'src'), { recursive: true });
   fs.writeFileSync(path.join(projectPath, 'package.json'), '{"name":"test"}');
@@ -25,7 +28,8 @@ test('Handles complete build request pipeline successfully', async () => {
   if (fs.existsSync(projectPath)) {
     fs.rmSync(projectPath, { recursive: true, force: true });
   }
-});
+  },
+);
 
 test('Rejects malicious path in build request', async () => {
   const payload = {

@@ -1,7 +1,12 @@
 import * as path from 'path';
 
 export interface AnalysisResult {
-  projectType: 'Native Android' | 'React/Vite Web App' | 'Plain HTML/JS' | 'Unknown';
+  projectType:
+    | 'Native Android'
+    | 'Capacitor'
+    | 'React/Vite Web App'
+    | 'Plain HTML/JS'
+    | 'Unknown';
   confidence: number;
   evidence: string[];
   warnings: string[];
@@ -20,30 +25,85 @@ export function validateZipEntry(entryPath: string): boolean {
 export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
   const evidence: string[] = [];
   const warnings: string[] = [];
+  const normalizedPaths = filePaths.map((filePath) =>
+    filePath.replace(/\\/g, '/'),
+  );
 
-  const hasBuildGradle = filePaths.some(f => f.endsWith('build.gradle') || f.endsWith('build.gradle.kts'));
-  const hasAndroidManifest = filePaths.some(f => f.includes('AndroidManifest.xml'));
+  const hasBuildGradle = normalizedPaths.some(
+    (filePath) =>
+      filePath.endsWith('build.gradle') ||
+      filePath.endsWith('build.gradle.kts'),
+  );
+  const hasAndroidManifest = normalizedPaths.some((filePath) =>
+    filePath.endsWith('AndroidManifest.xml'),
+  );
+  const hasCapacitorConfig = normalizedPaths.some((filePath) =>
+    /(^|\/)capacitor\.config\.(json|js|cjs|ts|mjs)$/.test(filePath),
+  );
+  const hasAndroidDirectory = normalizedPaths.some((filePath) =>
+    /^android\/(settings\.gradle|settings\.gradle\.kts|app\/)/.test(
+      filePath,
+    ),
+  );
+
+  if (hasCapacitorConfig) {
+    evidence.push('Capacitor configuration detected');
+    if (hasAndroidDirectory) {
+      evidence.push('Capacitor Android platform detected');
+    } else {
+      warnings.push(
+        'Capacitor Android platform is missing; the build will try to add it using the local Capacitor CLI',
+      );
+    }
+    return {
+      projectType: 'Capacitor',
+      confidence: hasAndroidDirectory ? 98 : 90,
+      evidence,
+      warnings,
+    };
+  }
 
   if (hasBuildGradle && hasAndroidManifest) {
     evidence.push('build.gradle detected');
     evidence.push('AndroidManifest.xml detected');
-    return { projectType: 'Native Android', confidence: 95, evidence, warnings };
+    return {
+      projectType: 'Native Android',
+      confidence: 95,
+      evidence,
+      warnings,
+    };
   }
 
-  const hasPackageJson = filePaths.some(f => f.endsWith('package.json'));
-  const hasViteConfig = filePaths.some(f => f.includes('vite.config.'));
-  const hasIndexHtml = filePaths.some(f => f.includes('index.html'));
+  const hasPackageJson = normalizedPaths.some((filePath) =>
+    filePath.endsWith('package.json'),
+  );
+  const hasViteConfig = normalizedPaths.some((filePath) =>
+    filePath.includes('vite.config.'),
+  );
+  const hasIndexHtml = normalizedPaths.some((filePath) =>
+    filePath.endsWith('index.html'),
+  );
 
   if (hasPackageJson && (hasViteConfig || hasIndexHtml)) {
     evidence.push('package.json detected');
     if (hasViteConfig) evidence.push('Vite config detected');
     if (hasIndexHtml) evidence.push('index.html detected');
-    return { projectType: 'React/Vite Web App', confidence: 90, evidence, warnings };
+    return {
+      projectType: 'React/Vite Web App',
+      confidence: 90,
+      evidence,
+      warnings,
+    };
   }
 
   if (hasIndexHtml && !hasPackageJson) {
     evidence.push('index.html detected without package.json');
-    return { projectType: 'Plain HTML/JS', confidence: 80, evidence, warnings: ['Advanced framework configuration not found'] };
+    return {
+      projectType: 'Plain HTML/JS',
+      confidence: 80,
+      evidence,
+      warnings: ['Advanced framework configuration not found'],
+    };
   }
 
   warnings.push('Could not determine exact project type');

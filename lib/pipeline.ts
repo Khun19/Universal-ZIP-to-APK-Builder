@@ -6,6 +6,7 @@ import { handleBuildRequest, BuildResponse } from './server.ts';
 export interface PipelineInput {
   buildId: string;
   files: { relativePath: string; content: string }[];
+  appName?: string;
 }
 
 export async function runBuildPipeline(input: PipelineInput): Promise<BuildResponse> {
@@ -25,7 +26,8 @@ export async function runBuildPipeline(input: PipelineInput): Promise<BuildRespo
     // 2. Process analysis, strategy selection, and worker build
     const response = await handleBuildRequest({
       projectPath: workspaceDir,
-      filePaths: extractResult.filePaths
+      filePaths: extractResult.filePaths,
+      appName: input.appName,
     });
 
     return response;

@@ -1,7 +1,7 @@
 import { AnalysisResult } from './analyzer.ts';
 
 export interface BuildStrategy {
-  strategyName: 'native-gradle' | 'web-wrapper' | 'unknown';
+  strategyName: 'native-gradle' | 'capacitor' | 'web-wrapper' | 'unknown';
   buildSteps: string[];
   outputArtifact: string;
 }
@@ -20,6 +20,19 @@ export function determineBuildStrategy(analysis: AnalysisResult): BuildStrategy 
           'Locate APK in build/outputs/apk/debug/'
         ],
         outputArtifact: 'app-wrapper-debug.apk'
+      };
+
+    case 'Capacitor':
+      return {
+        strategyName: 'capacitor',
+        buildSteps: [
+          'Install JavaScript dependencies',
+          'Run the web build',
+          'Run Capacitor sync android (and add android when missing)',
+          'Run ./gradlew assembleDebug inside the Android platform',
+          'Locate and validate the APK'
+        ],
+        outputArtifact: 'capacitor-debug.apk'
       };
 
     case 'React/Vite Web App':

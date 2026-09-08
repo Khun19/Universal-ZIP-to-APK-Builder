@@ -9,7 +9,7 @@ Securely analyzes uploaded AI-generated projects and builds validated Android AP
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL`, `REDIS_URL`, `BUILDER_STORAGE_DIR` (see `.env.example`)
+- Local build mode: Android SDK + Gradle on Termux; Redis/Docker are not required.
 
 ## Stack
 
@@ -25,7 +25,7 @@ Securely analyzes uploaded AI-generated projects and builds validated Android AP
 - `lib/analyzer` — detector registry and compatibility analysis
 - `lib/security` — ZIP validation, safe extraction, and SHA-256
 - `lib/build-engine` — real Gradle/Capacitor command selection and process runner
-- `worker` and `docker/android-builder` — isolated real build execution boundary
+- `lib/worker.ts` — local real APK build execution boundary
 - `lib/api-spec/openapi.yaml` — API contract
 - `lib/db/src/schema` — PostgreSQL schema
 

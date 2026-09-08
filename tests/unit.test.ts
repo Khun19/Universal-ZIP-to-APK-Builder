@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { analyzeProject } from "@workspace/analyzer";
-import { buildQueue } from "@workspace/build-queue";
 import { sha256, validateZipName } from "@workspace/security";
 
 test("detects native Android projects without converting them", () => {
@@ -36,11 +35,4 @@ test("calculates SHA-256 from persisted bytes", async () => {
   const file = join(directory, "artifact.apk");
   await writeFile(file, "real bytes are not an APK");
   assert.equal(await sha256(file), "523aca63ab80892725541720d74771b00bd0f0e67bfa280312628d03f53455ca");
-});
-
-test("build queue uses a Redis-backed queue contract", async () => {
-  if (!process.env.REDIS_URL) return;
-  const queue = buildQueue();
-  assert.equal(queue.name, "android-builds");
-  await queue.close();
 });
