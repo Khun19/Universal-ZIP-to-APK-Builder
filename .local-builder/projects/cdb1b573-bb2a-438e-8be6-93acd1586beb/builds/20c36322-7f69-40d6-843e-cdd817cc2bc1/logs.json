@@ -1,0 +1,5 @@
+[
+  "Build queued for the local Termux executor.",
+  "Analyzing extracted project files...",
+  "Build FAILED: ENOTDIR: not a directory, scandir '/data/data/com.termux/files/home/Universal-ZIP-to-APK-Builder-main/.local-builder/cdb1b573-bb2a-438e-8be6-93acd1586beb/source.zip'"
+]

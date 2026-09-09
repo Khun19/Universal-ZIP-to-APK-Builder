@@ -1,0 +1,18 @@
+{
+  "framework": "React + Vite",
+  "version": null,
+  "buildTool": "Vite",
+  "language": "TypeScript",
+  "packageManager": "npm",
+  "projectType": "Web application",
+  "confidence": 96,
+  "compatibilityScore": 88,
+  "warnings": [],
+  "blockers": [],
+  "recommendedStrategy": "Install dependencies, create Capacitor shell, sync, then build Android with Gradle",
+  "evidence": [
+    "package.json",
+    "react dependency",
+    "Vite configuration"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Personal Finance & Expense Tracker",
+  "description": "A modern, mobile-first personal finance and expense tracking application with offline persistence, real-time analytics, and category breakdown.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

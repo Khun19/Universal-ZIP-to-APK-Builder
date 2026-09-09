@@ -1,0 +1,676 @@
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import { BuildStrategy } from './strategy';
+import { injectAndroidWrapper } from './template';
+import { buildWebProject, findWebProjectRoot } from './web-builder';
+import { syncCapacitorAndroid } from './capacitor-builder';
+import { parseBuildTimeoutMs } from '@workspace/shared';
+
+const execAsync = promisify(exec);
+const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
+
+export interface BuildJobResult {
+  success: boolean;
+  logs: string[];
+  outputPath?: string;
+  error?: string;
+}
+
+/**
+ * Recursively find every *.apk file under a directory.
+ */
+function findApks(directory: string): string[] {
+  if (!fs.existsSync(directory)) return [];
+  const results: string[] = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) results.push(...findApks(full));
+    else if (entry.name.endsWith('.apk')) results.push(full);
+  }
+  return results;
+}
+
+function isAndroidProject(directory: string): boolean {
+  return (
+    fs.existsSync(path.join(directory, 'app')) &&
+    (fs.existsSync(path.join(directory, 'settings.gradle')) ||
+      fs.existsSync(path.join(directory, 'settings.gradle.kts')))
+  );
+}
+
+/**
+ * Accept both a Gradle project at the ZIP root and projects nested under
+ * android/ or a single top-level directory.
+ */
+function findAndroidProjectRoot(projectPath: string): string | undefined {
+  if (isAndroidProject(projectPath)) return projectPath;
+
+  const androidPath = path.join(projectPath, 'android');
+  if (isAndroidProject(androidPath)) return androidPath;
+
+  const queue: Array<{ directory: string; depth: number }> = [
+    { directory: projectPath, depth: 0 },
+  ];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || current.depth >= 2) continue;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current.directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (
+        !entry.isDirectory() ||
+        entry.name === 'node_modules' ||
+        entry.name === '.gradle' ||
+        entry.name === 'build'
+      ) {
+        continue;
+      }
+
+      const child = path.join(current.directory, entry.name);
+      if (isAndroidProject(child)) return child;
+      queue.push({ directory: child, depth: current.depth + 1 });
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Termux ships a native AAPT2 binary that must be selected explicitly for
+ * Android Gradle Plugin builds. Apply the same override to existing native
+ * projects as the generated WebView template uses.
+ */
+export function ensureAapt2Override(androidProjectPath: string): boolean {
+  const configuredAapt2 =
+    process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2';
+
+  if (!fs.existsSync(configuredAapt2)) return false;
+
+  const propertiesPath = path.join(androidProjectPath, 'gradle.properties');
+  const current = fs.existsSync(propertiesPath)
+    ? fs.readFileSync(propertiesPath, 'utf8')
+    : '';
+  const overrideLine = `android.aapt2FromMavenOverride=${configuredAapt2}`;
+  const lines = current.split(/\r?\n/);
+  const overrideIndex = lines.findIndex((line) =>
+    line.trim().startsWith('android.aapt2FromMavenOverride='),
+  );
+
+  if (overrideIndex >= 0) {
+    lines[overrideIndex] = overrideLine;
+  } else {
+    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    lines.push(overrideLine);
+  }
+
+  fs.writeFileSync(propertiesPath, `${lines.join('\n')}\n`);
+  return true;
+}
+
+/**
+ * Some native projects define a custom debug signing config that expects
+ * debug.keystore at the Gradle root instead of Android's usual ~/.android
+ * location. Make that existing local debug keystore available without
+ * changing the project's signing configuration.
+ */
+/**
+ * Normalize empty secret values used by Android Secrets Gradle Plugin.
+ *
+ * Some AI Studio-generated Android projects use:
+ *   secrets { propertiesFileName = ".env" ... }
+ *
+ * If .env.example contains:
+ *   GEMINI_API_KEY=
+ *
+ * the Secrets plugin can generate invalid Java such as:
+ *   public static final String GEMINI_API_KEY = ;
+ *
+ * Ensure an empty value is represented explicitly so generated BuildConfig
+ * remains valid Java. Never invent or log an API key.
+ */
+export function ensureSecretsCompatibility(
+  androidProjectPath: string,
+  logs?: string[],
+): boolean {
+  const candidateFiles = [
+    path.join(androidProjectPath, '.env'),
+    path.join(androidProjectPath, '.env.example'),
+  ];
+
+  let changed = false;
+
+  for (const filePath of candidateFiles) {
+    if (!fs.existsSync(filePath)) continue;
+
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    const lines = content.split(/\r?\n/);
+    let fileChanged = false;
+
+    const normalized = lines.map((line) => {
+      const match = line.match(/^(\s*GEMINI_API_KEY\s*=\s*)(.*)$/);
+
+      if (!match) return line;
+
+      const prefix = match[1];
+      const value = match[2].trim();
+
+      // Only normalize a genuinely empty value.
+      // Preserve an existing configured key exactly as supplied.
+      if (value === '') {
+        fileChanged = true;
+        changed = true;
+        return `${prefix}""`;
+      }
+
+      return line;
+    });
+
+    if (fileChanged) {
+      fs.writeFileSync(filePath, normalized.join('\n'));
+    }
+  }
+
+  if (changed) {
+    logs?.push(
+      'Normalized empty GEMINI_API_KEY secret configuration for Android BuildConfig compatibility.',
+    );
+  }
+
+  return changed;
+}
+
+export function ensureReferencedDebugKeystore(
+  androidProjectPath: string,
+): boolean {
+  const expectedPath = path.join(androidProjectPath, 'debug.keystore');
+  if (fs.existsSync(expectedPath)) return true;
+
+  const gradleFiles = [
+    path.join(androidProjectPath, 'build.gradle'),
+    path.join(androidProjectPath, 'build.gradle.kts'),
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+  const referencesKeystore = gradleFiles.some((filePath) => {
+    if (!fs.existsSync(filePath)) return false;
+    const content = fs.readFileSync(filePath, 'utf8');
+    return /debug\.keystore|debugConfig/.test(content);
+  });
+
+  if (!referencesKeystore) return false;
+
+  const homeDir = process.env.HOME || '/data/data/com.termux/files/home';
+  const sourcePath = path.join(homeDir, '.android', 'debug.keystore');
+  if (!fs.existsSync(sourcePath)) return false;
+
+  fs.copyFileSync(sourcePath, expectedPath);
+  return true;
+}
+
+/**
+ * Verify that a file is an actual, non-empty, valid Android APK
+ * (a real zip archive containing AndroidManifest.xml) rather than a
+ * placeholder. Throws if validation fails.
+ */
+async function assertRealApk(filePath: string): Promise<{ size: number; sha256: string }> {
+  const info = fs.statSync(filePath);
+  if (!info.isFile() || info.size <= 0) {
+    throw new Error(`APK artifact at ${filePath} is missing or empty`);
+  }
+
+  const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, { maxBuffer: 2 * 1024 * 1024 });
+  if (!stdout.split(/\r?\n/).includes('AndroidManifest.xml')) {
+    throw new Error(`File at ${filePath} is not a valid APK (no AndroidManifest.xml found)`);
+  }
+
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(filePath));
+  return { size: info.size, sha256: hash.digest('hex') };
+}
+
+function commandErrorText(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error ?? '');
+  const value = error as {
+    message?: unknown;
+    stdout?: unknown;
+    stderr?: unknown;
+  };
+  return [value.message, value.stdout, value.stderr]
+    .filter((part) => part !== undefined && part !== null)
+    .map(String)
+    .join('\n');
+}
+
+/**
+ * A wrapper bootstrap failure is different from a Gradle project failure.
+ * Only the former is safe to retry with the installed Termux Gradle.
+ */
+export function isGradleWrapperBootstrapFailure(error: unknown): boolean {
+  const text = commandErrorText(error);
+  const wrapperBootstrap = /GradleWrapperMain|org\.gradle\.wrapper\.Install|Downloading .*gradle.*distribution|Could not install Gradle distribution/i.test(text);
+  const networkFailure = /Connection refused|UnknownHostException|SocketTimeoutException|timed out|network is unreachable|unable to access/i.test(text);
+  return wrapperBootstrap && networkFailure;
+}
+
+function findJavaHome(version: 17 | 21): string | undefined {
+  const prefix = process.env.PREFIX;
+  const versionHome = version === 21
+    ? 'java-21-openjdk'
+    : 'java-17-openjdk';
+
+  const envHome = version === 21
+    ? process.env.JAVA_21_HOME
+    : process.env.JAVA_17_HOME;
+
+  const candidates = [
+    envHome,
+    prefix ? path.join(prefix, `lib/jvm/${versionHome}`) : undefined,
+    `/usr/lib/jvm/${versionHome}`,
+    `/usr/lib/jvm/${versionHome}-amd64`,
+    `/usr/lib/jvm/${versionHome}-arm64`,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return candidates.find((candidate) =>
+    fs.existsSync(path.join(candidate, 'bin', 'java')),
+  );
+}
+
+/**
+ * Detect the Java source/target requirement from Android Gradle files.
+ *
+ * Capacitor 7 / modern Android projects may require Java 21, while older
+ * Android projects commonly require Java 17. Prefer the highest explicit
+ * requirement found in the project, but only when that JDK is installed.
+ */
+function detectProjectJavaVersion(androidProjectPath: string): 17 | 21 {
+  const gradleFiles: string[] = [];
+
+  const collectGradleFiles = (directory: string, depth = 0): void => {
+    if (depth > 3 || !fs.existsSync(directory)) return;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (
+        entry.name === 'build' ||
+        entry.name === '.gradle' ||
+        entry.name === 'node_modules'
+      ) {
+        continue;
+      }
+
+      const fullPath = path.join(directory, entry.name);
+
+      if (
+        entry.isFile() &&
+        (entry.name === 'build.gradle' ||
+          entry.name === 'build.gradle.kts')
+      ) {
+        gradleFiles.push(fullPath);
+      } else if (entry.isDirectory()) {
+        collectGradleFiles(fullPath, depth + 1);
+      }
+    }
+  };
+
+  collectGradleFiles(androidProjectPath);
+
+  let highestRequired: 17 | 21 = 17;
+
+  for (const filePath of gradleFiles) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    // JavaVersion.VERSION_21 / JavaLanguageVersion.of(21)
+    if (
+      /VERSION_21|JavaLanguageVersion\.of\(\s*21\s*\)|sourceCompatibility\s*[=:]\s*['"]?21\b|targetCompatibility\s*[=:]\s*['"]?21\b/i.test(
+        content,
+      )
+    ) {
+      highestRequired = 21;
+    }
+  }
+
+  return highestRequired;
+}
+
+function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
+  const requiredVersion = detectProjectJavaVersion(androidProjectPath);
+
+  // Use the project's required JDK when it is installed.
+  // If Java 21 is required but unavailable, fall back to Java 17 only so
+  // the actual Gradle/Javac error is preserved instead of failing silently.
+  const selectedHome =
+    findJavaHome(requiredVersion) ??
+    (requiredVersion === 21 ? findJavaHome(17) : undefined);
+
+  if (!selectedHome) return process.env;
+
+  return {
+    ...process.env,
+    JAVA_HOME: selectedHome,
+    PATH: `${path.join(selectedHome, 'bin')}${path.delimiter}${process.env.PATH || ''}`,
+  };
+}
+export function isGradleJavaCompatibilityFailure(error: unknown): boolean {
+  const text = commandErrorText(error);
+  return /Unsupported class file major version|requires Java .* to run|Could not determine java version/i.test(text);
+}
+export async function executeBuildJob(
+  projectPath: string,
+  strategy: BuildStrategy,
+  appName?: string,
+): Promise<BuildJobResult> {
+  const logs: string[] = [];
+  let syncedAndroidProjectPath: string | undefined;
+
+  if (strategy.strategyName === 'unknown') {
+    return {
+      success: false,
+      logs: ['Error: Unknown build strategy.'],
+      error: 'Invalid strategy'
+    };
+  }
+
+  try {
+    if (!fs.existsSync(projectPath)) {
+      fs.mkdirSync(projectPath, { recursive: true });
+    }
+
+    logs.push(`Starting build execution for strategy: ${strategy.strategyName}`);
+
+    // If Web Wrapper strategy, build web app first then inject Android template
+    if (strategy.strategyName === 'web-wrapper') {
+      logs.push('Building web application before Android wrapper...');
+
+      const webProjectPath = findWebProjectRoot(projectPath);
+      if (webProjectPath !== projectPath) {
+        logs.push(`Nested web project detected: ${webProjectPath}`);
+      }
+
+      const webBuild = await buildWebProject(webProjectPath);
+      logs.push(...webBuild.logs);
+
+      if (!webBuild.success || !webBuild.outputDir) {
+        const error = webBuild.error || 'Web build failed';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      logs.push('Injecting Android WebView Wrapper Template...');
+      injectAndroidWrapper(
+        projectPath,
+        webBuild.outputDir,
+        appName || 'GeneratedApp',
+      );
+      logs.push('Android WebView template successfully generated.');
+    }
+
+    if (strategy.strategyName === 'capacitor') {
+      logs.push('Building Capacitor web assets before Android sync...');
+
+      const webProjectPath = findWebProjectRoot(projectPath);
+      if (webProjectPath !== projectPath) {
+        logs.push(`Nested Capacitor project detected: ${webProjectPath}`);
+      }
+
+      const webBuild = await buildWebProject(webProjectPath);
+      logs.push(...webBuild.logs);
+
+      if (!webBuild.success || !webBuild.outputDir) {
+        const error = webBuild.error || 'Capacitor web build failed';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      try {
+        const syncResult = await syncCapacitorAndroid(webProjectPath);
+        logs.push(...syncResult.logs);
+        syncedAndroidProjectPath = syncResult.androidProjectPath;
+        logs.push(`Capacitor Android project ready at ${syncedAndroidProjectPath}.`);
+      } catch (syncError: any) {
+        const error = `Capacitor Android sync failed: ${syncError.message}`;
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+    }
+
+    const androidProjectPath =
+      syncedAndroidProjectPath && fs.existsSync(path.join(syncedAndroidProjectPath, 'app'))
+        ? syncedAndroidProjectPath
+        : findAndroidProjectRoot(projectPath);
+    if (!androidProjectPath) {
+      const error =
+        'No Android Gradle project with an app/ module was found.';
+      logs.push(`Error: ${error}`);
+      return { success: false, logs, error };
+    }
+
+    // A real native Android build requires an app/ module to exist.
+    // If it doesn't, there is nothing to build — fail honestly instead
+    // of pretending a build happened.
+    const appDir = path.join(androidProjectPath, 'app');
+    if (!fs.existsSync(appDir)) {
+      const error = 'No Android app module (app/) found — cannot run a Gradle build.';
+      logs.push(`Error: ${error}`);
+      return { success: false, logs, error };
+    }
+
+    const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+    const localPropertiesPath = path.join(
+      androidProjectPath,
+      'local.properties',
+    );
+    if (sdkPath && !fs.existsSync(localPropertiesPath)) {
+      fs.writeFileSync(localPropertiesPath, `sdk.dir=${sdkPath}\n`);
+      logs.push('Generated local.properties from ANDROID_HOME.');
+    }
+
+    if (ensureAapt2Override(androidProjectPath)) {
+      logs.push(
+        `Using AAPT2 override: ${process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2'}`,
+      );
+    } else {
+      logs.push(
+        'AAPT2 override not applied because the configured AAPT2 binary was not found.',
+      );
+    }
+
+    if (ensureReferencedDebugKeystore(androidProjectPath)) {
+      logs.push(
+        'Referenced debug.keystore was made available at the Gradle project root.',
+      );
+    }
+
+    // AI Studio / Secrets Gradle Plugin compatibility.
+    // Prevent empty GEMINI_API_KEY values from producing invalid BuildConfig Java.
+    ensureSecretsCompatibility(androidProjectPath, logs);
+
+    const gradlewPath = path.join(androidProjectPath, 'gradlew');
+    let gradleCommand = 'gradle';
+
+    if (fs.existsSync(gradlewPath)) {
+      try {
+        fs.chmodSync(gradlewPath, 0o755);
+      } catch {
+        // Non-fatal: chmod can fail on some filesystems; bash below can still
+        // execute a readable wrapper script.
+      }
+      gradleCommand = 'bash ./gradlew';
+      logs.push('Using the project Gradle Wrapper.');
+    } else {
+      // Do not generate a wrapper with a hard-coded version. Android projects
+      // may require a newer Gradle than the builder template, especially when
+      // they use a newer Android Gradle Plugin. The installed Gradle version
+      // is the user's explicit build environment and is used as-is.
+      logs.push(
+        'gradlew not found — using the installed Gradle version without generating a wrapper.',
+      );
+      try {
+        const { stdout } = await execAsync('gradle --version', {
+          cwd: androidProjectPath,
+          timeout: 30_000,
+          maxBuffer: 256 * 1024,
+        });
+        const versionLine = stdout
+          .split(/\r?\n/)
+          .find((line) => line.trim().startsWith('Gradle '));
+        logs.push(`Installed Gradle detected: ${versionLine?.trim() || 'unknown version'}`);
+      } catch (gradleErr: any) {
+        const error = `No project Gradle Wrapper and installed Gradle is unavailable: ${gradleErr.message}`;
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+    }
+
+    const command = `${gradleCommand} assembleDebug --no-daemon --stacktrace`;
+    logs.push(`Executing Gradle command: ${command}`);
+    const gradleEnvironment =
+      gradleCommand === 'bash ./gradlew'
+        ? getGradleEnvironment(androidProjectPath)
+        : process.env;
+    if (gradleEnvironment.JAVA_HOME !== process.env.JAVA_HOME) {
+      logs.push(`Using Gradle Java runtime: ${gradleEnvironment.JAVA_HOME}`);
+    }
+
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: androidProjectPath,
+        timeout: BUILD_TIMEOUT_MS,
+        env: gradleEnvironment,
+      });
+      if (stdout) logs.push(`[Gradle Output]: ${stdout.slice(-2000)}`);
+      if (stderr) logs.push(`[Gradle Stderr]: ${stderr.slice(-1000)}`);
+    } catch (cmdErr: any) {
+      const stdout = cmdErr.stdout ? String(cmdErr.stdout).slice(-2000) : '';
+      const stderr = cmdErr.stderr ? String(cmdErr.stderr).slice(-2000) : '';
+      logs.push(`[Gradle Failure]: ${cmdErr.message}`);
+      if (stdout) logs.push(`[Gradle Output]: ${stdout}`);
+      if (stderr) logs.push(`[Gradle Stderr]: ${stderr}`);
+
+      // A project Gradle wrapper may be present but unusable because its
+      // distribution is not cached or cannot be downloaded on Termux.
+      // Preserve wrapper-first behavior, but recover with the installed
+      // Gradle only for an identifiable wrapper bootstrap/network failure.
+      if (
+        !isGradleWrapperBootstrapFailure(cmdErr) &&
+        !isGradleJavaCompatibilityFailure(cmdErr)
+      ) {
+        return {
+          success: false,
+          logs,
+          error: `Gradle build failed: ${cmdErr.message}`,
+        };
+      }
+
+      logs.push(
+        'Gradle Wrapper bootstrap failed; checking the installed Gradle fallback.',
+      );
+
+      try {
+        const { stdout: versionOutput } = await execAsync('gradle --version', {
+          cwd: androidProjectPath,
+          timeout: 30_000,
+          maxBuffer: 256 * 1024,
+        });
+        const versionLine = versionOutput
+          .split(/\r?\n/)
+          .find((line) => line.trim().startsWith('Gradle '));
+        logs.push(
+          `Installed Gradle fallback available: ${versionLine?.trim() || 'unknown version'}`,
+        );
+
+        const fallbackCommand = 'gradle assembleDebug --no-daemon --stacktrace';
+        logs.push(`Executing fallback Gradle command: ${fallbackCommand}`);
+        const fallbackResult = await execAsync(fallbackCommand, {
+          cwd: androidProjectPath,
+          timeout: BUILD_TIMEOUT_MS,
+        });
+        if (fallbackResult.stdout) {
+          logs.push(`[Fallback Gradle Output]: ${String(fallbackResult.stdout).slice(-2000)}`);
+        }
+        if (fallbackResult.stderr) {
+          logs.push(`[Fallback Gradle Stderr]: ${String(fallbackResult.stderr).slice(-1000)}`);
+        }
+        logs.push('Installed Gradle fallback completed successfully.');
+      } catch (fallbackErr: any) {
+        const fallbackStdout = fallbackErr.stdout
+          ? String(fallbackErr.stdout).slice(-2000)
+          : '';
+        const fallbackStderr = fallbackErr.stderr
+          ? String(fallbackErr.stderr).slice(-2000)
+          : '';
+        logs.push(`[Fallback Gradle Failure]: ${fallbackErr.message}`);
+        if (fallbackStdout) logs.push(`[Fallback Gradle Output]: ${fallbackStdout}`);
+        if (fallbackStderr) logs.push(`[Fallback Gradle Stderr]: ${fallbackStderr}`);
+        return {
+          success: false,
+          logs,
+          error: `Gradle wrapper and installed Gradle fallback failed: ${fallbackErr.message}`,
+        };
+      }
+    }
+
+    // Locate the actual APK produced by Gradle. Do not assume a filename —
+    // search the real output tree.
+    const apks = findApks(path.join(androidProjectPath, 'app/build/outputs/apk'));
+    if (!apks.length) {
+      const error = 'Gradle finished without errors but no APK was found in app/build/outputs/apk/. The build did not actually produce an artifact.';
+      logs.push(`Error: ${error}`);
+      return { success: false, logs, error };
+    }
+
+    // Prefer a debug APK if multiple were produced (e.g. flavors).
+    const apkPath = apks.find(p => p.includes('debug')) ?? apks[0];
+
+    let validated: { size: number; sha256: string };
+    try {
+      validated = await assertRealApk(apkPath);
+    } catch (validationErr: any) {
+      logs.push(`Error: ${validationErr.message}`);
+      return { success: false, logs, error: validationErr.message };
+    }
+
+    logs.push(
+      `Build finished. Verified real APK at ${apkPath} (${validated.size} bytes, SHA-256 ${validated.sha256}).`
+    );
+
+    return {
+      success: true,
+      logs,
+      outputPath: apkPath
+    };
+  } catch (err: any) {
+    logs.push(`Fatal build failure: ${err.message}`);
+    return {
+      success: false,
+      logs,
+      error: err.message
+    };
+  }
+}

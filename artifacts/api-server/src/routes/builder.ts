@@ -1,14 +1,16 @@
 import { Router } from "express";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createReadStream } from "node:fs";
 import multer from "multer";
 import { analyzeProject } from "@workspace/analyzer";
-import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload, createBuild as persistBuild } from "@workspace/db/repository";
+import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload, createBuild as persistBuild, createProject } from "../lib/local-repository";
 import { safeExtract } from "@workspace/security";
+import { executeLocalBuild } from "../lib/local-build-executor";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES ?? 250 * 1024 * 1024), files: 1 } });
-const root = path.resolve(process.env.BUILDER_STORAGE_DIR ?? "/tmp/universal-zip-to-apk");
+const root = path.resolve(process.env.BUILDER_STORAGE_DIR ?? ".local-builder");
 const id = (value: string | string[]) => String(value);
 
 router.get("/projects", async (_req, res, next) => { try { res.json(await listProjects()); } catch (error) { next(error); } });
@@ -62,10 +64,15 @@ router.post("/projects/:id/build", async (req, res, next) => {
     if (!item || !analysis) return res.status(404).json({ error: "Project analysis required" });
     if (analysis.blockers.length) return res.status(409).json({ error: "Project is not compatible", blockers: analysis.blockers });
     const job = await persistBuild(projectId);
+
+    void executeLocalBuild(job.id, projectId).catch(async (error) => {
+      console.error("Local build executor failed:", error);
+    });
+
     res.status(202).json({
       ...job,
       status: "QUEUED",
-      message: "Legacy API build queue removed. Use the local Termux build executor."
+      message: "Local build started."
     });
   } catch (error) { return next(error); }
 });
@@ -78,12 +85,14 @@ router.get("/artifacts/:id/download", async (req, res, next) => {
     if (!artifact) return res.status(404).json({ error: "Artifact not found" });
     res.setHeader("Content-Type", "application/vnd.android.package-archive");
     res.setHeader("Content-Disposition", `attachment; filename="${artifact.filename.replace(/[^A-Za-z0-9._-]/g, "_")}"`);
-    res.sendFile(path.resolve(artifact.file_path), { dotfiles: "deny" });
+    const filePath = path.resolve(artifact.file_path);
+    const stream = createReadStream(filePath);
+    stream.on("error", next);
+    stream.pipe(res);
   } catch (error) { return next(error); }
 });
 
 async function persistProject(name: string) {
-  const { createProject } = await import("@workspace/db/repository");
   return createProject(name);
 }
 export default router;

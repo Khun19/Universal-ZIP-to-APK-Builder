@@ -1,0 +1,18 @@
+{
+  "framework": "Native Android",
+  "version": null,
+  "buildTool": "Gradle",
+  "language": "Kotlin",
+  "packageManager": "npm",
+  "projectType": "Android application",
+  "confidence": 98,
+  "compatibilityScore": 96,
+  "warnings": [],
+  "blockers": [],
+  "recommendedStrategy": "Native Gradle build using the project's Gradle wrapper",
+  "evidence": [
+    "Gradle settings/build files",
+    "Android manifest",
+    "Kotlin sources"
+  ]
+}

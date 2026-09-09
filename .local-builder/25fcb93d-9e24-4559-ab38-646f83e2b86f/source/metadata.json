@@ -1,0 +1,6 @@
+{
+  "name": "ZIP to APK Agent",
+  "description": "Autonomous AI software engineer agent to manage, debug, test, and build the Universal ZIP-to-APK Builder system with Termux.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
