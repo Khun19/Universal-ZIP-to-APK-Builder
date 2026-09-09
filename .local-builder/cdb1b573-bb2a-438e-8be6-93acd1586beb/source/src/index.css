@@ -1,8 +1,0 @@
-@import "tailwindcss";
-
-@layer utilities {
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom, 0.75rem);
-  }
-}
-
