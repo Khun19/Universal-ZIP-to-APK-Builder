@@ -1,1 +1,1 @@
-trigger Test A SAF bridge workflow after patch-runner fix
+trigger SAF bridge workflow after YAML and template compatibility fixes
