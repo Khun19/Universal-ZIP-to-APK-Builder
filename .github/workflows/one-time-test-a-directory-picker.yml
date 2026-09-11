@@ -29,19 +29,17 @@ jobs:
           from pathlib import Path
           p = Path('scripts/patch-test-a-directory-picker.py')
           s = p.read_text()
-          old = """            @Override
-            public WebResourceResponse shouldInterceptRequest(
-                    WebView view, String url) {
-                return assetLoader.shouldInterceptRequest(Uri.parse(url));
-            }
-"""
-          new = """            @Override
-            @SuppressWarnings(\"deprecation\")
-            public WebResourceResponse shouldInterceptRequest(
-                    WebView view, String url) {
-                return assetLoader.shouldInterceptRequest(Uri.parse(url));
-            }
-"""
+          old = ('            @Override\n'
+                 '            public WebResourceResponse shouldInterceptRequest(\n'
+                 '                    WebView view, String url) {\n'
+                 '                return assetLoader.shouldInterceptRequest(Uri.parse(url));\n'
+                 '            }\n')
+          new = ('            @Override\n'
+                 '            @SuppressWarnings("deprecation")\n'
+                 '            public WebResourceResponse shouldInterceptRequest(\n'
+                 '                    WebView view, String url) {\n'
+                 '                return assetLoader.shouldInterceptRequest(Uri.parse(url));\n'
+                 '            }\n')
           if old in s:
               s = s.replace(old, new, 1)
           p.write_text(s)
