@@ -456,7 +456,7 @@ public class MainActivity extends Activity {
     private final class DirectoryBridge {
         private String cleanPath(String value) {
             if (value == null || value.length() == 0) return "";
-            String normalized = value.replace('\\', '/');
+            String normalized = value.replace('\\\\', '/');
             while (normalized.startsWith("/")) normalized = normalized.substring(1);
             while (normalized.endsWith("/")) normalized = normalized.substring(0, normalized.length() - 1);
             if (normalized.length() == 0) return "";
