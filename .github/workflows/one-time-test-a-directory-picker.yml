@@ -23,6 +23,14 @@ jobs:
           echo "Checked-out SHA: $(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
+      - name: Setup Node and pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.23.0 --activate
+
       - name: Normalize SAF patch script for current template
         run: |
           python3 - <<'PY'
