@@ -78,7 +78,24 @@ async function main() {
       console.log('Project generated at:', gen.projectPath);
       console.log('Generated files:', gen.filePaths.length);
       console.log('Starting build...');
-      const result = await handleBuildRequest({ projectPath: gen.projectPath, filePaths: gen.filePaths, appName });
+
+      // The core build controller expects ZIP-style relative file entries.
+      // Generated templates already live under projectPath, so convert their
+      // absolute filesystem paths to safe project-relative paths at this
+      // pipeline boundary. The legacy ZIP flow remains unchanged.
+      const relativeFilePaths = gen.filePaths.map(filePath => {
+        const relative = path.relative(gen.projectPath!, filePath);
+        if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+          throw new Error(`Generated file escaped project root: ${filePath}`);
+        }
+        return relative.split(path.sep).join('/');
+      });
+
+      const result = await handleBuildRequest({
+        projectPath: gen.projectPath,
+        filePaths: relativeFilePaths,
+        appName,
+      });
       result.logs.forEach(l => console.log('>', l));
       if (result.success && result.outputPath) {
         console.log('\n✅ APK →', result.outputPath);
