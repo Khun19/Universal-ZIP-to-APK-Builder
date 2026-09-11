@@ -235,8 +235,6 @@ src = Path(sys.argv[1])
 root = Path(sys.argv[2])
 
 im = Image.open(src).convert("RGBA")
-# Keep the artwork large inside the adaptive-icon safe area.
-# Android applies its own launcher mask/crop around this foreground.
 im.thumbnail((432, 432), Image.Resampling.LANCZOS)
 
 canvas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
@@ -257,16 +255,9 @@ for folder, size in sizes.items():
     canvas.resize((size, size), Image.Resampling.LANCZOS).save(out, "PNG")
 
 fg = root / "res" / "drawable" / "ic_launcher_foreground.png"
-# Build a true adaptive-icon foreground:
-# remove the solid background color from the source image, keep the
-# foreground artwork, crop it to its visible bounds, then scale it
-# into the adaptive-icon safe zone.
 fg_canvas = Image.new("RGBA", (108, 108), (0, 0, 0, 0))
 fg_src = Image.open(src).convert("RGBA")
 
-# Estimate the background from the four corners and make pixels close
-# to that color transparent. This works well for logos/icons with a
-# solid background while preserving the actual artwork.
 px = fg_src.load()
 w, h = fg_src.size
 corners = [px[0,0], px[w-1,0], px[0,h-1], px[w-1,h-1]]
@@ -276,8 +267,6 @@ for y in range(h):
     for x in range(w):
         r,g,b,a = px[x,y]
         distance = abs(r-bg[0]) + abs(g-bg[1]) + abs(b-bg[2])
-        # Only remove pixels that are very close to the corner background.
-        # Keep bright foreground artwork such as white logos/glyphs.
         if distance < 35 and not (r > 180 and g > 180 and b > 180):
             px[x,y] = (r,g,b,0)
 
@@ -309,7 +298,6 @@ fg_canvas.save(fg, "PNG")
     }
   }
 
-  // --- GUARANTEED KEYSTORE GENERATION ---
   const homeDir = process.env.HOME || '/data/data/com.termux/files/home';
   const keystoreDir = path.join(homeDir, '.android');
   const keystorePath = path.join(keystoreDir, 'debug.keystore');
@@ -324,7 +312,6 @@ fg_canvas.save(fg, "PNG")
     }
   }
 
-  // 0. local.properties
   const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '';
   if (!sdkPath) {
     throw new Error(
@@ -336,7 +323,6 @@ fg_canvas.save(fg, "PNG")
     `sdk.dir=${sdkPath}`
   );
 
-  // 0.5 gradle.properties
   const configuredAapt2 =
     process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2';
   const aapt2Line = fs.existsSync(configuredAapt2)
@@ -350,7 +336,6 @@ android.enableJetifier=true
 ${aapt2Line}`
   );
 
-  // 1. settings.gradle
   fs.writeFileSync(
     path.join(projectDir, 'settings.gradle'),
     `pluginManagement {
@@ -410,7 +395,6 @@ include ':app'`
     );
   }
 
-  // 2. AndroidManifest.xml
   const launcherIconResource = projectIconExtension
     ? `@mipmap/ic_launcher`
     : '@drawable/ic_launcher';
@@ -436,22 +420,29 @@ include ':app'`
 </manifest>`
   );
 
-  // 3. MainActivity.java
   fs.writeFileSync(
     path.join(javaDir, 'MainActivity.java'),
     `package ${packageName};
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.content.res.AssetManager;
+import android.net.Uri;
 import android.os.Bundle;
-import android.webkit.WebView;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.webkit.WebViewAssetLoader;
 import java.io.InputStream;
 
 public class MainActivity extends Activity {
+    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
+    private ValueCallback<Uri[]> filePathCallback;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -459,9 +450,6 @@ public class MainActivity extends Activity {
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
 
-        // Serve bundled files over a stable HTTPS-like origin. This makes
-        // root-relative Vite/React assets such as /assets/index.js resolve
-        // inside the APK instead of becoming file:///assets/... URLs.
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
             .addPathHandler("/", new WebViewAssetLoader.PathHandler() {
                 private final AssetManager assets = getAssets();
@@ -490,17 +478,50 @@ public class MainActivity extends Activity {
 
                     try {
                         InputStream stream = assets.open("www/" + path);
-                        return new WebResourceResponse(
-                            mimeType(path),
-                            "UTF-8",
-                            stream
-                        );
+                        return new WebResourceResponse(mimeType(path), "UTF-8", stream);
                     } catch (Exception error) {
                         return null;
                     }
                 }
             })
             .build();
+
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(
+                    WebView view,
+                    ValueCallback<Uri[]> callback,
+                    FileChooserParams params) {
+                if (filePathCallback != null) {
+                    filePathCallback.onReceiveValue(null);
+                }
+                filePathCallback = callback;
+
+                Intent intent;
+                try {
+                    intent = params.createIntent();
+                } catch (Exception ignored) {
+                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                }
+
+                intent.setAction(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType(params.getAcceptTypes() != null && params.getAcceptTypes().length > 0
+                        && params.getAcceptTypes()[0] != null && !params.getAcceptTypes()[0].isEmpty()
+                        ? params.getAcceptTypes()[0]
+                        : "*/*");
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+
+                try {
+                    startActivityForResult(intent, FILE_CHOOSER_REQUEST_CODE);
+                    return true;
+                } catch (ActivityNotFoundException error) {
+                    filePathCallback.onReceiveValue(null);
+                    filePathCallback = null;
+                    return false;
+                }
+            }
+        });
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -513,17 +534,29 @@ public class MainActivity extends Activity {
             @SuppressWarnings("deprecation")
             public WebResourceResponse shouldInterceptRequest(
                     WebView view, String url) {
-                return assetLoader.shouldInterceptRequest(android.net.Uri.parse(url));
+                return assetLoader.shouldInterceptRequest(Uri.parse(url));
             }
         });
 
         webView.loadUrl("https://appassets.androidplatform.net/index.html");
         setContentView(webView);
     }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+            if (filePathCallback != null) {
+                Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                filePathCallback.onReceiveValue(results);
+                filePathCallback = null;
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
 }`
   );
 
-  // 4. Root build.gradle
   fs.writeFileSync(
     path.join(projectDir, 'build.gradle'),
     `plugins {
@@ -531,7 +564,6 @@ public class MainActivity extends Activity {
 }`
   );
 
-  // 5. app/build.gradle (Forces V1 and V2 Signing)
   fs.writeFileSync(
     path.join(projectDir, 'app/build.gradle'),
     `plugins { 
