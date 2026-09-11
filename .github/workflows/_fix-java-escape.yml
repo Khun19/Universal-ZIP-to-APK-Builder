@@ -1,0 +1,52 @@
+name: Temporary Test A Java Escape Fix
+
+on:
+  push:
+    branches:
+      - fix/test-a-directory-picker
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/test-a-directory-picker
+          fetch-depth: 0
+
+      - name: Fix generated Java backslash escaping
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('lib/template.ts')
+          text = path.read_text()
+          old = "value.replace('\\\\', '/')"
+          new = "value.replace('\\\\\\\\', '/')"
+          if old not in text:
+              raise SystemExit('Expected Java path normalization template was not found')
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected exactly one target occurrence, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          print('Fixed Java template escaping: \\ -> \\\\')
+          PY
+
+      - name: Verify source and TypeScript checks
+        run: |
+          grep -nF "value.replace('\\\\', '/')" lib/template.ts
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm run typecheck:libs
+
+      - name: Commit fix and remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/template.ts
+          git rm .github/workflows/_fix-java-escape.yml
+          git commit -m "fix(test-a): escape Java backslash in SAF bridge"
+          git push origin HEAD:fix/test-a-directory-picker
