@@ -10,15 +10,9 @@ def rep(old: str, new: str, label: str) -> None:
         raise SystemExit(f'{label}: expected exactly one match, got {count}')
     s = s.replace(old, new, 1)
 
-rep(
-    'import android.os.Bundle;\nimport android.webkit.ValueCallback;',
-    'import android.os.Bundle;\nimport android.util.Base64;\nimport android.webkit.JavascriptInterface;\nimport android.webkit.ValueCallback;',
-    'imports',
-)
+rep('import android.os.Bundle;\nimport android.webkit.ValueCallback;', 'import android.os.Bundle;\nimport android.util.Base64;\nimport android.webkit.JavascriptInterface;\nimport android.webkit.ValueCallback;', 'imports')
 
-rep(
-    'import java.io.InputStream;\n\npublic class MainActivity extends Activity {\n    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;\n    private ValueCallback<Uri[]> filePathCallback;',
-    '''import java.io.ByteArrayOutputStream;
+rep('import java.io.InputStream;\n\npublic class MainActivity extends Activity {\n    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;\n    private ValueCallback<Uri[]> filePathCallback;', '''import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import org.json.JSONArray;
@@ -49,131 +43,43 @@ public class MainActivity extends Activity {
             }
             return out.toString();
         }
-        private DocumentFile root() {
-            return directoryTreeUri == null ? null : DocumentFile.fromTreeUri(MainActivity.this, directoryTreeUri);
-        }
+        private DocumentFile root() { return directoryTreeUri == null ? null : DocumentFile.fromTreeUri(MainActivity.this, directoryTreeUri); }
         private DocumentFile document(String relativePath) {
             DocumentFile current = root();
             if (current == null) return null;
             String clean = cleanPath(relativePath);
             if (clean.length() == 0) return current;
-            for (String part : clean.split("/")) {
-                if (current == null || !current.isDirectory()) return null;
-                current = current.findFile(part);
-            }
+            for (String part : clean.split("/")) { if (current == null || !current.isDirectory()) return null; current = current.findFile(part); }
             return current;
         }
-        private DocumentFile parent(String relativePath) {
-            String clean = cleanPath(relativePath);
-            int slash = clean.lastIndexOf('/');
-            return document(slash < 0 ? "" : clean.substring(0, slash));
-        }
-        private String leaf(String relativePath) {
-            String clean = cleanPath(relativePath);
-            int slash = clean.lastIndexOf('/');
-            return slash < 0 ? clean : clean.substring(slash + 1);
-        }
-        @JavascriptInterface
-        public void pickDirectory() {
+        private DocumentFile parent(String relativePath) { String clean = cleanPath(relativePath); int slash = clean.lastIndexOf('/'); return document(slash < 0 ? "" : clean.substring(0, slash)); }
+        private String leaf(String relativePath) { String clean = cleanPath(relativePath); int slash = clean.lastIndexOf('/'); return slash < 0 ? clean : clean.substring(slash + 1); }
+        @JavascriptInterface public void pickDirectory() {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-            try { startActivityForResult(intent, DIRECTORY_PICKER_REQUEST_CODE); }
-            catch (ActivityNotFoundException error) { notifyDirectoryResult(false); }
+            try { startActivityForResult(intent, DIRECTORY_PICKER_REQUEST_CODE); } catch (ActivityNotFoundException error) { notifyDirectoryResult(false); }
         }
-        @JavascriptInterface
-        public String list(String relativePath) {
-            try {
-                DocumentFile dir = document(relativePath);
-                if (dir == null || !dir.isDirectory()) return "[]";
-                JSONArray result = new JSONArray();
-                for (DocumentFile child : dir.listFiles()) {
-                    JSONObject item = new JSONObject();
-                    item.put("name", child.getName() == null ? "" : child.getName());
-                    item.put("kind", child.isDirectory() ? "directory" : "file");
-                    item.put("size", child.isFile() ? child.length() : 0);
-                    result.put(item);
-                }
-                return result.toString();
-            } catch (Exception error) { return "[]"; }
+        @JavascriptInterface public String list(String relativePath) {
+            try { DocumentFile dir = document(relativePath); if (dir == null || !dir.isDirectory()) return "[]"; JSONArray result = new JSONArray(); for (DocumentFile child : dir.listFiles()) { JSONObject item = new JSONObject(); item.put("name", child.getName() == null ? "" : child.getName()); item.put("kind", child.isDirectory() ? "directory" : "file"); item.put("size", child.isFile() ? child.length() : 0); result.put(item); } return result.toString(); } catch (Exception error) { return "[]"; }
         }
-        @JavascriptInterface
-        public String readFile(String relativePath) {
-            try {
-                DocumentFile file = document(relativePath);
-                if (file == null || !file.isFile()) return "";
-                InputStream input = getContentResolver().openInputStream(file.getUri());
-                if (input == null) return "";
-                ByteArrayOutputStream output = new ByteArrayOutputStream();
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-                input.close();
-                return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
-            } catch (Exception error) { return ""; }
+        @JavascriptInterface public String readFile(String relativePath) {
+            try { DocumentFile file = document(relativePath); if (file == null || !file.isFile()) return ""; InputStream input = getContentResolver().openInputStream(file.getUri()); if (input == null) return ""; ByteArrayOutputStream output = new ByteArrayOutputStream(); byte[] buffer = new byte[8192]; int count; while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count); input.close(); return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP); } catch (Exception error) { return ""; }
         }
-        @JavascriptInterface
-        public boolean createDirectory(String relativePath) {
-            try {
-                DocumentFile existing = document(relativePath);
-                if (existing != null) return existing.isDirectory();
-                DocumentFile parent = parent(relativePath);
-                return parent != null && parent.isDirectory() && parent.createDirectory(leaf(relativePath)) != null;
-            } catch (Exception error) { return false; }
+        @JavascriptInterface public boolean createDirectory(String relativePath) {
+            try { DocumentFile existing = document(relativePath); if (existing != null) return existing.isDirectory(); DocumentFile parent = parent(relativePath); return parent != null && parent.isDirectory() && parent.createDirectory(leaf(relativePath)) != null; } catch (Exception error) { return false; }
         }
-        @JavascriptInterface
-        public boolean createFile(String relativePath, String mimeType) {
-            try {
-                DocumentFile existing = document(relativePath);
-                if (existing != null) return existing.isFile();
-                DocumentFile parent = parent(relativePath);
-                return parent != null && parent.isDirectory() && parent.createFile(
-                    mimeType == null || mimeType.length() == 0 ? "application/octet-stream" : mimeType,
-                    leaf(relativePath)
-                ) != null;
-            } catch (Exception error) { return false; }
+        @JavascriptInterface public boolean createFile(String relativePath, String mimeType) {
+            try { DocumentFile existing = document(relativePath); if (existing != null) return existing.isFile(); DocumentFile parent = parent(relativePath); return parent != null && parent.isDirectory() && parent.createFile(mimeType == null || mimeType.length() == 0 ? "application/octet-stream" : mimeType, leaf(relativePath)) != null; } catch (Exception error) { return false; }
         }
-        @JavascriptInterface
-        public boolean writeFile(String relativePath, String base64Data, String mimeType) {
-            try {
-                DocumentFile file = document(relativePath);
-                if (file == null || !file.isFile()) {
-                    if (!createFile(relativePath, mimeType)) return false;
-                    file = document(relativePath);
-                }
-                if (file == null) return false;
-                byte[] data = Base64.decode(base64Data == null ? "" : base64Data, Base64.DEFAULT);
-                OutputStream output = getContentResolver().openOutputStream(file.getUri(), "wt");
-                if (output == null) return false;
-                output.write(data);
-                output.close();
-                return true;
-            } catch (Exception error) { return false; }
+        @JavascriptInterface public boolean writeFile(String relativePath, String base64Data, String mimeType) {
+            try { DocumentFile file = document(relativePath); if (file == null || !file.isFile()) { if (!createFile(relativePath, mimeType)) return false; file = document(relativePath); } if (file == null) return false; byte[] data = Base64.decode(base64Data == null ? "" : base64Data, Base64.DEFAULT); OutputStream output = getContentResolver().openOutputStream(file.getUri(), "wt"); if (output == null) return false; output.write(data); output.close(); return true; } catch (Exception error) { return false; }
         }
-        @JavascriptInterface
-        public boolean remove(String relativePath) {
-            try { DocumentFile file = document(relativePath); return file != null && file.delete(); }
-            catch (Exception error) { return false; }
-        }
-        @JavascriptInterface
-        public String getRootName() {
-            DocumentFile root = root();
-            return root == null || root.getName() == null ? "Selected folder" : root.getName();
-        }
-        private void notifyDirectoryResult(boolean ok) {
-            if (directoryWebView != null) {
-                directoryWebView.post(() -> directoryWebView.evaluateJavascript(
-                    "window.__androidDirectoryPickerResult(" + (ok ? "true" : "false") + ");", null));
-            }
-        }
-    }''',
-    'bridge class',
-)
+        @JavascriptInterface public boolean remove(String relativePath) { try { DocumentFile file = document(relativePath); return file != null && file.delete(); } catch (Exception error) { return false; } }
+        @JavascriptInterface public String getRootName() { DocumentFile root = root(); return root == null || root.getName() == null ? "Selected folder" : root.getName(); }
+        private void notifyDirectoryResult(boolean ok) { if (directoryWebView != null) directoryWebView.post(() -> directoryWebView.evaluateJavascript("window.__androidDirectoryPickerResult(" + (ok ? "true" : "false") + ");", null)); }
+    }''', 'bridge class')
 
-rep(
-    'webView.getSettings().setDomStorageEnabled(true);',
-    'webView.getSettings().setDomStorageEnabled(true);\n        directoryWebView = webView;\n        webView.addJavascriptInterface(new DirectoryBridge(), "AndroidDirectoryBridge");',
-    'bridge registration',
-)
+rep('webView.getSettings().setDomStorageEnabled(true);', 'webView.getSettings().setDomStorageEnabled(true);\n        directoryWebView = webView;\n        webView.addJavascriptInterface(new DirectoryBridge(), "AndroidDirectoryBridge");', 'bridge registration')
 
 js = '''
             @Override
@@ -190,8 +96,7 @@ marker = '''            @Override
 '''
 rep(marker, marker + js, 'page finished')
 
-rep(
-'''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+rep('''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
             if (filePathCallback != null) {
                 Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
                 filePathCallback.onReceiveValue(results);
@@ -199,8 +104,7 @@ rep(
             }
             return;
         }
-        super.onActivityResult(requestCode, resultCode, data);''',
-'''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+        super.onActivityResult(requestCode, resultCode, data);''', '''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
             if (filePathCallback != null) {
                 Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
                 filePathCallback.onReceiveValue(results);
@@ -223,15 +127,8 @@ rep(
             }
             return;
         }
-        super.onActivityResult(requestCode, resultCode, data);''',
-    'activity result',
-)
+        super.onActivityResult(requestCode, resultCode, data);''', 'activity result')
 
-rep(
-    "implementation 'androidx.webkit:webkit:1.12.1'",
-    "implementation 'androidx.webkit:webkit:1.12.1'\n    implementation 'androidx.documentfile:documentfile:1.0.1'",
-    'dependency',
-)
-
+rep("implementation 'androidx.webkit:webkit:1.12.1'", "implementation 'androidx.webkit:webkit:1.12.1'\n    implementation 'androidx.documentfile:documentfile:1.0.1'", 'dependency')
 p.write_text(s)
 print('patched', p)
