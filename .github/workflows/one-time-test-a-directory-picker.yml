@@ -1,0 +1,81 @@
+name: One-time Test A directory picker patch
+
+on:
+  push:
+    branches:
+      - fix/test-a-directory-picker
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'fix(test-a): add Android SAF directory picker bridge'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/test-a-directory-picker
+          fetch-depth: 0
+
+      - name: Patch Android WebView directory picker bridge
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/template.ts')
+          s = p.read_text()
+
+          old_imports = '''import android.app.Activity;\nimport android.content.ActivityNotFoundException;\nimport android.content.Intent;\nimport android.content.res.AssetManager;\nimport android.net.Uri;\nimport android.os.Bundle;\nimport android.webkit.ValueCallback;\nimport android.webkit.WebChromeClient;'''
+          new_imports = '''import android.app.Activity;\nimport android.content.ActivityNotFoundException;\nimport android.content.Intent;\nimport android.content.res.AssetManager;\nimport android.net.Uri;\nimport android.os.Bundle;\nimport android.util.Base64;\nimport android.webkit.JavascriptInterface;\nimport android.webkit.ValueCallback;\nimport android.webkit.WebChromeClient;'''
+          if old_imports not in s:
+              raise SystemExit('expected import block not found')
+          s = s.replace(old_imports, new_imports, 1)
+
+          old_class = '''public class MainActivity {\n    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;\n    private ValueCallback<Uri[]> filePathCallback;'''
+          new_class = '''public class MainActivity {\n    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;\n    private static final int DIRECTORY_PICKER_REQUEST_CODE = 1002;\n    private ValueCallback<Uri[]> filePathCallback;\n    private WebView directoryWebView;\n    private Uri directoryTreeUri;\n\n    private final class DirectoryBridge {\n        @JavascriptInterface\n        public void pickDirectory() {\n            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);\n            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);\n            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);\n            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);\n            try {\n                startActivityForResult(intent, DIRECTORY_PICKER_REQUEST_CODE);\n            } catch (ActivityNotFoundException error) {\n                notifyDirectoryResult(false);\n            }\n        }\n\n        @JavascriptInterface\n        public String getRootUri() {\n            return directoryTreeUri == null ? "" : directoryTreeUri.toString();\n        }\n\n        private void notifyDirectoryResult(boolean ok) {\n            if (directoryWebView == null) return;\n            String js = "window.__androidDirectoryPickerResult(" + (ok ? "true" : "false") + ");";\n            directoryWebView.post(() -> directoryWebView.evaluateJavascript(js, null));\n        }\n    }'''
+          if old_class not in s:
+              raise SystemExit('expected MainActivity header not found')
+          s = s.replace(old_class, new_class, 1)
+
+          old_settings = '''        webView.getSettings().setJavaScriptEnabled(true);\n        webView.getSettings().setDomStorageEnabled(true);'''
+          new_settings = '''        webView.getSettings().setJavaScriptEnabled(true);\n        webView.getSettings().setDomStorageEnabled(true);\n        directoryWebView = webView;\n        webView.addJavascriptInterface(new DirectoryBridge(), "AndroidDirectoryBridge");'''
+          if old_settings not in s:
+              raise SystemExit('expected WebView settings block not found')
+          s = s.replace(old_settings, new_settings, 1)
+
+          old_load = '''        webView.loadUrl("https://appassets.androidplatform.net/index.html");\n        setContentView(webView);'''
+          new_load = '''        webView.setWebViewClient(new WebViewClient() {\n            @Override\n            public void onPageFinished(WebView view, String url) {\n                super.onPageFinished(view, url);\n                view.evaluateJavascript(\n                    "(function(){if(window.showDirectoryPicker)return;window.__androidDirectoryPickerResult=function(ok){var f=window.__androidDirectoryPickerResolve;if(f){window.__androidDirectoryPickerResolve=null;f(ok?window.__androidDirectoryHandle:null);}};window.__androidDirectoryHandle={kind:'directory',name:'Selected folder',queryPermission:function(){return Promise.resolve('granted')},requestPermission:function(){return Promise.resolve('granted')},getDirectoryHandle:function(){return Promise.reject(new Error('Nested directory handles are not supported by this Android bridge'))},getFileHandle:function(){return Promise.reject(new Error('Nested file handles are not supported by this Android bridge'))},removeEntry:function(){return Promise.reject(new Error('File operations are not available until the Android SAF file-operation bridge is added'))},resolve:function(){return Promise.resolve(null)},entries:function(){return (async function*(){})()},keys:function(){return (async function*(){})()},values:function(){return (async function*(){})()}};window.showDirectoryPicker=function(){return new Promise(function(resolve){window.__androidDirectoryPickerResolve=resolve;AndroidDirectoryBridge.pickDirectory();});};})();", null\n                );\n            }\n        });\n\n        webView.loadUrl("https://appassets.androidplatform.net/index.html");\n        setContentView(webView);'''
+          if old_load not in s:
+              raise SystemExit('expected load block not found')
+          s = s.replace(old_load, new_load, 1)
+
+          old_result = '''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {\n            if (filePathCallback != null) {\n                Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);\n                filePathCallback.onReceiveValue(results);\n                filePathCallback = null;\n            }\n            return;\n        }\n        super.onActivityResult(requestCode, resultCode, data);'''
+          new_result = '''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {\n            if (filePathCallback != null) {\n                Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);\n                filePathCallback.onReceiveValue(results);\n                filePathCallback = null;\n            }\n            return;\n        }\n        if (requestCode == DIRECTORY_PICKER_REQUEST_CODE) {\n            if (resultCode == RESULT_OK && data != null && data.getData() != null) {\n                directoryTreeUri = data.getData();\n                try {\n                    getContentResolver().takePersistableUriPermission(\n                        directoryTreeUri,\n                        data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n                    );\n                } catch (Exception ignored) {}\n                if (directoryWebView != null) {\n                    directoryWebView.post(() -> directoryWebView.evaluateJavascript(\n                        "window.__androidDirectoryPickerResult(true);", null));\n                }\n            } else if (directoryWebView != null) {\n                directoryWebView.post(() -> directoryWebView.evaluateJavascript(\n                    "window.__androidDirectoryPickerResult(false);", null));\n            }\n            return;\n        }\n        super.onActivityResult(requestCode, resultCode, data);'''
+          if old_result not in s:
+              raise SystemExit('expected onActivityResult block not found')
+          s = s.replace(old_result, new_result, 1)
+
+          old_dep = "implementation 'androidx.webkit:webkit:1.12.1'"
+          new_dep = "implementation 'androidx.webkit:webkit:1.12.1'"
+          if old_dep not in s:
+              raise SystemExit('expected dependency not found')
+
+          p.write_text(s)
+          PY
+
+      - name: Verify generated template contains SAF bridge
+        run: |
+          grep -q 'ACTION_OPEN_DOCUMENT_TREE' lib/template.ts
+          grep -q 'AndroidDirectoryBridge' lib/template.ts
+          grep -q 'DIRECTORY_PICKER_REQUEST_CODE' lib/template.ts
+          pnpm install --frozen-lockfile
+          pnpm run typecheck
+
+      - name: Remove one-time workflow and commit
+        run: |
+          rm .github/workflows/one-time-test-a-directory-picker.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/template.ts .github/workflows/one-time-test-a-directory-picker.yml
+          git commit -m 'fix(test-a): add Android SAF directory picker bridge'
+          git push origin fix/test-a-directory-picker
