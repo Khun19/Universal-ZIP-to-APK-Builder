@@ -17,7 +17,7 @@
   "private": true,
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "formidable": "^3.5.4"
   },
   "devDependencies": {
