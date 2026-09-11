@@ -23,6 +23,31 @@ jobs:
           echo "Checked-out SHA: $(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
+      - name: Normalize SAF patch script for current template
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/patch-test-a-directory-picker.py')
+          s = p.read_text()
+          old = """            @Override
+            public WebResourceResponse shouldInterceptRequest(
+                    WebView view, String url) {
+                return assetLoader.shouldInterceptRequest(Uri.parse(url));
+            }
+"""
+          new = """            @Override
+            @SuppressWarnings(\"deprecation\")
+            public WebResourceResponse shouldInterceptRequest(
+                    WebView view, String url) {
+                return assetLoader.shouldInterceptRequest(Uri.parse(url));
+            }
+"""
+          if old in s:
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          print('SAF patch script normalized for current WebViewClient template')
+          PY
+
       - name: Apply complete Android SAF bridge
         run: python3 scripts/patch-test-a-directory-picker.py
 
