@@ -1,0 +1,89 @@
+name: Test A Directory Picker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/test-a-directory-picker
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Verify source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f lib/template.ts
+
+          grep -Fq 'ACTION_OPEN_DOCUMENT_TREE' lib/template.ts
+          grep -Fq 'AndroidDirectoryBridge' lib/template.ts
+          grep -Fq 'androidx.documentfile:documentfile:1.0.1' lib/template.ts
+          grep -Fq 'showDirectoryPicker' lib/template.ts
+          grep -Fq 'createWritable' lib/template.ts
+          grep -Fq 'createDirectory' lib/template.ts
+          grep -Fq 'readFile' lib/template.ts
+          grep -Fq 'writeFile' lib/template.ts
+          grep -Fq 'removeEntry' lib/template.ts
+
+          echo "TEST A SOURCE VERIFICATION: PASS"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Commit source fix if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add lib/template.ts
+
+          if git diff --cached --quiet; then
+            echo "No uncommitted source changes."
+          else
+            git commit -m "fix(test-a): add Android SAF directory picker bridge"
+          fi
+
+      - name: Push source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git push origin HEAD:fix/test-a-directory-picker
+
+      - name: Report commit SHA
+        shell: bash
+        run: |
+          echo "SOURCE FIX COMMIT SHA:"
+          git rev-parse HEAD
