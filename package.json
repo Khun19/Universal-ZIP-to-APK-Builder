@@ -11,7 +11,8 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test:unit": "tsx --test tests/**/*.test.ts",
     "start:cli": "tsx lib/cli.ts",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "tsx --test tests/**/*.test.ts",
+    "setup:termux": "bash ./scripts/setup-termux.sh"
   },
   "private": true,
   "dependencies": {

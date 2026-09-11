@@ -448,6 +448,21 @@ be used instead of Docker.»
 
 ---
 
+📱 Termux Setup
+
+For a new Android phone running Termux, clone the repository and run:
+
+    git clone https://github.com/Khun19/Universal-ZIP-to-APK-Builder.git
+    cd Universal-ZIP-to-APK-Builder
+    ./scripts/setup-termux.sh
+    pnpm test
+
+The setup script is idempotent: it keeps existing Node.js, pnpm, Java, Gradle, and Android SDK installations, installs only missing components, persists the Android/Java environment in ~/.profile and ~/.bashrc, and installs dependencies with the frozen pnpm-lock.yaml when available. It does not force-install disabled Android ARM64 native packages or rewrite the repository's package overrides.
+
+The default SDK target is Android API 33 with build-tools 33.0.2. Override ANDROID_API_LEVEL, ANDROID_BUILD_TOOLS_VERSION, or ANDROID_SDK_ROOT before running the script when a project requires another installed SDK target.
+
+---
+
 🧪 Testing
 
 Run the repository's type-checking workflow:
