@@ -18,56 +18,339 @@ jobs:
           ref: fix/test-a-directory-picker
           fetch-depth: 0
 
-      - name: Patch Android WebView directory picker bridge
+      - name: Patch complete Android SAF File System Access compatibility
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('lib/template.ts')
           s = p.read_text()
 
-          old_imports = '''import android.app.Activity;\nimport android.content.ActivityNotFoundException;\nimport android.content.Intent;\nimport android.content.res.AssetManager;\nimport android.net.Uri;\nimport android.os.Bundle;\nimport android.webkit.ValueCallback;\nimport android.webkit.WebChromeClient;'''
-          new_imports = '''import android.app.Activity;\nimport android.content.ActivityNotFoundException;\nimport android.content.Intent;\nimport android.content.res.AssetManager;\nimport android.net.Uri;\nimport android.os.Bundle;\nimport android.util.Base64;\nimport android.webkit.JavascriptInterface;\nimport android.webkit.ValueCallback;\nimport android.webkit.WebChromeClient;'''
-          if old_imports not in s:
-              raise SystemExit('expected import block not found')
-          s = s.replace(old_imports, new_imports, 1)
+          old = '''import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.res.AssetManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;'''
+          new = '''import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.res.AssetManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.util.Base64;
+import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;'''
+          assert old in s, 'expected import block not found'
+          s = s.replace(old, new, 1)
 
-          old_class = '''public class MainActivity {\n    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;\n    private ValueCallback<Uri[]> filePathCallback;'''
-          new_class = '''public class MainActivity {\n    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;\n    private static final int DIRECTORY_PICKER_REQUEST_CODE = 1002;\n    private ValueCallback<Uri[]> filePathCallback;\n    private WebView directoryWebView;\n    private Uri directoryTreeUri;\n\n    private final class DirectoryBridge {\n        @JavascriptInterface\n        public void pickDirectory() {\n            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);\n            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);\n            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);\n            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);\n            try {\n                startActivityForResult(intent, DIRECTORY_PICKER_REQUEST_CODE);\n            } catch (ActivityNotFoundException error) {\n                notifyDirectoryResult(false);\n            }\n        }\n\n        @JavascriptInterface\n        public String getRootUri() {\n            return directoryTreeUri == null ? "" : directoryTreeUri.toString();\n        }\n\n        private void notifyDirectoryResult(boolean ok) {\n            if (directoryWebView == null) return;\n            String js = "window.__androidDirectoryPickerResult(" + (ok ? "true" : "false") + ");";\n            directoryWebView.post(() -> directoryWebView.evaluateJavascript(js, null));\n        }\n    }'''
-          if old_class not in s:
-              raise SystemExit('expected MainActivity header not found')
-          s = s.replace(old_class, new_class, 1)
+          old = '''import java.io.InputStream;
 
-          old_settings = '''        webView.getSettings().setJavaScriptEnabled(true);\n        webView.getSettings().setDomStorageEnabled(true);'''
-          new_settings = '''        webView.getSettings().setJavaScriptEnabled(true);\n        webView.getSettings().setDomStorageEnabled(true);\n        directoryWebView = webView;\n        webView.addJavascriptInterface(new DirectoryBridge(), "AndroidDirectoryBridge");'''
-          if old_settings not in s:
-              raise SystemExit('expected WebView settings block not found')
-          s = s.replace(old_settings, new_settings, 1)
+public class MainActivity {
+    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
+    private ValueCallback<Uri[]> filePathCallback;'''
+          new = '''import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import androidx.documentfile.provider.DocumentFile;
 
-          old_load = '''        webView.loadUrl("https://appassets.androidplatform.net/index.html");\n        setContentView(webView);'''
-          new_load = '''        webView.setWebViewClient(new WebViewClient() {\n            @Override\n            public void onPageFinished(WebView view, String url) {\n                super.onPageFinished(view, url);\n                view.evaluateJavascript(\n                    "(function(){if(window.showDirectoryPicker)return;window.__androidDirectoryPickerResult=function(ok){var f=window.__androidDirectoryPickerResolve;if(f){window.__androidDirectoryPickerResolve=null;f(ok?window.__androidDirectoryHandle:null);}};window.__androidDirectoryHandle={kind:'directory',name:'Selected folder',queryPermission:function(){return Promise.resolve('granted')},requestPermission:function(){return Promise.resolve('granted')},getDirectoryHandle:function(){return Promise.reject(new Error('Nested directory handles are not supported by this Android bridge'))},getFileHandle:function(){return Promise.reject(new Error('Nested file handles are not supported by this Android bridge'))},removeEntry:function(){return Promise.reject(new Error('File operations are not available until the Android SAF file-operation bridge is added'))},resolve:function(){return Promise.resolve(null)},entries:function(){return (async function*(){})()},keys:function(){return (async function*(){})()},values:function(){return (async function*(){})()}};window.showDirectoryPicker=function(){return new Promise(function(resolve){window.__androidDirectoryPickerResolve=resolve;AndroidDirectoryBridge.pickDirectory();});};})();", null\n                );\n            }\n        });\n\n        webView.loadUrl("https://appassets.androidplatform.net/index.html");\n        setContentView(webView);'''
-          if old_load not in s:
-              raise SystemExit('expected load block not found')
-          s = s.replace(old_load, new_load, 1)
+public class MainActivity {
+    private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
+    private static final int DIRECTORY_PICKER_REQUEST_CODE = 1002;
+    private ValueCallback<Uri[]> filePathCallback;
+    private WebView directoryWebView;
+    private Uri directoryTreeUri;
 
-          old_result = '''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {\n            if (filePathCallback != null) {\n                Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);\n                filePathCallback.onReceiveValue(results);\n                filePathCallback = null;\n            }\n            return;\n        }\n        super.onActivityResult(requestCode, resultCode, data);'''
-          new_result = '''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {\n            if (filePathCallback != null) {\n                Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);\n                filePathCallback.onReceiveValue(results);\n                filePathCallback = null;\n            }\n            return;\n        }\n        if (requestCode == DIRECTORY_PICKER_REQUEST_CODE) {\n            if (resultCode == RESULT_OK && data != null && data.getData() != null) {\n                directoryTreeUri = data.getData();\n                try {\n                    getContentResolver().takePersistableUriPermission(\n                        directoryTreeUri,\n                        data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION)\n                    );\n                } catch (Exception ignored) {}\n                if (directoryWebView != null) {\n                    directoryWebView.post(() -> directoryWebView.evaluateJavascript(\n                        "window.__androidDirectoryPickerResult(true);", null));\n                }\n            } else if (directoryWebView != null) {\n                directoryWebView.post(() -> directoryWebView.evaluateJavascript(\n                    "window.__androidDirectoryPickerResult(false);", null));\n            }\n            return;\n        }\n        super.onActivityResult(requestCode, resultCode, data);'''
-          if old_result not in s:
-              raise SystemExit('expected onActivityResult block not found')
-          s = s.replace(old_result, new_result, 1)
+    private final class DirectoryBridge {
+        private String cleanPath(String value) {
+            if (value == null || value.length() == 0) return "";
+            String normalized = value.replace('\\\\', '/');
+            while (normalized.startsWith("/")) normalized = normalized.substring(1);
+            while (normalized.endsWith("/")) normalized = normalized.substring(0, normalized.length() - 1);
+            if (normalized.length() == 0) return "";
+            String[] parts = normalized.split("/");
+            StringBuilder out = new StringBuilder();
+            for (String part : parts) {
+                if (part.length() == 0 || ".".equals(part)) continue;
+                if ("..".equals(part)) throw new IllegalArgumentException("Invalid path");
+                if (out.length() > 0) out.append('/');
+                out.append(part);
+            }
+            return out.toString();
+        }
 
-          old_dep = "implementation 'androidx.webkit:webkit:1.12.1'"
-          new_dep = "implementation 'androidx.webkit:webkit:1.12.1'"
-          if old_dep not in s:
-              raise SystemExit('expected dependency not found')
+        private DocumentFile root() {
+            if (directoryTreeUri == null) return null;
+            return DocumentFile.fromTreeUri(MainActivity.this, directoryTreeUri);
+        }
+
+        private DocumentFile document(String relativePath) {
+            DocumentFile current = root();
+            if (current == null) return null;
+            String clean = cleanPath(relativePath);
+            if (clean.length() == 0) return current;
+            for (String part : clean.split("/")) {
+                if (current == null || !current.isDirectory()) return null;
+                current = current.findFile(part);
+            }
+            return current;
+        }
+
+        private DocumentFile parent(String relativePath) {
+            String clean = cleanPath(relativePath);
+            int slash = clean.lastIndexOf('/');
+            return document(slash < 0 ? "" : clean.substring(0, slash));
+        }
+
+        private String leaf(String relativePath) {
+            String clean = cleanPath(relativePath);
+            int slash = clean.lastIndexOf('/');
+            return slash < 0 ? clean : clean.substring(slash + 1);
+        }
+
+        @JavascriptInterface
+        public void pickDirectory() {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+            try {
+                startActivityForResult(intent, DIRECTORY_PICKER_REQUEST_CODE);
+            } catch (ActivityNotFoundException error) {
+                notifyDirectoryResult(false);
+            }
+        }
+
+        @JavascriptInterface
+        public String list(String relativePath) {
+            try {
+                DocumentFile dir = document(relativePath);
+                if (dir == null || !dir.isDirectory()) return "[]";
+                JSONArray result = new JSONArray();
+                for (DocumentFile child : dir.listFiles()) {
+                    JSONObject item = new JSONObject();
+                    item.put("name", child.getName() == null ? "" : child.getName());
+                    item.put("kind", child.isDirectory() ? "directory" : "file");
+                    item.put("size", child.isFile() ? child.length() : 0);
+                    result.put(item);
+                }
+                return result.toString();
+            } catch (Exception error) {
+                return "[]";
+            }
+        }
+
+        @JavascriptInterface
+        public String readFile(String relativePath) {
+            try {
+                DocumentFile file = document(relativePath);
+                if (file == null || !file.isFile()) return "";
+                InputStream input = getContentResolver().openInputStream(file.getUri());
+                if (input == null) return "";
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                input.close();
+                return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+            } catch (Exception error) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public boolean createDirectory(String relativePath) {
+            try {
+                DocumentFile existing = document(relativePath);
+                if (existing != null) return existing.isDirectory();
+                DocumentFile parent = parent(relativePath);
+                if (parent == null || !parent.isDirectory()) return false;
+                return parent.createDirectory(leaf(relativePath)) != null;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean createFile(String relativePath, String mimeType) {
+            try {
+                DocumentFile existing = document(relativePath);
+                if (existing != null) return existing.isFile();
+                DocumentFile parent = parent(relativePath);
+                if (parent == null || !parent.isDirectory()) return false;
+                return parent.createFile(
+                    mimeType == null || mimeType.length() == 0 ? "application/octet-stream" : mimeType,
+                    leaf(relativePath)
+                ) != null;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean writeFile(String relativePath, String base64Data, String mimeType) {
+            try {
+                DocumentFile file = document(relativePath);
+                if (file == null || !file.isFile()) {
+                    if (!createFile(relativePath, mimeType)) return false;
+                    file = document(relativePath);
+                }
+                if (file == null) return false;
+                byte[] data = Base64.decode(base64Data == null ? "" : base64Data, Base64.DEFAULT);
+                OutputStream output = getContentResolver().openOutputStream(file.getUri(), "wt");
+                if (output == null) return false;
+                output.write(data);
+                output.flush();
+                output.close();
+                return true;
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean remove(String relativePath) {
+            try {
+                DocumentFile file = document(relativePath);
+                return file != null && file.delete();
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean rename(String relativePath, String newName) {
+            try {
+                DocumentFile file = document(relativePath);
+                return file != null && newName != null && newName.indexOf('/') < 0 && file.renameTo(newName);
+            } catch (Exception error) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public String getRootName() {
+            DocumentFile root = root();
+            return root == null || root.getName() == null ? "Selected folder" : root.getName();
+        }
+
+        private void notifyDirectoryResult(boolean ok) {
+            if (directoryWebView == null) return;
+            String js = "window.__androidDirectoryPickerResult(" + (ok ? "true" : "false") + ");";
+            directoryWebView.post(() -> directoryWebView.evaluateJavascript(js, null));
+        }
+    }'''
+          assert old in s, 'expected MainActivity imports/header not found'
+          s = s.replace(old, new, 1)
+
+          old = '''        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setDomStorageEnabled(true);'''
+          new = '''        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setDomStorageEnabled(true);
+        directoryWebView = webView;
+        webView.addJavascriptInterface(new DirectoryBridge(), "AndroidDirectoryBridge");'''
+          assert old in s, 'expected WebView settings block not found'
+          s = s.replace(old, new, 1)
+
+          old = '''        webView.loadUrl("https://appassets.androidplatform.net/index.html");
+        setContentView(webView);'''
+          new = '''        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                view.evaluateJavascript(
+                    "(function(){"
+                    + "if(window.__androidDirectoryBridgeInstalled)return;"
+                    + "window.__androidDirectoryBridgeInstalled=true;"
+                    + "function b64bytes(s){var raw=atob(s||'');var a=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a;}"
+                    + "function b64data(data){return data.arrayBuffer().then(function(buf){var a=new Uint8Array(buf),bin='';for(var i=0;i<a.length;i++)bin+=String.fromCharCode(a[i]);return btoa(bin);});}"
+                    + "function join(a,b){return a? a+'/'+b : b;}"
+                    + "function dirHandle(path,name){"
+                    + "var h={kind:'directory',name:name||AndroidDirectoryBridge.getRootName()};"
+                    + "h.queryPermission=function(){return Promise.resolve('granted')};"
+                    + "h.requestPermission=function(){return Promise.resolve('granted')};"
+                    + "h.getDirectoryHandle=function(n,o){var p=join(path,n),items=JSON.parse(AndroidDirectoryBridge.list(path)||'[]'),x=items.find(function(i){return i.name===n&&i.kind==='directory'});if(x)return Promise.resolve(dirHandle(p,n));if(o&&o.create&&AndroidDirectoryBridge.createDirectory(p))return Promise.resolve(dirHandle(p,n));return Promise.reject(new DOMException('Directory not found','NotFoundError'));};"
+                    + "h.getFileHandle=function(n,o){var p=join(path,n),items=JSON.parse(AndroidDirectoryBridge.list(path)||'[]'),x=items.find(function(i){return i.name===n&&i.kind==='file'});if(x)return Promise.resolve(fileHandle(p,n,x.size));if(o&&o.create&&AndroidDirectoryBridge.createFile(p,'application/octet-stream'))return Promise.resolve(fileHandle(p,n,0));return Promise.reject(new DOMException('File not found','NotFoundError'));};"
+                    + "h.removeEntry=function(n,o){var p=join(path,n);if(AndroidDirectoryBridge.remove(p))return Promise.resolve();return Promise.reject(new DOMException('Unable to remove entry','InvalidModificationError'));};"
+                    + "h.resolve=function(other){return Promise.resolve(other&&other.__androidPath?other.__androidPath.split('/').filter(Boolean):null)};"
+                    + "h.entries=function(){var items=JSON.parse(AndroidDirectoryBridge.list(path)||'[]'),i=0;return {next:function(){if(i>=items.length)return Promise.resolve({done:true});var x=items[i++],p=join(path,x.name);var v=x.kind==='directory'?dirHandle(p,x.name):fileHandle(p,x.name,x.size);v.__androidPath=p;return Promise.resolve({done:false,value:[x.name,v]})},[Symbol.asyncIterator]:function(){return this}}};"
+                    + "h.keys=function(){var it=h.entries();return {next:function(){return it.next().then(function(x){return x.done?x:{done:false,value:x.value[0]}})},[Symbol.asyncIterator]:function(){return this}}};"
+                    + "h.values=function(){var it=h.entries();return {next:function(){return it.next().then(function(x){return x.done?x:{done:false,value:x.value[1]}})},[Symbol.asyncIterator]:function(){return this}}};"
+                    + "h.__androidPath=path;return h;"
+                    + "}"
+                    + "function fileHandle(path,name,size){var h={kind:'file',name:name};h.queryPermission=function(){return Promise.resolve('granted')};h.requestPermission=function(){return Promise.resolve('granted')};h.getFile=function(){var b=AndroidDirectoryBridge.readFile(path);if(!b&&size>0)return Promise.reject(new Error('Unable to read file'));var bytes=b64bytes(b);return Promise.resolve(new File([bytes],name,{type:'application/octet-stream',lastModified:Date.now()}));};h.createWritable=function(){var chunks=[];return Promise.resolve({write:function(data){if(typeof data==='string'){chunks.push(new TextEncoder().encode(data));return Promise.resolve();}if(data instanceof Blob)return data.arrayBuffer().then(function(x){chunks.push(new Uint8Array(x));});if(data instanceof ArrayBuffer){chunks.push(new Uint8Array(data));return Promise.resolve();}if(ArrayBuffer.isView(data)){chunks.push(new Uint8Array(data.buffer,data.byteOffset,data.byteLength));return Promise.resolve();}return Promise.reject(new TypeError('Unsupported writable data'));},close:function(){var total=0;chunks.forEach(function(x){total+=x.length});var out=new Uint8Array(total),o=0;chunks.forEach(function(x){out.set(x,o);o+=x.length});var bin='';for(var i=0;i<out.length;i++)bin+=String.fromCharCode(out[i]);var ok=AndroidDirectoryBridge.writeFile(path,btoa(bin),'application/octet-stream');return ok?Promise.resolve():Promise.reject(new Error('Unable to write file'));},abort:function(){chunks=[];return Promise.resolve();}})};h.__androidPath=path;return h;}"
+                    + "window.__androidDirectoryPickerResolve=null;"
+                    + "window.__androidDirectoryPickerResult=function(ok){var r=window.__androidDirectoryPickerResolve;window.__androidDirectoryPickerResolve=null;if(r)r(ok?dirHandle('',AndroidDirectoryBridge.getRootName()):null);};"
+                    + "window.showDirectoryPicker=function(){return new Promise(function(resolve){window.__androidDirectoryPickerResolve=resolve;AndroidDirectoryBridge.pickDirectory();});};"
+                    + "})();", null
+                );
+            }
+        });
+
+        webView.loadUrl("https://appassets.androidplatform.net/index.html");
+        setContentView(webView);'''
+          assert old in s, 'expected WebView load block not found'
+          s = s.replace(old, new, 1)
+
+          old = '''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+            if (filePathCallback != null) {
+                Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                filePathCallback.onReceiveValue(results);
+                filePathCallback = null;
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);'''
+          new = '''        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+            if (filePathCallback != null) {
+                Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                filePathCallback.onReceiveValue(results);
+                filePathCallback = null;
+            }
+            return;
+        }
+        if (requestCode == DIRECTORY_PICKER_REQUEST_CODE) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                directoryTreeUri = data.getData();
+                try {
+                    int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    getContentResolver().takePersistableUriPermission(directoryTreeUri, flags);
+                } catch (Exception ignored) {}
+                if (directoryWebView != null) {
+                    directoryWebView.post(() -> directoryWebView.evaluateJavascript("window.__androidDirectoryPickerResult(true);", null));
+                }
+            } else if (directoryWebView != null) {
+                directoryWebView.post(() -> directoryWebView.evaluateJavascript("window.__androidDirectoryPickerResult(false);", null));
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);'''
+          assert old in s, 'expected onActivityResult block not found'
+          s = s.replace(old, new, 1)
+
+          old = "implementation 'androidx.webkit:webkit:1.12.1'"
+          new = "implementation 'androidx.webkit:webkit:1.12.1'\n    implementation 'androidx.documentfile:documentfile:1.0.1'"
+          assert old in s, 'expected WebKit dependency not found'
+          s = s.replace(old, new, 1)
 
           p.write_text(s)
           PY
 
-      - name: Verify generated template contains SAF bridge
+      - name: Verify complete bridge and typecheck
         run: |
           grep -q 'ACTION_OPEN_DOCUMENT_TREE' lib/template.ts
           grep -q 'AndroidDirectoryBridge' lib/template.ts
-          grep -q 'DIRECTORY_PICKER_REQUEST_CODE' lib/template.ts
+          grep -q 'androidx.documentfile:documentfile:1.0.1' lib/template.ts
+          grep -q 'readFile' lib/template.ts
+          grep -q 'writeFile' lib/template.ts
+          grep -q 'createDirectory' lib/template.ts
+          grep -q 'remove' lib/template.ts
+          grep -q 'showDirectoryPicker' lib/template.ts
           pnpm install --frozen-lockfile
           pnpm run typecheck
 
