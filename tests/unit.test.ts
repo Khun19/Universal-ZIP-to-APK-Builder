@@ -14,7 +14,7 @@ test("detects native Android projects without converting them", () => {
 });
 
 test("detects React Vite projects", () => {
-  const result = analyzeProject({ files: ["package.json", "vite.config.ts", "src/App.tsx"], packageJson: { dependencies: { react: "^19.0.0" }, devDependencies: { vite: "^7.0.0" } } });
+  const result = analyzeProject({ files: ["package.json", "vite.config.ts", "index.html", "src/App.tsx"], packageJson: { dependencies: { react: "^19.0.0" }, devDependencies: { vite: "^7.0.0" } } });
   assert.equal(result.framework, "React + Vite");
   assert.equal(result.packageManager, "npm");
 });
@@ -35,4 +35,46 @@ test("calculates SHA-256 from persisted bytes", async () => {
   const file = join(directory, "artifact.apk");
   await writeFile(file, "real bytes are not an APK");
   assert.equal(await sha256(file), "523aca63ab80892725541720d74771b00bd0f0e67bfa280312628d03f53455ca");
+});
+
+
+test("blocks static WebView builds for backend-enabled React apps", () => {
+  const result = analyzeProject({
+    files: [
+      "package.json",
+      "vite.config.ts",
+      "server.ts",
+      "src/App.tsx",
+    ],
+    packageJson: {
+      dependencies: {
+        react: "^19.0.0",
+        express: "^5.0.0",
+      },
+      devDependencies: {
+        vite: "^7.0.0",
+      },
+      scripts: {
+        build: "vite build",
+        start: "node server.ts",
+      },
+    },
+  });
+
+  assert.equal(result.framework, "React + Vite");
+  assert.ok(result.blockers.some((blocker) => blocker.includes("Backend/server")));
+});
+
+test("keeps static React/Vite projects buildable", () => {
+  const result = analyzeProject({
+    files: ["package.json", "vite.config.ts", "index.html", "src/App.tsx"],
+    packageJson: {
+      dependencies: { react: "^19.0.0" },
+      devDependencies: { vite: "^7.0.0" },
+      scripts: { build: "vite build" },
+    },
+  });
+
+  assert.equal(result.framework, "React + Vite");
+  assert.equal(result.blockers.length, 0);
 });

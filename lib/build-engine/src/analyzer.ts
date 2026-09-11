@@ -10,6 +10,7 @@ export interface AnalysisResult {
   confidence: number;
   evidence: string[];
   warnings: string[];
+  blockers: string[];
 }
 
 export function validateZipEntry(entryPath: string): boolean {
@@ -60,6 +61,7 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
       confidence: hasAndroidDirectory ? 98 : 90,
       evidence,
       warnings,
+      blockers: [],
     };
   }
 
@@ -71,12 +73,54 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
       confidence: 95,
       evidence,
       warnings,
+      blockers: [],
     };
   }
 
   const hasPackageJson = normalizedPaths.some((filePath) =>
     filePath.endsWith('package.json'),
   );
+
+  const backendEvidence: string[] = [];
+
+  const serverFiles = normalizedPaths.filter((filePath) =>
+    /(^|\/)(server|backend|api|routes)(\/|\.)/i.test(filePath) ||
+    /(^|\/)(server|app|api)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(filePath),
+  );
+
+  if (serverFiles.length) {
+    backendEvidence.push(
+      `Backend/server source detected: ${serverFiles.slice(0, 5).join(', ')}`,
+    );
+  }
+
+  const packageJsonPath = normalizedPaths.find((filePath) =>
+    filePath.endsWith('package.json'),
+  );
+
+  if (packageJsonPath) {
+    const packageIndex = normalizedPaths.indexOf(packageJsonPath);
+    void packageIndex;
+  }
+
+  const backendDependencyNames = [
+    'express',
+    'fastify',
+    'koa',
+    'hono',
+    '@hapi/hapi',
+    'nestjs',
+    '@nestjs/core',
+    'elysia',
+  ];
+
+  const likelyEnvFiles = normalizedPaths.filter((filePath) =>
+    /(^|\/)\.env(\..*)?$/i.test(filePath),
+  );
+
+  if (likelyEnvFiles.length) {
+    backendEvidence.push('Environment configuration detected');
+  }
   const hasViteConfig = normalizedPaths.some((filePath) =>
     filePath.includes('vite.config.'),
   );
@@ -88,11 +132,25 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
     evidence.push('package.json detected');
     if (hasViteConfig) evidence.push('Vite config detected');
     if (hasIndexHtml) evidence.push('index.html detected');
+    if (backendEvidence.length) {
+      evidence.push(...backendEvidence);
+      return {
+        projectType: 'React/Vite Web App',
+        confidence: 96,
+        evidence,
+        warnings,
+        blockers: [
+          'Backend/server functionality was detected. The static WebView wrapper cannot execute the project server runtime.',
+        ],
+      };
+    }
+
     return {
       projectType: 'React/Vite Web App',
       confidence: 90,
       evidence,
       warnings,
+      blockers: [],
     };
   }
 
@@ -103,9 +161,10 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
       confidence: 80,
       evidence,
       warnings: ['Advanced framework configuration not found'],
+        blockers: [],
     };
   }
 
   warnings.push('Could not determine exact project type');
-  return { projectType: 'Unknown', confidence: 0, evidence, warnings };
+  return { projectType: 'Unknown', confidence: 0, evidence, warnings, blockers: [] };
 }

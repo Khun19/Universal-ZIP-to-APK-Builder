@@ -2,6 +2,61 @@ import type { Framework, ProjectAnalysis } from "@workspace/shared";
 
 export interface ProjectSnapshot { files: string[]; packageJson?: Record<string, unknown>; }
 type Detector = (snapshot: ProjectSnapshot) => Partial<ProjectAnalysis> | null;
+
+function detectBackend(snapshot: ProjectSnapshot): string[] {
+  const files = snapshot.files.map((file) => file.replace(/\\/g, "/"));
+  const pkg = snapshot.packageJson ?? {};
+  const deps = {
+    ...((pkg.dependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((pkg.devDependencies as Record<string, unknown> | undefined) ?? {}),
+  };
+
+  const evidence: string[] = [];
+
+  const backendDeps = [
+    "express",
+    "fastify",
+    "koa",
+    "hono",
+    "@hapi/hapi",
+    "nestjs",
+    "@nestjs/core",
+    "elysia",
+  ];
+
+  const foundDeps = backendDeps.filter((name) => name in deps);
+  if (foundDeps.length) {
+    evidence.push(`Backend framework dependency detected: ${foundDeps.join(", ")}`);
+  }
+
+  const serverFiles = files.filter((file) =>
+    /(^|\/)(server|backend|api|routes)(\/|\.)/i.test(file) ||
+    /(^|\/)(server|api)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(file),
+  );
+
+  if (serverFiles.length) {
+    evidence.push(`Backend/server source detected: ${serverFiles.slice(0, 5).join(", ")}`);
+  }
+
+  const scripts = (pkg.scripts as Record<string, unknown> | undefined) ?? {};
+  const serverScript = Object.entries(scripts).some(([name, command]) =>
+    /^(start|serve|server|api|backend)$/i.test(name) ||
+    /(^|[;&| ])(node|tsx|ts-node|bun)\\s+[^;&|]*(server|api|backend)/i.test(String(command)),
+  );
+
+  if (serverScript) {
+    evidence.push("Server/backend package script detected");
+  }
+
+  const secretFiles = files.filter((file) =>
+    /(^|\/)\.env(\..*)?$/i.test(file),
+  );
+  if (secretFiles.length) {
+    evidence.push("Environment configuration detected");
+  }
+
+  return evidence;
+}
 const has = (files: string[], name: string) => files.some((file) => file === name || file.endsWith(`/${name}`));
 const ext = (files: string[], suffix: string) => files.some((file) => file.endsWith(suffix));
 
@@ -31,7 +86,49 @@ const detectors: Detector[] = [
 export function analyzeProject(snapshot: ProjectSnapshot): ProjectAnalysis {
   const result = detectors.map((detector) => detector(snapshot)).find(Boolean) ?? {};
   const framework = (result.framework ?? "Unsupported") as Framework;
-  const blockers = framework === "Unsupported" ? ["No supported Android, React, Vite, Capacitor, or plain web structure was detected."] : [];
-  const warnings = framework === "Plain Web" ? ["No framework build metadata was found; verify the web root is index.html."] : [];
-  return { framework, version: null, buildTool: result.buildTool ?? "Unknown", language: result.language ?? "Unknown", packageManager: snapshot.files.some((f) => f.endsWith("pnpm-lock.yaml")) ? "pnpm" : snapshot.files.some((f) => f.endsWith("yarn.lock")) ? "yarn" : "npm", projectType: result.projectType ?? "Unknown", confidence: result.confidence ?? 12, compatibilityScore: result.compatibilityScore ?? 0, warnings, blockers, recommendedStrategy: result.recommendedStrategy ?? "No build strategy available", evidence: result.evidence ?? [] };
+  const backendEvidence = detectBackend(snapshot);
+
+  const blockers = framework === "Unsupported"
+    ? ["No supported Android, React, Vite, Capacitor, or plain web structure was detected."]
+    : [];
+
+  const warnings = framework === "Plain Web"
+    ? ["No framework build metadata was found; verify the web root is index.html."]
+    : [];
+
+  const evidence = [...(result.evidence ?? []), ...backendEvidence];
+
+  if (
+    backendEvidence.length > 0 &&
+    (framework === "React + Vite" || framework === "React" || framework === "Plain Web")
+  ) {
+    blockers.push(
+      "Backend/server functionality was detected. A static WebView APK cannot execute the project's server runtime; configure an external backend or use a native backend-compatible strategy before building.",
+    );
+  }
+
+  return {
+    framework,
+    version: null,
+    buildTool: result.buildTool ?? "Unknown",
+    language: result.language ?? "Unknown",
+    packageManager: snapshot.files.some((f) => f.endsWith("pnpm-lock.yaml"))
+      ? "pnpm"
+      : snapshot.files.some((f) => f.endsWith("yarn.lock"))
+        ? "yarn"
+        : "npm",
+    projectType: result.projectType ?? "Unknown",
+    confidence: result.confidence ?? 12,
+    compatibilityScore:
+      blockers.length > 0 && backendEvidence.length > 0
+        ? Math.min(result.compatibilityScore ?? 0, 45)
+        : result.compatibilityScore ?? 0,
+    warnings,
+    blockers,
+    recommendedStrategy:
+      backendEvidence.length > 0
+        ? "Backend detected; use an external backend or implement a backend-compatible native strategy before packaging"
+        : result.recommendedStrategy ?? "No build strategy available",
+    evidence,
+  };
 }
