@@ -24,7 +24,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Apply complete Android SAF bridge
-        run: python3 scripts/run-test-a-directory-picker-patch.py
+        run: python3 scripts/patch-test-a-directory-picker.py
 
       - name: Verify bridge source
         run: |
@@ -43,9 +43,9 @@ jobs:
 
       - name: Commit generated source
         run: |
-          rm -f .github/workflows/one-time-test-a-directory-picker.yml .test-a-saf-trigger scripts/patch-test-a-directory-picker.py scripts/run-test-a-directory-picker-patch.py
+          rm -f .github/workflows/one-time-test-a-directory-picker.yml .test-a-saf-trigger scripts/patch-test-a-directory-picker.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add lib/template.ts .github/workflows/one-time-test-a-directory-picker.yml .test-a-saf-trigger scripts/patch-test-a-directory-picker.py scripts/run-test-a-directory-picker-patch.py
+          git add lib/template.ts .github/workflows/one-time-test-a-directory-picker.yml .test-a-saf-trigger scripts/patch-test-a-directory-picker.py
           git commit -m 'fix(test-a): add Android SAF directory picker bridge'
           git push origin fix/test-a-directory-picker
