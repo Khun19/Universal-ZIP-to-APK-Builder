@@ -14,8 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/test-a-directory-picker
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Verify checked-out commit
+        run: |
+          echo "Workflow SHA: $GITHUB_SHA"
+          echo "Checked-out SHA: $(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Normalize WebViewClient anchor for deterministic patch
         run: |
