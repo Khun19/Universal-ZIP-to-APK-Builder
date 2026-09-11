@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{APP_NAME}} - QR</title>
+</head>
+<body>
+<h1>{{APP_NAME}} - Camera & QR</h1>
+<button id="scan">Start Camera</button>
+<script>
+document.getElementById('scan').addEventListener('click', async ()=>{
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return alert('Camera not supported');
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:true});
+    alert('Camera access granted (preview not implemented in template)');
+    stream.getTracks().forEach(t=>t.stop());
+  }catch(e){alert('Camera permission denied or error');}
+});
+</script>
+</body>
+</html>

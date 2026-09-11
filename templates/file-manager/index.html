@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{{APP_NAME}} File Manager</title>
+  </head>
+  <body>
+    <h1>{{APP_NAME}} - File Manager</h1>
+    <p>Uses File System Access when available.</p>
+    <button id="open">Open File</button>
+    <script>
+      document.getElementById('open').addEventListener('click', async ()=>{
+        try{
+          const [handle] = await window.showOpenFilePicker();
+          const file = await handle.getFile();
+          alert('Selected: '+file.name);
+        }catch(e){alert('Not supported or cancelled');}
+      });
+    </script>
+  </body>
+</html>

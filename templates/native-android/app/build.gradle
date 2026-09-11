@@ -1,0 +1,14 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    compileSdk 34
+    defaultConfig {
+        applicationId "{{PACKAGE_NAME}}"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+}

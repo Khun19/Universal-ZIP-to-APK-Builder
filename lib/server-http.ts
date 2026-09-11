@@ -9,6 +9,9 @@ import {
 } from './analyzer.ts';
 import { determineBuildStrategy } from './strategy.ts';
 import { URL } from 'url';
+import { listTemplates, getTemplate } from './template-registry';
+import { generateFromTemplate } from './template-generator';
+import { handleBuildRequest } from './server.ts';
 
 const PORT = 3000;
 
@@ -32,6 +35,75 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Dashboard not found.');
     }
+    return;
+  }
+
+  // Templates list
+  if (req.method === 'GET' && req.url === '/api/templates') {
+    try {
+      const templates = listTemplates();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(templates));
+    } catch (e: any) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e?.message || 'Failed to load templates' }));
+    }
+    return;
+  }
+
+  // Template info
+  if (req.method === 'GET' && req.url?.startsWith('/api/templates/')) {
+    const parts = req.url.split('/');
+    const id = parts[parts.length - 1];
+    const tmpl = getTemplate(id);
+    if (!tmpl) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unknown template' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(tmpl));
+    return;
+  }
+
+  // POST /api/templates/:id/generate
+  if (req.method === 'POST' && req.url?.startsWith('/api/templates/') && req.headers['content-type']?.includes('application/json')) {
+    const parts = req.url.split('/');
+    const id = parts[parts.length - 2] === 'templates' ? parts[parts.length - 1] : parts[parts.length - 1];
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const parsed = JSON.parse(body || '{}');
+        const projectName = parsed.projectName;
+        const appName = parsed.appName;
+        const packageName = parsed.packageName;
+        if (!projectName) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'projectName is required' }));
+          return;
+        }
+        const gen = await generateFromTemplate(id, { projectName, appName, packageName });
+        if (!gen.success || !gen.projectPath || !gen.filePaths) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: gen.error || 'Generation failed' }));
+          return;
+        }
+
+        // Now reuse the existing build pipeline
+        const buildResp = await handleBuildRequest({ projectPath: gen.projectPath, filePaths: gen.filePaths, appName });
+        if (buildResp.success) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Build successful', apkPath: buildResp.outputPath, logs: buildResp.logs }));
+        } else {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: buildResp.error, logs: buildResp.logs }));
+        }
+      } catch (e: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e?.message || 'Unknown error' }));
+      }
+    });
     return;
   }
 
@@ -95,7 +167,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         
           console.log(`\n📦 [${buildId}] Extracting...`);
           const zip = new AdmZip(uploadedFile.filepath);
-          const extraction = safeExtractAdmZip(zip, workspaceDir);
+          const extraction = (await import('./security/src/index.ts')).safeExtractAdmZip(zip, workspaceDir);
           const filePaths = extraction.filePaths;
 
         console.log(`🚀 Building APK...`);

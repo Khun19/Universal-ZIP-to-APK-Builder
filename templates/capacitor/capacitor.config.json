@@ -1,0 +1,5 @@
+{
+  "appId": "{{PACKAGE_NAME}}",
+  "appName": "{{APP_NAME}}",
+  "webDir": "www"
+}
