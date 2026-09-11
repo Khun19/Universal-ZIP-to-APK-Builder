@@ -1,0 +1,92 @@
+{
+  "templates": [
+    {
+      "id": "web-basic",
+      "name": "Web Basic",
+      "version": "1.0.0",
+      "category": "web",
+      "description": "HTML/CSS/JavaScript starter",
+      "framework": "static-web",
+      "buildStrategy": "web-wrapper",
+      "requiredTools": ["node"],
+      "path": "templates/web-basic"
+    },
+    {
+      "id": "react-vite",
+      "name": "React + Vite",
+      "version": "1.0.0",
+      "category": "web",
+      "description": "React + Vite starter project",
+      "framework": "react-vite",
+      "buildStrategy": "web-wrapper",
+      "requiredTools": ["node"],
+      "path": "templates/react-vite"
+    },
+    {
+      "id": "pwa",
+      "name": "Offline PWA",
+      "version": "1.0.0",
+      "category": "web",
+      "description": "Progressive Web App with service worker and manifest",
+      "framework": "pwa",
+      "buildStrategy": "web-wrapper",
+      "requiredTools": ["node"],
+      "path": "templates/pwa"
+    },
+    {
+      "id": "capacitor",
+      "name": "Capacitor",
+      "version": "1.0.0",
+      "category": "hybrid",
+      "description": "Capacitor project targeting Android",
+      "framework": "capacitor",
+      "buildStrategy": "capacitor",
+      "requiredTools": ["node", "java", "android-sdk"],
+      "path": "templates/capacitor"
+    },
+    {
+      "id": "file-manager",
+      "name": "Local File Manager / ZIP Explorer",
+      "version": "1.0.0",
+      "category": "web",
+      "description": "File System Access API + ZIP handling",
+      "framework": "static-web",
+      "buildStrategy": "web-wrapper",
+      "requiredTools": ["node"],
+      "path": "templates/file-manager"
+    },
+    {
+      "id": "field-survey",
+      "name": "Offline Field Survey PWA",
+      "version": "1.0.0",
+      "category": "web",
+      "description": "Offline form + IndexedDB for forms",
+      "framework": "pwa",
+      "buildStrategy": "web-wrapper",
+      "requiredTools": ["node"],
+      "path": "templates/field-survey"
+    },
+    {
+      "id": "camera-qr",
+      "name": "Camera / QR Scanner",
+      "version": "1.0.0",
+      "category": "web",
+      "description": "Camera permission flow and QR scanning",
+      "framework": "static-web",
+      "buildStrategy": "web-wrapper",
+      "requiredTools": ["node"],
+      "path": "templates/camera-qr"
+    },
+    {
+      "id": "native-android",
+      "name": "Native Android",
+      "version": "1.0.0",
+      "category": "native",
+      "description": "Minimal Android Gradle project",
+      "framework": "android-gradle",
+      "buildStrategy": "native-gradle",
+      "requiredTools": ["java", "android-sdk", "gradle"],
+      "path": "templates/native-android"
+    }
+  ]
+}
