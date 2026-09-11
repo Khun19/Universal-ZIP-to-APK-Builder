@@ -17,6 +17,36 @@ jobs:
           ref: fix/test-a-directory-picker
           fetch-depth: 0
 
+      - name: Normalize WebViewClient anchor for deterministic patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('lib/template.ts')
+          s = p.read_text()
+
+          marker = '''            @Override
+            public WebResourceResponse shouldInterceptRequest(
+                    WebView view, String url) {
+                return assetLoader.shouldInterceptRequest(Uri.parse(url));
+            }
+'''
+
+          if marker in s:
+              print('anchor already present')
+          elif 'return assetLoader.shouldInterceptRequest(Uri.parse(url));' in s:
+              pattern = r'(return assetLoader\.shouldInterceptRequest\(Uri\.parse\(url\)\);\n\s*\})'
+              m = re.search(pattern, s)
+              if not m:
+                  raise SystemExit('asset loader return found, but method closing brace could not be located')
+              s = s[:m.start()] + marker.rstrip('\n') + s[m.end():]
+              p.write_text(s)
+              print('inserted deterministic String-url WebViewClient anchor')
+          else:
+              raise SystemExit('asset loader shouldInterceptRequest return not found')
+          PY
+
       - name: Apply complete Android SAF bridge
         run: python3 scripts/patch-test-a-directory-picker.py
 
