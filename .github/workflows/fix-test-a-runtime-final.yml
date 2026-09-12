@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/test-a-runtime-final
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -15,7 +18,7 @@ jobs:
       - name: Checkout exact branch commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Apply Android SAF bridge
@@ -44,6 +47,7 @@ jobs:
         run: pnpm test
 
       - name: Commit generated source
+        if: github.event_name == 'push'
         run: |
           rm -f .github/workflows/fix-test-a-runtime-final.yml scripts/patch-test-a-directory-picker.py
           git config user.name 'github-actions[bot]'
