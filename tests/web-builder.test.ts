@@ -6,6 +6,7 @@ import * as path from 'path';
 import {
   detectVitePluginPwaUsage,
   getPwaLockfileStabilizeArgs,
+  getPwaMinimumReleaseAgeRetryArgs,
   getPwaWorkboxInstallArgs,
   hasInstalledPackage,
   isMinimumReleaseAgeViolation,
@@ -95,6 +96,17 @@ test('PWA lockfile stabilization is scoped and only overrides minimum release ag
     '--config.minimum-release-age=0',
   ]);
   assert.ok(!getPwaLockfileStabilizeArgs().includes('--config.strict-peer-dependencies=false'));
+});
+
+test('PWA dependency commands retry with a local minimum-release-age override', () => {
+  const original = ['install', '--ignore-workspace', '--dangerously-allow-all-builds'];
+  assert.deepStrictEqual(getPwaMinimumReleaseAgeRetryArgs(original), [
+    'install',
+    '--ignore-workspace',
+    '--dangerously-allow-all-builds',
+    '--config.minimum-release-age=0',
+  ]);
+  assert.deepStrictEqual(original, ['install', '--ignore-workspace', '--dangerously-allow-all-builds']);
 });
 
 test('recognizes only the pnpm minimum-release-age violation', () => {
