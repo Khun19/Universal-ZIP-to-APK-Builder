@@ -243,8 +243,13 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
     logs.push(`Detected package manager: ${manager}`);
     logs.push(`Running: ${manager} ${installArgs.join(' ')}`);
 
-    const installEnv = manager === 'npm' ? { NPM_CONFIG_REGISTRY: PUBLIC_NPM_REGISTRY } : undefined;
-    let installResult = await runCommand(manager, installArgs, projectPath, installEnv);
+    const commandEnv: NodeJS.ProcessEnv = manager === 'pnpm'
+      ? { PNPM_CONFIG_IGNORE_WORKSPACE: 'true' }
+      : manager === 'npm'
+        ? { NPM_CONFIG_REGISTRY: PUBLIC_NPM_REGISTRY }
+        : {};
+
+    let installResult = await runCommand(manager, installArgs, projectPath, commandEnv);
 
     if (installResult.stdout) logs.push(`[Install stdout]: ${installResult.stdout}`);
     if (installResult.stderr) logs.push(`[Install stderr]: ${installResult.stderr}`);
@@ -252,7 +257,7 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
 
     const runBuild = async (): Promise<void> => {
       logs.push(`Running: ${manager} run build`);
-      const buildResult = await runCommand(manager, ['run', 'build'], projectPath, installEnv);
+      const buildResult = await runCommand(manager, ['run', 'build'], projectPath, commandEnv);
       if (buildResult.stdout) logs.push(`[Build stdout]: ${buildResult.stdout}`);
       if (buildResult.stderr) logs.push(`[Build stderr]: ${buildResult.stderr}`);
     };
@@ -266,7 +271,7 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
 
       logs.push(`Detected Android ARM64 PWA/Terser lifecycle failure; applying temporary Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION} compatibility pin.`);
       logs.push(`Re-running: ${manager} ${installArgs.join(' ')}`);
-      installResult = await runCommand(manager, installArgs, projectPath, installEnv);
+      installResult = await runCommand(manager, installArgs, projectPath, commandEnv);
       if (installResult.stdout) logs.push(`[Compatibility install stdout]: ${installResult.stdout}`);
       if (installResult.stderr) logs.push(`[Compatibility install stderr]: ${installResult.stderr}`);
       logs.push('Compatibility dependency installation completed successfully.');
