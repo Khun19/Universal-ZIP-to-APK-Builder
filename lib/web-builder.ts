@@ -13,8 +13,17 @@ export interface WebBuildResult {
 }
 
 type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun';
+type PackageJson = {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
+};
 
 const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org';
+const PWA_WORKBOX_PACKAGE = 'workbox-window';
+const VITE_PWA_PACKAGE = 'vite-plugin-pwa';
 
 /**
  * Replit-generated package-lock files can contain resolved tarball URLs that
@@ -140,6 +149,46 @@ function getInstallArgs(manager: PackageManager, projectPath: string): string[] 
   }
 }
 
+/** Returns true when the generated project declares or configures vite-plugin-pwa. */
+export function detectVitePluginPwaUsage(projectPath: string, packageJson: PackageJson): boolean {
+  const dependencyGroups = [
+    packageJson.dependencies,
+    packageJson.devDependencies,
+    packageJson.optionalDependencies,
+    packageJson.peerDependencies,
+  ];
+
+  if (dependencyGroups.some((group) => Boolean(group?.[VITE_PWA_PACKAGE]))) return true;
+
+  const configNames = [
+    'vite.config.ts',
+    'vite.config.js',
+    'vite.config.mts',
+    'vite.config.mjs',
+    'vite.config.cts',
+    'vite.config.cjs',
+  ];
+
+  return configNames.some((name) => {
+    const configPath = path.join(projectPath, name);
+    if (!fs.existsSync(configPath)) return false;
+    try {
+      return fs.readFileSync(configPath, 'utf8').includes(VITE_PWA_PACKAGE);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Checks the generated project's local dependency tree without importing it. */
+export function hasInstalledPackage(projectPath: string, packageName: string): boolean {
+  return fs.existsSync(path.join(projectPath, 'node_modules', ...packageName.split('/')));
+}
+
+export function getPwaWorkboxInstallArgs(): string[] {
+  return ['add', PWA_WORKBOX_PACKAGE, '--ignore-workspace', '--dangerously-allow-all-builds'];
+}
+
 async function runCommand(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string }> {
   const result = await execFileAsync(command, args, {
     cwd,
@@ -165,9 +214,9 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       return { success: true, outputDir: projectPath, logs };
     }
 
-    let packageJson: { scripts?: Record<string, string> };
+    let packageJson: PackageJson;
     try {
-      packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+      packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as PackageJson;
     } catch (error: any) {
       return { success: false, logs, error: `Invalid package.json: ${error.message}` };
     }
@@ -178,6 +227,7 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
 
     const manager = detectPackageManager(projectPath);
     const installArgs = getInstallArgs(manager, projectPath);
+    const usesVitePwa = detectVitePluginPwaUsage(projectPath, packageJson);
 
     if (manager === 'npm') {
       const sanitized = sanitizeNpmLockfile(projectPath);
@@ -193,6 +243,18 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
     if (installResult.stdout) logs.push(`[Install stdout]: ${installResult.stdout}`);
     if (installResult.stderr) logs.push(`[Install stderr]: ${installResult.stderr}`);
     logs.push('Dependency installation completed successfully.');
+
+    // Some generated workspaces omit workbox-window even though vite-plugin-pwa
+    // expects it during the Rollup build. Repair that dependency before build.
+    if (usesVitePwa && !hasInstalledPackage(projectPath, PWA_WORKBOX_PACKAGE)) {
+      const pwaInstallArgs = getPwaWorkboxInstallArgs();
+      logs.push('Detected vite-plugin-pwa without workbox-window. Installing compatibility dependency.');
+      logs.push(`Running: pnpm ${pwaInstallArgs.join(' ')}`);
+      const pwaInstallResult = await runCommand('pnpm', pwaInstallArgs, projectPath);
+      if (pwaInstallResult.stdout) logs.push(`[PWA dependency stdout]: ${pwaInstallResult.stdout}`);
+      if (pwaInstallResult.stderr) logs.push(`[PWA dependency stderr]: ${pwaInstallResult.stderr}`);
+      logs.push('workbox-window compatibility dependency installed successfully.');
+    }
 
     logs.push(`Running: ${manager} run build`);
     const buildResult = await runCommand(manager, ['run', 'build'], projectPath, installEnv);
