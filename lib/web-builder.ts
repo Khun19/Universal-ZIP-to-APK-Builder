@@ -173,6 +173,10 @@ function hasVitePwaDependency(packageJson: Record<string, unknown>): boolean {
  * lifecycle failure in Terser's renderChunk hook. Keep the compatibility
  * change isolated to the extracted build workspace and only apply it after
  * that exact failure is observed. The source ZIP is never modified.
+ *
+ * pnpm 11 no longer reads `packageJson.pnpm.overrides` for this purpose.
+ * Instead, create a temporary workspace-root config in the extracted build
+ * directory, where it cannot inherit the Universal Builder's monorepo config.
  */
 export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): boolean {
   if (process.platform !== 'android' || !fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return false;
@@ -183,21 +187,13 @@ export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): bo
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
   if (!hasVitePwaDependency(packageJson)) return false;
 
-  const existingPnpm = packageJson.pnpm;
-  const pnpm = existingPnpm && typeof existingPnpm === 'object'
-    ? { ...(existingPnpm as Record<string, unknown>) }
-    : {};
-  const existingOverrides = pnpm.overrides;
-  const overrides = existingOverrides && typeof existingOverrides === 'object'
-    ? { ...(existingOverrides as Record<string, unknown>) }
-    : {};
+  const workspaceConfigPath = path.join(projectPath, 'pnpm-workspace.yaml');
+  if (fs.existsSync(workspaceConfigPath)) return false;
 
-  if (overrides.rollup === ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION) return false;
-
-  overrides.rollup = ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION;
-  pnpm.overrides = overrides;
-  packageJson.pnpm = pnpm;
-  fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+  fs.writeFileSync(
+    workspaceConfigPath,
+    `overrides:\n  rollup: ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION}\n`,
+  );
   return true;
 }
 
@@ -269,12 +265,18 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
 
       if (!applyAndroidArm64PwaRollupCompatibility(projectPath)) throw buildError;
 
-      logs.push(`Detected Android ARM64 PWA/Terser lifecycle failure; applying temporary Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION} compatibility pin.`);
-      logs.push(`Re-running: ${manager} ${installArgs.join(' ')}`);
-      installResult = await runCommand(manager, installArgs, projectPath, commandEnv);
-      if (installResult.stdout) logs.push(`[Compatibility install stdout]: ${installResult.stdout}`);
-      if (installResult.stderr) logs.push(`[Compatibility install stderr]: ${installResult.stderr}`);
-      logs.push('Compatibility dependency installation completed successfully.');
+      const compatibilityConfigPath = path.join(projectPath, 'pnpm-workspace.yaml');
+      try {
+        logs.push(`Detected Android ARM64 PWA/Terser lifecycle failure; applying temporary Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION} compatibility pin.`);
+        logs.push(`Re-running: ${manager} ${installArgs.join(' ')}`);
+        installResult = await runCommand(manager, installArgs, projectPath, commandEnv);
+        if (installResult.stdout) logs.push(`[Compatibility install stdout]: ${installResult.stdout}`);
+        if (installResult.stderr) logs.push(`[Compatibility install stderr]: ${installResult.stderr}`);
+        logs.push('Compatibility dependency installation completed successfully.');
+      } finally {
+        if (fs.existsSync(compatibilityConfigPath)) fs.unlinkSync(compatibilityConfigPath);
+      }
+
       await runBuild();
     }
 
