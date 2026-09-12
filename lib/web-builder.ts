@@ -15,6 +15,7 @@ export interface WebBuildResult {
 type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun';
 
 const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org';
+const ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION = '4.60.1';
 
 /**
  * Replit-generated package-lock files can contain resolved tarball URLs that
@@ -151,6 +152,61 @@ async function runCommand(command: string, args: string[], cwd: string, env?: No
   return { stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
 }
 
+function commandErrorText(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error ?? '');
+  const record = error as Record<string, unknown>;
+  return [record.message, record.stdout, record.stderr].filter(Boolean).map(String).join('\n');
+}
+
+function hasVitePwaDependency(packageJson: Record<string, unknown>): boolean {
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+    const dependencies = packageJson[field];
+    if (dependencies && typeof dependencies === 'object' && '@vite-pwa/plugin' in dependencies) return true;
+    if (dependencies && typeof dependencies === 'object' && 'vite-plugin-pwa' in dependencies) return true;
+  }
+  return false;
+}
+
+/**
+ * Workbox's service-worker bundle uses Rollup/Terser internally. On Android
+ * ARM64, newer Rollup releases can hit the known "Unexpected early exit"
+ * lifecycle failure in Terser's renderChunk hook. Keep the compatibility
+ * change isolated to the extracted build workspace and only apply it after
+ * that exact failure is observed. The source ZIP is never modified.
+ */
+export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): boolean {
+  if (process.platform !== 'android' || !fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return false;
+
+  const packageJsonPath = path.join(projectPath, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) return false;
+
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
+  if (!hasVitePwaDependency(packageJson)) return false;
+
+  const existingPnpm = packageJson.pnpm;
+  const pnpm = existingPnpm && typeof existingPnpm === 'object'
+    ? { ...(existingPnpm as Record<string, unknown>) }
+    : {};
+  const existingOverrides = pnpm.overrides;
+  const overrides = existingOverrides && typeof existingOverrides === 'object'
+    ? { ...(existingOverrides as Record<string, unknown>) }
+    : {};
+
+  if (overrides.rollup === ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION) return false;
+
+  overrides.rollup = ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION;
+  pnpm.overrides = overrides;
+  packageJson.pnpm = pnpm;
+  fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+  return true;
+}
+
+export function isAndroidArm64PwaTerserFailure(error: unknown): boolean {
+  if (process.platform !== 'android') return false;
+  const text = commandErrorText(error);
+  return /Unexpected early exit/i.test(text) && /\(terser\) renderChunk/i.test(text);
+}
+
 export async function buildWebProject(projectPath: string): Promise<WebBuildResult> {
   const logs: string[] = [];
 
@@ -188,17 +244,34 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
     logs.push(`Running: ${manager} ${installArgs.join(' ')}`);
 
     const installEnv = manager === 'npm' ? { NPM_CONFIG_REGISTRY: PUBLIC_NPM_REGISTRY } : undefined;
-    const installResult = await runCommand(manager, installArgs, projectPath, installEnv);
+    let installResult = await runCommand(manager, installArgs, projectPath, installEnv);
 
     if (installResult.stdout) logs.push(`[Install stdout]: ${installResult.stdout}`);
     if (installResult.stderr) logs.push(`[Install stderr]: ${installResult.stderr}`);
     logs.push('Dependency installation completed successfully.');
 
-    logs.push(`Running: ${manager} run build`);
-    const buildResult = await runCommand(manager, ['run', 'build'], projectPath, installEnv);
+    const runBuild = async (): Promise<void> => {
+      logs.push(`Running: ${manager} run build`);
+      const buildResult = await runCommand(manager, ['run', 'build'], projectPath, installEnv);
+      if (buildResult.stdout) logs.push(`[Build stdout]: ${buildResult.stdout}`);
+      if (buildResult.stderr) logs.push(`[Build stderr]: ${buildResult.stderr}`);
+    };
 
-    if (buildResult.stdout) logs.push(`[Build stdout]: ${buildResult.stdout}`);
-    if (buildResult.stderr) logs.push(`[Build stderr]: ${buildResult.stderr}`);
+    try {
+      await runBuild();
+    } catch (buildError: unknown) {
+      if (!isAndroidArm64PwaTerserFailure(buildError)) throw buildError;
+
+      if (!applyAndroidArm64PwaRollupCompatibility(projectPath)) throw buildError;
+
+      logs.push(`Detected Android ARM64 PWA/Terser lifecycle failure; applying temporary Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION} compatibility pin.`);
+      logs.push(`Re-running: ${manager} ${installArgs.join(' ')}`);
+      installResult = await runCommand(manager, installArgs, projectPath, installEnv);
+      if (installResult.stdout) logs.push(`[Compatibility install stdout]: ${installResult.stdout}`);
+      if (installResult.stderr) logs.push(`[Compatibility install stderr]: ${installResult.stderr}`);
+      logs.push('Compatibility dependency installation completed successfully.');
+      await runBuild();
+    }
 
     for (const directory of ['dist', 'build', 'out', 'www']) {
       const fullPath = path.join(projectPath, directory);
