@@ -109,11 +109,54 @@ export function injectAndroidWrapper(projectDir: string, webOutputDir?: string, 
   const mipmapXxxhdpiDir = path.join(mainDir, 'res/mipmap-xxxhdpi');
   const mipmapAnyDir = path.join(mainDir, 'res/mipmap-anydpi-v26');
 
-  for (const dir of [javaDir, assetsDir, drawableDir, mipmapDir, mipmapMdpiDir, mipmapXhdpiDir, mipmapXxhdpiDir, mipmapXxxhdpiDir, mipmapAnyDir]) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  for (const dir of [javaDir, assetsDir, drawableDir, mipmapDir, mipmapMdpiDir, mipmapXhdpiDir, mipmapXxhdpiDir, mipmapXxxhdpiDir, mipmapAnyDir]) fs.mkdirSync(dir, { recursive: true });
 
   const projectIconExtension = copyProjectIcon(projectDir, drawableDir);
+  if (projectIconExtension) {
+    const sourceIcon = path.join(drawableDir, 'ic_launcher_custom' + projectIconExtension);
+    try {
+      const { execFileSync } = require('child_process');
+      execFileSync('python', ['-c', `
+from PIL import Image
+from pathlib import Path
+import sys
+src = Path(sys.argv[1])
+root = Path(sys.argv[2])
+im = Image.open(src).convert("RGBA")
+im.thumbnail((432, 432), Image.Resampling.LANCZOS)
+canvas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+x = (512 - im.width) // 2
+y = (512 - im.height) // 2
+canvas.alpha_composite(im, (x, y))
+sizes = {"mipmap-mdpi": 48, "mipmap-hdpi": 72, "mipmap-xhdpi": 96, "mipmap-xxhdpi": 144, "mipmap-xxxhdpi": 192}
+for folder, size in sizes.items():
+    out = root / "res" / folder / "ic_launcher.png"
+    canvas.resize((size, size), Image.Resampling.LANCZOS).save(out, "PNG")
+fg = root / "res" / "drawable" / "ic_launcher_foreground.png"
+fg_canvas = Image.new("RGBA", (108, 108), (0, 0, 0, 0))
+fg_src = Image.open(src).convert("RGBA")
+px = fg_src.load()
+w, h = fg_src.size
+corners = [px[0,0], px[w-1,0], px[0,h-1], px[w-1,h-1]]
+bg = tuple(sum(c[i] for c in corners) // len(corners) for i in range(4))
+for y in range(h):
+    for x in range(w):
+        r,g,b,a = px[x,y]
+        distance = abs(r-bg[0]) + abs(g-bg[1]) + abs(b-bg[2])
+        if distance < 35 and not (r > 180 and g > 180 and b > 180):
+            px[x,y] = (r,g,b,0)
+bbox = fg_src.getchannel("A").getbbox()
+if bbox:
+    fg_src = fg_src.crop(bbox)
+    fg_src.thumbnail((82, 82), Image.Resampling.LANCZOS)
+    fg_x = (108 - fg_src.width) // 2
+    fg_y = (108 - fg_src.height) // 2
+    fg_canvas.alpha_composite(fg_src, (fg_x, fg_y))
+fg_canvas.save(fg, "PNG")
+`, sourceIcon, mainDir], { stdio: 'ignore' });
+    } catch {}
+  }
+
   const sourceDir = webOutputDir || projectDir;
   if (fs.existsSync(sourceDir)) {
     for (const file of fs.readdirSync(sourceDir)) {
@@ -126,9 +169,7 @@ export function injectAndroidWrapper(projectDir: string, webOutputDir?: string, 
   const keystorePath = path.join(keystoreDir, 'debug.keystore');
   if (!fs.existsSync(keystorePath)) {
     fs.mkdirSync(keystoreDir, { recursive: true });
-    try {
-      execSync(`keytool -genkey -v -keystore "${keystorePath}" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"`, { stdio: 'ignore' });
-    } catch (e) { console.error('Failed to generate keystore:', e); }
+    try { execSync(`keytool -genkey -v -keystore "${keystorePath}" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"`, { stdio: 'ignore' }); } catch (e) { console.error('Failed to generate keystore:', e); }
   }
 
   const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '';
@@ -138,9 +179,7 @@ export function injectAndroidWrapper(projectDir: string, webOutputDir?: string, 
   const configuredAapt2 = process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2';
   const aapt2Line = fs.existsSync(configuredAapt2) ? `android.aapt2FromMavenOverride=${configuredAapt2}\n` : '';
   fs.writeFileSync(path.join(projectDir, 'gradle.properties'), `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.enableJetifier=true\n${aapt2Line}`);
-
   fs.writeFileSync(path.join(projectDir, 'settings.gradle'), `pluginManagement {\n    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }\n}\ndependencyResolutionManagement {\n    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n    repositories {\n        google()\n        mavenCentral()\n    }\n}\nrootProject.name = "${gradleAppName}"\ninclude ':app'`);
-
   fs.writeFileSync(path.join(drawableDir, 'ic_launcher.xml'), `<?xml version="1.0" encoding="utf-8"?>\n<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">\n    <path android:fillColor="#6750A4" android:pathData="M0,0h108v108h-108z" />\n    <path android:fillColor="#FFFFFF" android:pathData="M58,12L25,61h24l-5,35 34,-50h-24z" />\n</vector>`);
 
   if (projectIconExtension) {
@@ -151,8 +190,7 @@ export function injectAndroidWrapper(projectDir: string, webOutputDir?: string, 
   }
 
   const launcherIconResource = projectIconExtension ? '@mipmap/ic_launcher' : '@drawable/ic_launcher';
-
-  fs.writeFileSync(path.join(mainDir, 'AndroidManifest.xml'), `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${packageName}">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <application\n        android:label="${safeAppName}"\n        android:icon="${launcherIconResource}"\n        android:roundIcon="${launcherIconResource}"\n        android:allowBackup="true"\n        android:supportsRtl="true">\n        <activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>`);
+  fs.writeFileSync(path.join(mainDir, 'AndroidManifest.xml'), `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${packageName}">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <application android:label="${safeAppName}" android:icon="${launcherIconResource}" android:roundIcon="${launcherIconResource}" android:allowBackup="true" android:supportsRtl="true">\n        <activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>`);
 
   fs.writeFileSync(path.join(javaDir, 'MainActivity.java'), `package ${packageName};
 
@@ -171,9 +209,6 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 import androidx.webkit.WebViewAssetLoader;
 import java.io.InputStream;
 
@@ -225,21 +260,15 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     boolean wantsCamera = false;
                     for (String resource : request.getResources()) {
-                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
-                            wantsCamera = true;
-                            break;
-                        }
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) { wantsCamera = true; break; }
                     }
-                    if (!wantsCamera) {
-                        request.deny();
-                        return;
-                    }
+                    if (!wantsCamera) { request.deny(); return; }
                     pendingWebPermissionRequest = request;
-                    if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                         request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
                         pendingWebPermissionRequest = null;
                     } else {
-                        ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+                        requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
                     }
                 });
             }
@@ -270,16 +299,15 @@ public class MainActivity extends Activity {
         setContentView(webView);
         webView.loadUrl("https://appassets.androidplatform.net/index.html");
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
         }
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != CAMERA_PERMISSION_REQUEST_CODE) return;
-        if (pendingWebPermissionRequest == null) return;
+        if (requestCode != CAMERA_PERMISSION_REQUEST_CODE || pendingWebPermissionRequest == null) return;
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             pendingWebPermissionRequest.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
         } else {
