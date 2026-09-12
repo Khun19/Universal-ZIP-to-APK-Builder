@@ -167,10 +167,74 @@ export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): bo
   if (!hasVitePwaDependency(packageJson)) return false;
 
   const workspaceConfigPath = path.join(projectPath, 'pnpm-workspace.yaml');
-  if (fs.existsSync(workspaceConfigPath)) return false;
+  if (!fs.existsSync(workspaceConfigPath)) {
+    fs.writeFileSync(
+      workspaceConfigPath,
+      `overrides:\n  rollup: ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION}\n`,
+    );
+  }
 
-  fs.writeFileSync(workspaceConfigPath, `overrides:\n  rollup: ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION}\n`);
-  return true;
+  /*
+   * Workbox 7.4.x internally creates @rollup/plugin-terser without
+   * specifying maxWorkers. On Termux/aarch64 this can leave the Rollup
+   * renderChunk hook unresolved. Patch only the extracted temporary build's
+   * installed Workbox bundle; never modify the user's ZIP.
+   *
+   * Workbox 7.4.1 source uses:
+   *   terser({ mangle: { ... } })
+   *
+   * We add:
+   *   maxWorkers: 1
+   *
+   * This keeps real Workbox/PWA generation enabled while avoiding the
+   * Android ARM64 worker lifecycle failure.
+   */
+  const pnpmStore = path.join(projectPath, 'node_modules', '.pnpm');
+  if (!fs.existsSync(pnpmStore)) return true;
+
+  let patched = false;
+
+  for (const entry of fs.readdirSync(pnpmStore)) {
+    if (!entry.startsWith('workbox-build@')) continue;
+
+    const bundlePath = path.join(
+      pnpmStore,
+      entry,
+      'node_modules',
+      'workbox-build',
+      'build',
+      'lib',
+      'bundle.js',
+    );
+
+    if (!fs.existsSync(bundlePath)) continue;
+
+    let source = fs.readFileSync(bundlePath, 'utf8');
+
+    if (source.includes('maxWorkers: 1') && source.includes('terser({')) {
+      patched = true;
+      continue;
+    }
+
+    const patterns = [
+      /terser\(\{\s*mangle:\s*\{/,
+      /terser\(\{\r?\n\s*mangle:\s*\{/,
+    ];
+
+    for (const pattern of patterns) {
+      if (pattern.test(source)) {
+        source = source.replace(
+          pattern,
+          'terser({ maxWorkers: 1, mangle: {',
+        );
+        fs.writeFileSync(bundlePath, source);
+        patched = true;
+        break;
+      }
+    }
+  }
+
+  return patched;
 }
 
 export function isAndroidArm64PwaTerserFailure(error: unknown): boolean {
