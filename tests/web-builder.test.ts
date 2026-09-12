@@ -5,13 +5,16 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   detectVitePluginPwaUsage,
+  findGeneratedWorkboxBundle,
   getPwaLockfileStabilizeArgs,
   getPwaMinimumReleaseAgeRetryArgs,
   getPwaMinimumReleaseAgeRetryEnv,
   getPwaWorkboxInstallArgs,
   hasInstalledPackage,
   isMinimumReleaseAgeViolation,
+  patchGeneratedWorkboxTerser,
   sanitizeNpmLockfile,
+  verifyGeneratedWorkboxTerserPatch,
 } from '../lib/web-builder.ts';
 
 test('removes Replit internal resolved URLs while preserving integrity', () => {
@@ -136,4 +139,69 @@ test('checks whether workbox-window exists in the generated project', () => {
   assert.strictEqual(hasInstalledPackage(targetDir, 'workbox-build'), false);
 
   fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('locates Workbox bundle in the generated workspace, not repository node_modules', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-workbox-bundle-'));
+  const bundlePath = path.join(targetDir, 'node_modules', 'workbox-build', 'build', 'lib', 'bundle.js');
+  fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+  fs.writeFileSync(bundlePath, 'plugin_terser_1.default)({ mangle: { minify: true } });');
+
+  assert.strictEqual(findGeneratedWorkboxBundle(targetDir), bundlePath);
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('patches the compiled plugin_terser invocation with maxWorkers: 1', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-workbox-patch-'));
+  const bundlePath = path.join(targetDir, 'node_modules', 'workbox-build', 'build', 'lib', 'bundle.js');
+  fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+  fs.writeFileSync(bundlePath, 'const plugin = plugin_terser_1.default)({\n  mangle: { minify: true }\n});');
+
+  const result = patchGeneratedWorkboxTerser(targetDir);
+  const patched = fs.readFileSync(bundlePath, 'utf8');
+  assert.strictEqual(result.changed, true);
+  assert.match(patched, /plugin_terser_1\.default\)\(\{\s*maxWorkers: 1,\s*mangle:/);
+  assert.strictEqual(verifyGeneratedWorkboxTerserPatch(targetDir), bundlePath);
+
+  const second = patchGeneratedWorkboxTerser(targetDir);
+  assert.strictEqual(second.changed, false);
+  assert.strictEqual(fs.readFileSync(bundlePath, 'utf8'), patched);
+
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('patches the legacy terser invocation too', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-workbox-legacy-'));
+  const bundlePath = path.join(targetDir, 'node_modules', 'workbox-build', 'build', 'lib', 'bundle.js');
+  fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+  fs.writeFileSync(bundlePath, 'terser({\n  mangle: { minify: true }\n});');
+
+  patchGeneratedWorkboxTerser(targetDir);
+  assert.match(fs.readFileSync(bundlePath, 'utf8'), /terser\(\{\s*maxWorkers: 1,\s*mangle:/);
+  assert.strictEqual(verifyGeneratedWorkboxTerserPatch(targetDir), bundlePath);
+
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('rejects a generated Workbox bundle that has no supported Terser pattern', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-workbox-unsupported-'));
+  const bundlePath = path.join(targetDir, 'node_modules', 'workbox-build', 'build', 'lib', 'bundle.js');
+  fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+  fs.writeFileSync(bundlePath, 'const unrelated = true;');
+
+  assert.throws(() => patchGeneratedWorkboxTerser(targetDir), /Unsupported Workbox Terser bundle pattern/);
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('PWA build flow places Workbox patch immediately before the build and retry', async () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'lib', 'web-builder.ts'), 'utf8');
+  const patchIndex = source.indexOf('if (usesVitePwa) await patchWorkboxBeforePwaBuild(projectPath, logs);');
+  const buildIndex = source.indexOf("logs.push(`Running: ${manager} run build`);");
+  const retryIndex = source.indexOf("const retryArgs = getPwaMinimumReleaseAgeRetryArgs(['run', 'build']);");
+  const retryPatchIndex = source.indexOf('await patchWorkboxBeforePwaBuild(projectPath, logs);', retryIndex - 200);
+
+  assert.ok(patchIndex >= 0);
+  assert.ok(buildIndex > patchIndex);
+  assert.ok(retryPatchIndex >= 0);
+  assert.ok(retryPatchIndex < retryIndex);
 });
