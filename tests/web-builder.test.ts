@@ -7,6 +7,7 @@ import {
   detectVitePluginPwaUsage,
   getPwaLockfileStabilizeArgs,
   getPwaMinimumReleaseAgeRetryArgs,
+  getPwaMinimumReleaseAgeRetryEnv,
   getPwaWorkboxInstallArgs,
   hasInstalledPackage,
   isMinimumReleaseAgeViolation,
@@ -101,21 +102,24 @@ test('PWA lockfile stabilization is scoped and only overrides minimum release ag
 test('PWA dependency commands retry with a local minimum-release-age override', () => {
   const original = ['install', '--ignore-workspace', '--dangerously-allow-all-builds'];
   assert.deepStrictEqual(getPwaMinimumReleaseAgeRetryArgs(original), [
+    '--config.minimum-release-age=0',
     'install',
     '--ignore-workspace',
     '--dangerously-allow-all-builds',
-    '--config.minimum-release-age=0',
   ]);
   assert.deepStrictEqual(original, ['install', '--ignore-workspace', '--dangerously-allow-all-builds']);
 });
 
-test('PWA build retry includes the minimum-release-age override', () => {
+test('PWA build retry includes a real pnpm minimum-release-age override', () => {
   const buildRetryArgs = getPwaMinimumReleaseAgeRetryArgs(['run', 'build']);
   assert.deepStrictEqual(buildRetryArgs, [
+    '--config.minimum-release-age=0',
     'run',
     'build',
-    '--config.minimum-release-age=0',
   ]);
+  assert.deepStrictEqual(getPwaMinimumReleaseAgeRetryEnv(), {
+    PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0',
+  });
 });
 
 test('recognizes only the pnpm minimum-release-age violation', () => {
