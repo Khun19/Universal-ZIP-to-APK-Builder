@@ -23,8 +23,12 @@ type PackageJson = {
 
 const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org';
 const PWA_WORKBOX_PACKAGE = 'workbox-window';
+const WORKBOX_BUILD_PACKAGE = 'workbox-build';
 const VITE_PWA_PACKAGE = 'vite-plugin-pwa';
 const MINIMUM_RELEASE_AGE_ERROR = 'ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION';
+const WORKBOX_TERSER_MAX_WORKERS = 'maxWorkers: 1';
+const COMPILED_TERSER_PATTERN = /plugin_terser_1\.default\)\(\{\s*mangle:\s*\{/;
+const LEGACY_TERSER_PATTERN = /terser\(\{\s*mangle:\s*\{/;
 
 /**
  * Replit-generated package-lock files can contain resolved tarball URLs that
@@ -164,6 +168,52 @@ export function hasInstalledPackage(projectPath: string, packageName: string): b
   return fs.existsSync(path.join(projectPath, 'node_modules', ...packageName.split('/')));
 }
 
+/** Locate the Workbox bundle inside the generated workspace, never the repository root. */
+export function findGeneratedWorkboxBundle(projectPath: string): string | null {
+  const bundlePath = path.join(projectPath, 'node_modules', WORKBOX_BUILD_PACKAGE, 'build', 'lib', 'bundle.js');
+  return fs.existsSync(bundlePath) ? bundlePath : null;
+}
+
+/**
+ * Patch the generated Workbox bundle for Android ARM64 by limiting the internal
+ * @rollup/plugin-terser worker pool to one worker. The patch is idempotent and
+ * supports both the current compiled invocation and the older terser() form.
+ */
+export function patchGeneratedWorkboxTerser(projectPath: string): { path: string; changed: boolean } {
+  const bundlePath = findGeneratedWorkboxBundle(projectPath);
+  if (!bundlePath) {
+    throw new Error(`Generated Workbox bundle not found: ${path.join(projectPath, 'node_modules', WORKBOX_BUILD_PACKAGE, 'build', 'lib', 'bundle.js')}`);
+  }
+
+  const original = fs.readFileSync(bundlePath, 'utf8');
+  if (original.includes(WORKBOX_TERSER_MAX_WORKERS) && (COMPILED_TERSER_PATTERN.test(original) || LEGACY_TERSER_PATTERN.test(original))) {
+    return { path: bundlePath, changed: false };
+  }
+
+  let patched = original.replace(COMPILED_TERSER_PATTERN, (match) => match.replace('mangle:', `${WORKBOX_TERSER_MAX_WORKERS},\n  mangle:`));
+  if (patched === original) {
+    patched = original.replace(LEGACY_TERSER_PATTERN, (match) => match.replace('mangle:', `${WORKBOX_TERSER_MAX_WORKERS},\n  mangle:`));
+  }
+
+  if (patched === original) {
+    throw new Error(`Unsupported Workbox Terser bundle pattern in ${bundlePath}`);
+  }
+
+  fs.writeFileSync(bundlePath, patched);
+  return { path: bundlePath, changed: true };
+}
+
+/** Verify the generated Workbox bundle contains the required one-worker setting. */
+export function verifyGeneratedWorkboxTerserPatch(projectPath: string): string {
+  const bundlePath = findGeneratedWorkboxBundle(projectPath);
+  if (!bundlePath) throw new Error(`Generated Workbox bundle not found: ${path.join(projectPath, 'node_modules', WORKBOX_BUILD_PACKAGE, 'build', 'lib', 'bundle.js')}`);
+  const content = fs.readFileSync(bundlePath, 'utf8');
+  if (!content.includes(WORKBOX_TERSER_MAX_WORKERS)) {
+    throw new Error(`Generated Workbox bundle is not patched with maxWorkers: 1: ${bundlePath}`);
+  }
+  return bundlePath;
+}
+
 export function getPwaWorkboxInstallArgs(): string[] {
   return ['add', PWA_WORKBOX_PACKAGE, '--ignore-workspace', '--dangerously-allow-all-builds'];
 }
@@ -200,6 +250,13 @@ async function runCommand(command: string, args: string[], cwd: string, env?: No
     env: { ...process.env, ...env },
   });
   return { stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
+}
+
+async function patchWorkboxBeforePwaBuild(projectPath: string, logs: string[]): Promise<void> {
+  const patch = patchGeneratedWorkboxTerser(projectPath);
+  logs.push(`${patch.changed ? 'Patched' : 'Verified'} generated Workbox Terser maxWorkers: 1 at ${patch.path}`);
+  const verifiedPath = verifyGeneratedWorkboxTerserPatch(projectPath);
+  logs.push(`Verified generated Workbox contains maxWorkers: 1: ${verifiedPath}`);
 }
 
 export async function buildWebProject(projectPath: string): Promise<WebBuildResult> {
@@ -273,7 +330,9 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       if (pwaInstallResult.stdout) logs.push(`[PWA dependency stdout]: ${pwaInstallResult.stdout}`);
       if (pwaInstallResult.stderr) logs.push(`[PWA dependency stderr]: ${pwaInstallResult.stderr}`);
       logs.push('workbox-window compatibility dependency installed successfully.');
+    }
 
+    if (usesVitePwa) {
       const stabilizeArgs = getPwaLockfileStabilizeArgs();
       logs.push('Stabilizing generated PWA workspace lockfile for dependency-age policy.');
       logs.push(`Running: pnpm ${stabilizeArgs.join(' ')}`);
@@ -282,6 +341,8 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       if (stabilizeResult.stderr) logs.push(`[PWA lockfile stderr]: ${stabilizeResult.stderr}`);
       logs.push('Generated PWA workspace lockfile stabilized successfully.');
     }
+
+    if (usesVitePwa) await patchWorkboxBeforePwaBuild(projectPath, logs);
 
     logs.push(`Running: ${manager} run build`);
     try {
@@ -295,6 +356,7 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       if (!usesVitePwa || manager !== 'pnpm' || !isMinimumReleaseAgeViolation(combined)) throw error;
 
       logs.push('PWA build hit pnpm minimum-release-age policy after compatibility install. Retrying generated workspace build with a local policy override.');
+      await patchWorkboxBeforePwaBuild(projectPath, logs);
       const retryArgs = getPwaMinimumReleaseAgeRetryArgs(['run', 'build']);
       const retryEnv = getPwaMinimumReleaseAgeRetryEnv();
       logs.push(`Running: PNPM_CONFIG_MINIMUM_RELEASE_AGE=0 pnpm ${retryArgs.join(' ')} (generated workspace policy retry)`);
