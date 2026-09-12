@@ -21,6 +21,29 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
+      - name: Normalize SAF patch script for current template
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/patch-test-a-directory-picker.py')
+          s = p.read_text()
+          old = ('            @Override\\n'
+                 '            public WebResourceResponse shouldInterceptRequest(\\n'
+                 '                    WebView view, String url) {\\n'
+                 '                return assetLoader.shouldInterceptRequest(Uri.parse(url));\\n'
+                 '            }\\n')
+          new = ('            @Override\\n'
+                 '            @SuppressWarnings("deprecation")\\n'
+                 '            public WebResourceResponse shouldInterceptRequest(\\n'
+                 '                    WebView view, String url) {\\n'
+                 '                return assetLoader.shouldInterceptRequest(Uri.parse(url));\\n'
+                 '            }\\n')
+          if old in s:
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          print('SAF patch script normalized for current WebViewClient template')
+          PY
+
       - name: Apply Android SAF bridge
         run: python3 scripts/patch-test-a-directory-picker.py
 
