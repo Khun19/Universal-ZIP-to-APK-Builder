@@ -17,16 +17,8 @@ type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun';
 const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org';
 const ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION = '4.60.1';
 
-/**
- * Replit-generated package-lock files can contain resolved tarball URLs that
- * point at Replit's private package firewall. Those URLs are not portable to
- * Termux, CI, Docker, or other local environments. Remove only those
- * environment-specific `resolved` fields and preserve the lockfile's
- * integrity hashes so npm can resolve the package from the public registry.
- */
 export function sanitizeNpmLockfile(projectPath: string): number {
   const lockfilePath = path.join(projectPath, 'package-lock.json');
-
   if (!fs.existsSync(lockfilePath)) return 0;
 
   const lockfile = JSON.parse(fs.readFileSync(lockfilePath, 'utf8')) as unknown;
@@ -34,12 +26,10 @@ export function sanitizeNpmLockfile(projectPath: string): number {
 
   const visit = (value: unknown): void => {
     if (!value || typeof value !== 'object') return;
-
     if (Array.isArray(value)) {
       for (const item of value) visit(item);
       return;
     }
-
     const record = value as Record<string, unknown>;
     if (typeof record.resolved === 'string') {
       try {
@@ -52,22 +42,16 @@ export function sanitizeNpmLockfile(projectPath: string): number {
         // Leave non-URL resolved values untouched.
       }
     }
-
     for (const child of Object.values(record)) visit(child);
   };
 
   visit(lockfile);
-
-  if (sanitized > 0) {
-    fs.writeFileSync(lockfilePath, `${JSON.stringify(lockfile, null, 2)}\n`);
-  }
-
+  if (sanitized > 0) fs.writeFileSync(lockfilePath, `${JSON.stringify(lockfile, null, 2)}\n`);
   return sanitized;
 }
 
 function detectPackageManager(projectPath: string): PackageManager {
   if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return 'pnpm';
-
   if (fs.existsSync(path.join(projectPath, 'bun.lock')) || fs.existsSync(path.join(projectPath, 'bun.lockb'))) {
     try {
       execFileSync('bun', ['--version'], { stdio: 'ignore' });
@@ -76,7 +60,6 @@ function detectPackageManager(projectPath: string): PackageManager {
       return 'pnpm';
     }
   }
-
   if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) return 'yarn';
   return 'npm';
 }
@@ -85,7 +68,6 @@ function webProjectScore(directory: string): number {
   let score = 0;
   const packageJsonPath = path.join(directory, 'package.json');
   const indexPath = path.join(directory, 'index.html');
-
   if (fs.existsSync(indexPath)) score = 3;
   if (fs.existsSync(packageJsonPath)) {
     score = Math.max(score, 1);
@@ -96,7 +78,6 @@ function webProjectScore(directory: string): number {
       // buildWebProject will report the useful package.json parse error later.
     }
   }
-
   return score;
 }
 
@@ -107,7 +88,6 @@ export function findWebProjectRoot(projectPath: string): string {
   while (queue.length > 0) {
     const current = queue.shift();
     if (!current) continue;
-
     if (webProjectScore(current.directory) > 0) candidates.push(current);
     if (current.depth >= 3) continue;
 
@@ -148,7 +128,6 @@ async function runCommand(command: string, args: string[], cwd: string, env?: No
     maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, ...env },
   });
-
   return { stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
 }
 
@@ -161,8 +140,7 @@ function commandErrorText(error: unknown): string {
 function hasVitePwaDependency(packageJson: Record<string, unknown>): boolean {
   for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
     const dependencies = packageJson[field];
-    if (dependencies && typeof dependencies === 'object' && '@vite-pwa/plugin' in dependencies) return true;
-    if (dependencies && typeof dependencies === 'object' && 'vite-plugin-pwa' in dependencies) return true;
+    if (dependencies && typeof dependencies === 'object' && ('@vite-pwa/plugin' in dependencies || 'vite-plugin-pwa' in dependencies)) return true;
   }
   return false;
 }
@@ -174,9 +152,10 @@ function hasVitePwaDependency(packageJson: Record<string, unknown>): boolean {
  * change isolated to the extracted build workspace and only apply it after
  * that exact failure is observed. The source ZIP is never modified.
  *
- * pnpm 11 no longer reads `packageJson.pnpm.overrides` for this purpose.
- * Instead, create a temporary workspace-root config in the extracted build
- * directory, where it cannot inherit the Universal Builder's monorepo config.
+ * pnpm 11 no longer reads packageJson.pnpm.overrides for this purpose. The
+ * temporary workspace config must therefore remain active while both the
+ * compatibility install AND the retry build execute. The caller deliberately
+ * does not use --ignore-workspace during this retry.
  */
 export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): boolean {
   if (process.platform !== 'android' || !fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return false;
@@ -190,10 +169,7 @@ export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): bo
   const workspaceConfigPath = path.join(projectPath, 'pnpm-workspace.yaml');
   if (fs.existsSync(workspaceConfigPath)) return false;
 
-  fs.writeFileSync(
-    workspaceConfigPath,
-    `overrides:\n  rollup: ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION}\n`,
-  );
+  fs.writeFileSync(workspaceConfigPath, `overrides:\n  rollup: ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION}\n`);
   return true;
 }
 
@@ -208,11 +184,8 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
 
   try {
     const packageJsonPath = path.join(projectPath, 'package.json');
-
     if (!fs.existsSync(packageJsonPath)) {
-      if (!fs.existsSync(path.join(projectPath, 'index.html'))) {
-        return { success: false, logs, error: 'No package.json or index.html found' };
-      }
+      if (!fs.existsSync(path.join(projectPath, 'index.html'))) return { success: false, logs, error: 'No package.json or index.html found' };
       logs.push('No package.json found; treating project as static HTML/JS.');
       return { success: true, outputDir: projectPath, logs };
     }
@@ -224,9 +197,7 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       return { success: false, logs, error: `Invalid package.json: ${error.message}` };
     }
 
-    if (!packageJson.scripts || typeof packageJson.scripts.build !== 'string') {
-      return { success: false, logs, error: 'package.json does not define scripts.build' };
-    }
+    if (!packageJson.scripts || typeof packageJson.scripts.build !== 'string') return { success: false, logs, error: 'package.json does not define scripts.build' };
 
     const manager = detectPackageManager(projectPath);
     const installArgs = getInstallArgs(manager, projectPath);
@@ -246,14 +217,13 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
         : {};
 
     let installResult = await runCommand(manager, installArgs, projectPath, commandEnv);
-
     if (installResult.stdout) logs.push(`[Install stdout]: ${installResult.stdout}`);
     if (installResult.stderr) logs.push(`[Install stderr]: ${installResult.stderr}`);
     logs.push('Dependency installation completed successfully.');
 
-    const runBuild = async (): Promise<void> => {
-      logs.push(`Running: ${manager} run build`);
-      const buildResult = await runCommand(manager, ['run', 'build'], projectPath, commandEnv);
+    const runBuild = async (env = commandEnv, args = ['run', 'build']): Promise<void> => {
+      logs.push(`Running: ${manager} ${args.join(' ')}`);
+      const buildResult = await runCommand(manager, args, projectPath, env);
       if (buildResult.stdout) logs.push(`[Build stdout]: ${buildResult.stdout}`);
       if (buildResult.stderr) logs.push(`[Build stderr]: ${buildResult.stderr}`);
     };
@@ -262,22 +232,38 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       await runBuild();
     } catch (buildError: unknown) {
       if (!isAndroidArm64PwaTerserFailure(buildError)) throw buildError;
-
       if (!applyAndroidArm64PwaRollupCompatibility(projectPath)) throw buildError;
 
       const compatibilityConfigPath = path.join(projectPath, 'pnpm-workspace.yaml');
+      const compatibilityInstallArgs = manager === 'pnpm'
+        ? ['install', '--dangerously-allow-all-builds']
+        : installArgs;
+      const compatibilityEnv: NodeJS.ProcessEnv = manager === 'pnpm'
+        ? { ...commandEnv, PNPM_CONFIG_IGNORE_WORKSPACE: undefined }
+        : commandEnv;
+
       try {
         logs.push(`Detected Android ARM64 PWA/Terser lifecycle failure; applying temporary Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION} compatibility pin.`);
-        logs.push(`Re-running: ${manager} ${installArgs.join(' ')}`);
-        installResult = await runCommand(manager, installArgs, projectPath, commandEnv);
+        logs.push(`Compatibility workspace: ${compatibilityConfigPath}`);
+        logs.push(`Re-running: ${manager} ${compatibilityInstallArgs.join(' ')}`);
+        installResult = await runCommand(manager, compatibilityInstallArgs, projectPath, compatibilityEnv);
         if (installResult.stdout) logs.push(`[Compatibility install stdout]: ${installResult.stdout}`);
         if (installResult.stderr) logs.push(`[Compatibility install stderr]: ${installResult.stderr}`);
         logs.push('Compatibility dependency installation completed successfully.');
+
+        if (manager === 'pnpm') {
+          const installedRollupPath = path.join(projectPath, 'node_modules', '.pnpm', `rollup@${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION}`);
+          logs.push(`Checking compatibility Rollup: ${installedRollupPath}`);
+          if (!fs.existsSync(installedRollupPath)) {
+            throw new Error(`Compatibility install did not install Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION}`);
+          }
+          logs.push(`Verified Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION} is installed.`);
+        }
+
+        await runBuild(compatibilityEnv);
       } finally {
         if (fs.existsSync(compatibilityConfigPath)) fs.unlinkSync(compatibilityConfigPath);
       }
-
-      await runBuild();
     }
 
     for (const directory of ['dist', 'build', 'out', 'www']) {
