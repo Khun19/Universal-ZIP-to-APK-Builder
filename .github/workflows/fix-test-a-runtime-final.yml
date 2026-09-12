@@ -40,6 +40,17 @@ jobs:
                  '            }\\n')
           if old in s:
               s = s.replace(old, new, 1)
+          old_call = "rep(marker, marker + js, 'page finished')"
+          new_call = '''anchor = 'new WebViewClient() {'
+          if s.count(anchor) != 1:
+              raise SystemExit(f'WebViewClient anchor: expected exactly one match, got {s.count(anchor)}')
+          s = s.replace(old_call, "s = s.replace(anchor, anchor + js, 1)", 1)
+          if old_call in s:
+              raise SystemExit('page-finished patch call was not replaced')
+          '''
+          if old_call not in s:
+              raise SystemExit('expected legacy page-finished patch call')
+          s = s.replace(old_call, new_call, 1)
           p.write_text(s)
           print('SAF patch script normalized for current WebViewClient template')
           PY
