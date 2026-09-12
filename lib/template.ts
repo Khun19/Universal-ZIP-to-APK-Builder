@@ -8,12 +8,7 @@ interface WrapperMetadata {
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
 function escapeGradleString(value: string): string {
@@ -21,104 +16,40 @@ function escapeGradleString(value: string): string {
 }
 
 function humanizeName(value: string): string {
-  const cleaned = value
-    .replace(/^@[^/]+\//, '')
-    .replace(/[-_.]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
+  const cleaned = value.replace(/^@[^/]+\//, '').replace(/[-_.]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!cleaned) return 'GeneratedApp';
-
   return cleaned.replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function normalizeApplicationId(value: string): string {
-  const segments = value
-    .toLowerCase()
-    .split('.')
-    .map((segment) => segment.replace(/[^a-z0-9_]/g, ''))
-    .filter(Boolean);
-
-  if (segments.length < 2) {
-    return `com.builder.${segments[0] || 'generatedapp'}`;
-  }
-
-  if (!/^[a-z_]/.test(segments[0])) {
-    segments.unshift('app');
-  }
-
+  const segments = value.toLowerCase().split('.').map((segment) => segment.replace(/[^a-z0-9_]/g, '')).filter(Boolean);
+  if (segments.length < 2) return `com.builder.${segments[0] || 'generatedapp'}`;
+  if (!/^[a-z_]/.test(segments[0])) segments.unshift('app');
   return segments.join('.');
 }
 
 function findProjectIcon(projectDir: string): string | null {
-  const preferredNames = [
-    'icon.png',
-    'logo.png',
-    'favicon.png',
-    'icon.webp',
-    'logo.webp',
-    'favicon.ico',
-  ];
-
-  const preferredDirs = [
-    projectDir,
-    path.join(projectDir, 'public'),
-    path.join(projectDir, 'src'),
-    path.join(projectDir, 'src/assets'),
-    path.join(projectDir, 'assets'),
-  ];
-
+  const preferredNames = ['icon.png', 'logo.png', 'favicon.png', 'icon.webp', 'logo.webp', 'favicon.ico'];
+  const preferredDirs = [projectDir, path.join(projectDir, 'public'), path.join(projectDir, 'src'), path.join(projectDir, 'src/assets'), path.join(projectDir, 'assets')];
   const candidates: string[] = [];
-
   for (const dir of preferredDirs) {
     if (!fs.existsSync(dir)) continue;
-
     try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      for (const entry of entries) {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (!entry.isFile()) continue;
-
-        const fullPath = path.join(dir, entry.name);
-        const lower = entry.name.toLowerCase();
-
-        if (preferredNames.includes(lower)) {
-          candidates.push(fullPath);
-        }
+        if (preferredNames.includes(entry.name.toLowerCase())) candidates.push(path.join(dir, entry.name));
       }
-    } catch {
-      // Ignore unreadable directories.
-    }
+    } catch {}
   }
-
-  if (candidates.length > 0) {
-    return candidates[0];
-  }
-
-  return null;
+  return candidates[0] || null;
 }
 
-function copyProjectIcon(
-  projectDir: string,
-  drawableDir: string,
-): string | null {
+function copyProjectIcon(projectDir: string, drawableDir: string): string | null {
   const sourceIcon = findProjectIcon(projectDir);
-
-  if (!sourceIcon) {
-    return null;
-  }
-
+  if (!sourceIcon) return null;
   const extension = path.extname(sourceIcon).toLowerCase();
-
-  if (!['.png', '.webp'].includes(extension)) {
-    return null;
-  }
-
-  const destination = path.join(
-    drawableDir,
-    'ic_launcher_custom' + extension,
-  );
-
+  if (!['.png', '.webp'].includes(extension)) return null;
+  const destination = path.join(drawableDir, 'ic_launcher_custom' + extension);
   try {
     fs.copyFileSync(sourceIcon, destination);
     console.log(`Using project icon: ${sourceIcon}`);
@@ -128,69 +59,41 @@ function copyProjectIcon(
   }
 }
 
-function deriveWrapperMetadata(
-  projectDir: string,
-  requestedAppName: string,
-): WrapperMetadata {
+function deriveWrapperMetadata(projectDir: string, requestedAppName: string): WrapperMetadata {
   let packageJson: Record<string, any> = {};
   const packageJsonPath = path.join(projectDir, 'package.json');
-
   if (fs.existsSync(packageJsonPath)) {
-    try {
-      packageJson = JSON.parse(
-        fs.readFileSync(packageJsonPath, 'utf8'),
-      );
-    } catch {
-      // Keep safe defaults when an input package.json cannot be parsed.
-    }
+    try { packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')); } catch {}
   }
 
   let htmlTitle = '';
   const indexHtmlPath = path.join(projectDir, 'index.html');
-
   if (fs.existsSync(indexHtmlPath)) {
     try {
       const html = fs.readFileSync(indexHtmlPath, 'utf8');
       const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-
-      if (titleMatch?.[1]) {
-        htmlTitle = titleMatch[1].replace(/\s+/g, ' ').trim();
-      }
-    } catch {
-      // Keep safe defaults when index.html cannot be read.
-    }
+      if (titleMatch?.[1]) htmlTitle = titleMatch[1].replace(/\s+/g, ' ').trim();
+    } catch {}
   }
 
-  const configuredName =
-    typeof packageJson.productName === 'string' &&
-    packageJson.productName.trim()
-      ? packageJson.productName
-      : typeof packageJson.displayName === 'string' &&
-          packageJson.displayName.trim()
-        ? packageJson.displayName
-        : htmlTitle
-          ? htmlTitle
-          : typeof packageJson.name === 'string' &&
-              packageJson.name.trim()
-            ? packageJson.name
-            : requestedAppName;
+  const configuredName = typeof packageJson.productName === 'string' && packageJson.productName.trim()
+    ? packageJson.productName
+    : typeof packageJson.displayName === 'string' && packageJson.displayName.trim()
+      ? packageJson.displayName
+      : htmlTitle
+        ? htmlTitle
+        : typeof packageJson.name === 'string' && packageJson.name.trim()
+          ? packageJson.name
+          : requestedAppName;
 
-  const configuredId =
-    typeof packageJson.android?.applicationId === 'string'
-      ? packageJson.android.applicationId
-      : `com.builder.${configuredName}`;
+  const configuredId = typeof packageJson.android?.applicationId === 'string'
+    ? packageJson.android.applicationId
+    : `com.builder.${configuredName}`;
 
-  return {
-    appName: humanizeName(configuredName),
-    applicationId: normalizeApplicationId(configuredId),
-  };
+  return { appName: humanizeName(configuredName), applicationId: normalizeApplicationId(configuredId) };
 }
 
-export function injectAndroidWrapper(
-  projectDir: string,
-  webOutputDir?: string,
-  appName: string = 'GeneratedApp',
-): void {
+export function injectAndroidWrapper(projectDir: string, webOutputDir?: string, appName: string = 'GeneratedApp'): void {
   const metadata = deriveWrapperMetadata(projectDir, appName);
   const safeAppName = escapeXml(metadata.appName);
   const gradleAppName = escapeGradleString(metadata.appName);
@@ -206,242 +109,79 @@ export function injectAndroidWrapper(
   const mipmapXxxhdpiDir = path.join(mainDir, 'res/mipmap-xxxhdpi');
   const mipmapAnyDir = path.join(mainDir, 'res/mipmap-anydpi-v26');
 
-  fs.mkdirSync(javaDir, { recursive: true });
-  fs.mkdirSync(assetsDir, { recursive: true });
-  fs.mkdirSync(drawableDir, { recursive: true });
-  fs.mkdirSync(mipmapDir, { recursive: true });
-  fs.mkdirSync(mipmapMdpiDir, { recursive: true });
-  fs.mkdirSync(mipmapXhdpiDir, { recursive: true });
-  fs.mkdirSync(mipmapXxhdpiDir, { recursive: true });
-  fs.mkdirSync(mipmapXxxhdpiDir, { recursive: true });
-  fs.mkdirSync(mipmapAnyDir, { recursive: true });
-
-  const projectIconExtension = copyProjectIcon(projectDir, drawableDir);
-
-  if (projectIconExtension) {
-    const sourceIcon = path.join(
-      drawableDir,
-      'ic_launcher_custom' + projectIconExtension,
-    );
-
-    try {
-      const { execFileSync } = require('child_process');
-      execFileSync('python', ['-c', `
-from PIL import Image
-from pathlib import Path
-import sys
-
-src = Path(sys.argv[1])
-root = Path(sys.argv[2])
-
-im = Image.open(src).convert("RGBA")
-im.thumbnail((432, 432), Image.Resampling.LANCZOS)
-
-canvas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
-x = (512 - im.width) // 2
-y = (512 - im.height) // 2
-canvas.alpha_composite(im, (x, y))
-
-sizes = {
-    "mipmap-mdpi": 48,
-    "mipmap-hdpi": 72,
-    "mipmap-xhdpi": 96,
-    "mipmap-xxhdpi": 144,
-    "mipmap-xxxhdpi": 192,
-}
-
-for folder, size in sizes.items():
-    out = root / "res" / folder / "ic_launcher.png"
-    canvas.resize((size, size), Image.Resampling.LANCZOS).save(out, "PNG")
-
-fg = root / "res" / "drawable" / "ic_launcher_foreground.png"
-fg_canvas = Image.new("RGBA", (108, 108), (0, 0, 0, 0))
-fg_src = Image.open(src).convert("RGBA")
-
-px = fg_src.load()
-w, h = fg_src.size
-corners = [px[0,0], px[w-1,0], px[0,h-1], px[w-1,h-1]]
-bg = tuple(sum(c[i] for c in corners) // len(corners) for i in range(4))
-
-for y in range(h):
-    for x in range(w):
-        r,g,b,a = px[x,y]
-        distance = abs(r-bg[0]) + abs(g-bg[1]) + abs(b-bg[2])
-        if distance < 35 and not (r > 180 and g > 180 and b > 180):
-            px[x,y] = (r,g,b,0)
-
-bbox = fg_src.getchannel("A").getbbox()
-if bbox:
-    fg_src = fg_src.crop(bbox)
-    fg_src.thumbnail((82, 82), Image.Resampling.LANCZOS)
-    fg_x = (108 - fg_src.width) // 2
-    fg_y = (108 - fg_src.height) // 2
-    fg_canvas.alpha_composite(fg_src, (fg_x, fg_y))
-
-fg_canvas.save(fg, "PNG")
-`, sourceIcon, mainDir], { stdio: 'ignore' });
-    } catch {
-      // Keep the original project icon as fallback.
-    }
+  for (const dir of [javaDir, assetsDir, drawableDir, mipmapDir, mipmapMdpiDir, mipmapXhdpiDir, mipmapXxhdpiDir, mipmapXxxhdpiDir, mipmapAnyDir]) {
+    fs.mkdirSync(dir, { recursive: true });
   }
 
+  const projectIconExtension = copyProjectIcon(projectDir, drawableDir);
   const sourceDir = webOutputDir || projectDir;
-
   if (fs.existsSync(sourceDir)) {
-    const files = fs.readdirSync(sourceDir);
-    for (const file of files) {
-      const srcPath = path.join(sourceDir, file);
-      const destPath = path.join(assetsDir, file);
-      try {
-        fs.cpSync(srcPath, destPath, { recursive: true, force: true });
-      } catch (err) {}
+    for (const file of fs.readdirSync(sourceDir)) {
+      try { fs.cpSync(path.join(sourceDir, file), path.join(assetsDir, file), { recursive: true, force: true }); } catch {}
     }
   }
 
   const homeDir = process.env.HOME || '/data/data/com.termux/files/home';
   const keystoreDir = path.join(homeDir, '.android');
   const keystorePath = path.join(keystoreDir, 'debug.keystore');
-
   if (!fs.existsSync(keystorePath)) {
     fs.mkdirSync(keystoreDir, { recursive: true });
     try {
-      console.log('Generating local debug.keystore...');
       execSync(`keytool -genkey -v -keystore "${keystorePath}" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"`, { stdio: 'ignore' });
-    } catch (e) {
-      console.error("Failed to generate keystore:", e);
-    }
+    } catch (e) { console.error('Failed to generate keystore:', e); }
   }
 
   const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '';
-  if (!sdkPath) {
-    throw new Error(
-      'ANDROID_HOME or ANDROID_SDK_ROOT must be set before generating the Android wrapper',
-    );
-  }
-  fs.writeFileSync(
-    path.join(projectDir, 'local.properties'),
-    `sdk.dir=${sdkPath}`
-  );
+  if (!sdkPath) throw new Error('ANDROID_HOME or ANDROID_SDK_ROOT must be set before generating the Android wrapper');
+  fs.writeFileSync(path.join(projectDir, 'local.properties'), `sdk.dir=${sdkPath}`);
 
-  const configuredAapt2 =
-    process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2';
-  const aapt2Line = fs.existsSync(configuredAapt2)
-    ? `android.aapt2FromMavenOverride=${configuredAapt2}\n`
-    : '';
-  fs.writeFileSync(
-    path.join(projectDir, 'gradle.properties'),
-    `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.enableJetifier=true
-${aapt2Line}`
-  );
+  const configuredAapt2 = process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2';
+  const aapt2Line = fs.existsSync(configuredAapt2) ? `android.aapt2FromMavenOverride=${configuredAapt2}\n` : '';
+  fs.writeFileSync(path.join(projectDir, 'gradle.properties'), `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.enableJetifier=true\n${aapt2Line}`);
 
-  fs.writeFileSync(
-    path.join(projectDir, 'settings.gradle'),
-    `pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "${gradleAppName}"
-include ':app'`
-  );
+  fs.writeFileSync(path.join(projectDir, 'settings.gradle'), `pluginManagement {\n    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }\n}\ndependencyResolutionManagement {\n    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n    repositories {\n        google()\n        mavenCentral()\n    }\n}\nrootProject.name = "${gradleAppName}"\ninclude ':app'`);
 
-  fs.writeFileSync(
-    path.join(drawableDir, 'ic_launcher.xml'),
-    `<?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#6750A4"
-        android:pathData="M0,0h108v108h-108z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M58,12L25,61h24l-5,35 34,-50h-24z" />
-</vector>`
-  );
+  fs.writeFileSync(path.join(drawableDir, 'ic_launcher.xml'), `<?xml version="1.0" encoding="utf-8"?>\n<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">\n    <path android:fillColor="#6750A4" android:pathData="M0,0h108v108h-108z" />\n    <path android:fillColor="#FFFFFF" android:pathData="M58,12L25,61h24l-5,35 34,-50h-24z" />\n</vector>`);
 
   if (projectIconExtension) {
-    fs.writeFileSync(
-      path.join(mipmapAnyDir, 'ic_launcher.xml'),
-      `<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-</adaptive-icon>`
-    );
-
+    fs.writeFileSync(path.join(mipmapAnyDir, 'ic_launcher.xml'), `<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n    <background android:drawable="@color/ic_launcher_background" />\n    <foreground android:drawable="@drawable/ic_launcher_foreground" />\n</adaptive-icon>`);
     const valuesDir = path.join(mainDir, 'res/values');
     fs.mkdirSync(valuesDir, { recursive: true });
-
-    fs.writeFileSync(
-      path.join(valuesDir, 'ic_launcher_colors.xml'),
-      `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="ic_launcher_background">#6750A4</color>
-</resources>`
-    );
+    fs.writeFileSync(path.join(valuesDir, 'ic_launcher_colors.xml'), `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#6750A4</color>\n</resources>`);
   }
 
-  const launcherIconResource = projectIconExtension
-    ? `@mipmap/ic_launcher`
-    : '@drawable/ic_launcher';
+  const launcherIconResource = projectIconExtension ? '@mipmap/ic_launcher' : '@drawable/ic_launcher';
 
-  fs.writeFileSync(
-    path.join(mainDir, 'AndroidManifest.xml'),
-    `<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${packageName}">
-    <uses-permission android:name="android.permission.INTERNET" />
-    <application
-        android:label="${safeAppName}"
-        android:icon="${launcherIconResource}"
-        android:roundIcon="${launcherIconResource}"
-        android:allowBackup="true"
-        android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>`
-  );
+  fs.writeFileSync(path.join(mainDir, 'AndroidManifest.xml'), `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${packageName}">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <application\n        android:label="${safeAppName}"\n        android:icon="${launcherIconResource}"\n        android:roundIcon="${launcherIconResource}"\n        android:allowBackup="true"\n        android:supportsRtl="true">\n        <activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>`);
 
-  fs.writeFileSync(
-    path.join(javaDir, 'MainActivity.java'),
-    `package ${packageName};
+  fs.writeFileSync(path.join(javaDir, 'MainActivity.java'), `package ${packageName};
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.webkit.WebViewAssetLoader;
 import java.io.InputStream;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 1002;
     private ValueCallback<Uri[]> filePathCallback;
+    private PermissionRequest pendingWebPermissionRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -453,7 +193,6 @@ public class MainActivity extends Activity {
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
             .addPathHandler("/", new WebViewAssetLoader.PathHandler() {
                 private final AssetManager assets = getAssets();
-
                 private String mimeType(String path) {
                     if (path.endsWith(".html")) return "text/html";
                     if (path.endsWith(".css")) return "text/css";
@@ -469,77 +208,84 @@ public class MainActivity extends Activity {
                     if (path.endsWith(".ttf")) return "font/ttf";
                     return "application/octet-stream";
                 }
-
                 @Override
                 public WebResourceResponse handle(String path) {
-                    if (path == null || path.contains("..") || path.startsWith("/")) {
-                        return null;
-                    }
-
+                    if (path == null || path.contains("..") || path.startsWith("/")) return null;
                     try {
                         InputStream stream = assets.open("www/" + path);
                         return new WebResourceResponse(mimeType(path), "UTF-8", stream);
-                    } catch (Exception error) {
-                        return null;
-                    }
+                    } catch (Exception error) { return null; }
                 }
             })
             .build();
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
-            public boolean onShowFileChooser(
-                    WebView view,
-                    ValueCallback<Uri[]> callback,
-                    FileChooserParams params) {
-                if (filePathCallback != null) {
-                    filePathCallback.onReceiveValue(null);
-                }
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(() -> {
+                    boolean wantsCamera = false;
+                    for (String resource : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                            wantsCamera = true;
+                            break;
+                        }
+                    }
+                    if (!wantsCamera) {
+                        request.deny();
+                        return;
+                    }
+                    pendingWebPermissionRequest = request;
+                    if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+                        pendingWebPermissionRequest = null;
+                    } else {
+                        ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+                    }
+                });
+            }
+
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                 filePathCallback = callback;
-
                 Intent intent;
-                try {
-                    intent = params.createIntent();
-                } catch (Exception ignored) {
-                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                }
-
+                try { intent = params.createIntent(); } catch (Exception ignored) { intent = new Intent(Intent.ACTION_OPEN_DOCUMENT); }
                 intent.setAction(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType(params.getAcceptTypes() != null && params.getAcceptTypes().length > 0
-                        && params.getAcceptTypes()[0] != null && !params.getAcceptTypes()[0].isEmpty()
-                        ? params.getAcceptTypes()[0]
-                        : "*/*");
+                intent.setType(params.getAcceptTypes() != null && params.getAcceptTypes().length > 0 && params.getAcceptTypes()[0] != null && !params.getAcceptTypes()[0].isEmpty() ? params.getAcceptTypes()[0] : "*/*");
                 intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
-
-                try {
-                    startActivityForResult(intent, FILE_CHOOSER_REQUEST_CODE);
-                    return true;
-                } catch (ActivityNotFoundException error) {
-                    filePathCallback.onReceiveValue(null);
-                    filePathCallback = null;
-                    return false;
-                }
+                try { startActivityForResult(intent, FILE_CHOOSER_REQUEST_CODE); return true; }
+                catch (ActivityNotFoundException error) { filePathCallback.onReceiveValue(null); filePathCallback = null; return false; }
             }
         });
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
-            public WebResourceResponse shouldInterceptRequest(
-                    WebView view, WebResourceRequest request) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
-            }
-
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) { return assetLoader.shouldInterceptRequest(request.getUrl()); }
             @Override
             @SuppressWarnings("deprecation")
-            public WebResourceResponse shouldInterceptRequest(
-                    WebView view, String url) {
-                return assetLoader.shouldInterceptRequest(Uri.parse(url));
-            }
+            public WebResourceResponse shouldInterceptRequest(WebView view, String url) { return assetLoader.shouldInterceptRequest(Uri.parse(url)); }
         });
 
-        webView.loadUrl("https://appassets.androidplatform.net/index.html");
         setContentView(webView);
+        webView.loadUrl("https://appassets.androidplatform.net/index.html");
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != CAMERA_PERMISSION_REQUEST_CODE) return;
+        if (pendingWebPermissionRequest == null) return;
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            pendingWebPermissionRequest.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+        } else {
+            pendingWebPermissionRequest.deny();
+        }
+        pendingWebPermissionRequest = null;
     }
 
     @Override
@@ -554,53 +300,8 @@ public class MainActivity extends Activity {
         }
         super.onActivityResult(requestCode, resultCode, data);
     }
-}`
-  );
+}`);
 
-  fs.writeFileSync(
-    path.join(projectDir, 'build.gradle'),
-    `plugins {
-    id 'com.android.application' version '8.7.3' apply false
-}`
-  );
-
-  fs.writeFileSync(
-    path.join(projectDir, 'app/build.gradle'),
-    `plugins { 
-    id 'com.android.application' 
-}
-android {
-    namespace '${packageName}'
-    compileSdk 34
-    defaultConfig {
-        applicationId "${packageName}"
-        minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
-    }
-    signingConfigs {
-        debug {
-            storeFile file("${keystorePath}")
-            storePassword "android"
-            keyAlias "androiddebugkey"
-            keyPassword "android"
-            v1SigningEnabled true
-            v2SigningEnabled true
-        }
-    }
-    buildTypes {
-        debug {
-            signingConfig signingConfigs.debug
-        }
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_21
-        targetCompatibility JavaVersion.VERSION_21
-    }
-}
-dependencies {
-    implementation 'androidx.webkit:webkit:1.12.1'
-}`
-  );
+  fs.writeFileSync(path.join(projectDir, 'build.gradle'), `plugins {\n    id 'com.android.application' version '8.7.3' apply false\n}`);
+  fs.writeFileSync(path.join(projectDir, 'app/build.gradle'), `plugins {\n    id 'com.android.application'\n}\nandroid {\n    namespace '${packageName}'\n    compileSdk 34\n    defaultConfig {\n        applicationId "${packageName}"\n        minSdk 24\n        targetSdk 34\n        versionCode 1\n        versionName "1.0"\n    }\n    signingConfigs {\n        debug {\n            storeFile file("${keystorePath}")\n            storePassword "android"\n            keyAlias "androiddebugkey"\n            keyPassword "android"\n            v1SigningEnabled true\n            v2SigningEnabled true\n        }\n    }\n    buildTypes { debug { signingConfig signingConfigs.debug } }\n    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21\n    }\n}\ndependencies {\n    implementation 'androidx.webkit:webkit:1.12.1'\n}`);
 }
