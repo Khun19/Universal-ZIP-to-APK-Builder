@@ -109,6 +109,15 @@ test('PWA dependency commands retry with a local minimum-release-age override', 
   assert.deepStrictEqual(original, ['install', '--ignore-workspace', '--dangerously-allow-all-builds']);
 });
 
+test('PWA build retry includes the minimum-release-age override', () => {
+  const buildRetryArgs = getPwaMinimumReleaseAgeRetryArgs(['run', 'build']);
+  assert.deepStrictEqual(buildRetryArgs, [
+    'run',
+    'build',
+    '--config.minimum-release-age=0',
+  ]);
+});
+
 test('recognizes only the pnpm minimum-release-age violation', () => {
   assert.strictEqual(isMinimumReleaseAgeViolation('ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION adm-zip@0.6.1'), true);
   assert.strictEqual(isMinimumReleaseAgeViolation('ERR_PNPM_FETCH_404 package not found'), false);
