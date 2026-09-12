@@ -174,28 +174,27 @@ export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): bo
     );
   }
 
-  /*
-   * Workbox 7.4.x internally creates @rollup/plugin-terser without
-   * specifying maxWorkers. On Termux/aarch64 this can leave the Rollup
-   * renderChunk hook unresolved. Patch only the extracted temporary build's
-   * installed Workbox bundle; never modify the user's ZIP.
-   *
-   * Workbox 7.4.1 source uses:
-   *   terser({ mangle: { ... } })
-   *
-   * We add:
-   *   maxWorkers: 1
-   *
-   * This keeps real Workbox/PWA generation enabled while avoiding the
-   * Android ARM64 worker lifecycle failure.
-   */
+  return true;
+}
+
+/**
+ * Workbox 7.4.1 directly invokes @rollup/plugin-terser without maxWorkers.
+ * On Termux/aarch64 the worker lifecycle can leave Rollup's renderChunk hook
+ * unresolved. Patch only the extracted build's installed Workbox bundle,
+ * never the user's ZIP or source project.
+ */
+export function patchAndroidArm64WorkboxTerserWorkers(projectPath: string): boolean {
+  if (process.platform !== 'android') return false;
+
   const pnpmStore = path.join(projectPath, 'node_modules', '.pnpm');
-  if (!fs.existsSync(pnpmStore)) return true;
+  if (!fs.existsSync(pnpmStore)) return false;
 
   let patched = false;
+  let foundWorkbox = false;
 
   for (const entry of fs.readdirSync(pnpmStore)) {
     if (!entry.startsWith('workbox-build@')) continue;
+    foundWorkbox = true;
 
     const bundlePath = path.join(
       pnpmStore,
@@ -211,30 +210,20 @@ export function applyAndroidArm64PwaRollupCompatibility(projectPath: string): bo
 
     let source = fs.readFileSync(bundlePath, 'utf8');
 
-    if (source.includes('maxWorkers: 1') && source.includes('terser({')) {
+    if (source.includes('maxWorkers: 1') && source.includes('plugin_terser_1.default')) {
       patched = true;
       continue;
     }
 
-    const patterns = [
-      /terser\(\{\s*mangle:\s*\{/,
-      /terser\(\{\r?\n\s*mangle:\s*\{/,
-    ];
+    const pattern = /terser\(\{\s*mangle:\s*\{/;
+    if (!pattern.test(source)) continue;
 
-    for (const pattern of patterns) {
-      if (pattern.test(source)) {
-        source = source.replace(
-          pattern,
-          'terser({ maxWorkers: 1, mangle: {',
-        );
-        fs.writeFileSync(bundlePath, source);
-        patched = true;
-        break;
-      }
-    }
+    source = source.replace(pattern, 'terser({ maxWorkers: 1, mangle: {');
+    fs.writeFileSync(bundlePath, source);
+    patched = true;
   }
 
-  return patched;
+  return foundWorkbox && patched;
 }
 
 export function isAndroidArm64PwaTerserFailure(error: unknown): boolean {
@@ -323,6 +312,11 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
           }
           logs.push(`Verified Rollup ${ANDROID_PWA_ROLLUP_COMPATIBILITY_VERSION} is installed.`);
         }
+
+        if (manager === 'pnpm' && !patchAndroidArm64WorkboxTerserWorkers(projectPath)) {
+          throw new Error('Android ARM64 compatibility patch could not locate Workbox 7.4.x bundle.js or its terser() invocation');
+        }
+        if (manager === 'pnpm') logs.push('Patched Workbox Terser worker count to maxWorkers: 1.');
 
         await runBuild(compatibilityEnv);
       } finally {
