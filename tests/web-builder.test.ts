@@ -5,8 +5,10 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   detectVitePluginPwaUsage,
+  getPwaLockfileStabilizeArgs,
   getPwaWorkboxInstallArgs,
   hasInstalledPackage,
+  isMinimumReleaseAgeViolation,
   sanitizeNpmLockfile,
 } from '../lib/web-builder.ts';
 
@@ -82,6 +84,22 @@ test('build repair installs workbox-window with the required pnpm flags', () => 
     '--ignore-workspace',
     '--dangerously-allow-all-builds',
   ]);
+});
+
+test('PWA lockfile stabilization is scoped and only overrides minimum release age for that command', () => {
+  assert.deepStrictEqual(getPwaLockfileStabilizeArgs(), [
+    'install',
+    '--lockfile-only',
+    '--ignore-workspace',
+    '--dangerously-allow-all-builds',
+    '--config.minimum-release-age=0',
+  ]);
+  assert.ok(!getPwaLockfileStabilizeArgs().includes('--config.strict-peer-dependencies=false'));
+});
+
+test('recognizes only the pnpm minimum-release-age violation', () => {
+  assert.strictEqual(isMinimumReleaseAgeViolation('ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION adm-zip@0.6.1'), true);
+  assert.strictEqual(isMinimumReleaseAgeViolation('ERR_PNPM_FETCH_404 package not found'), false);
 });
 
 test('checks whether workbox-window exists in the generated project', () => {
