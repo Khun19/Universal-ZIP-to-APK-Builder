@@ -215,10 +215,28 @@ export function patchAndroidArm64WorkboxTerserWorkers(projectPath: string): bool
       continue;
     }
 
-    const pattern = /terser\(\{\s*mangle:\s*\{/;
-    if (!pattern.test(source)) continue;
+    const patterns = [
+      /plugin_terser_1\.default\)\(\{\s*mangle:\s*\{/,
+      /terser\(\{\s*mangle:\s*\{/,
+    ];
 
-    source = source.replace(pattern, 'terser({ maxWorkers: 1, mangle: {');
+    let matched = false;
+
+    for (const pattern of patterns) {
+      if (!pattern.test(source)) continue;
+
+      source = source.replace(
+        pattern,
+        (match) => match.replace(
+          '({',
+          '({ maxWorkers: 1,',
+        ),
+      );
+      matched = true;
+      break;
+    }
+
+    if (!matched) continue;
     fs.writeFileSync(bundlePath, source);
     patched = true;
   }
