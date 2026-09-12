@@ -205,6 +205,14 @@ export function getPwaLockfileStabilizeArgs(): string[] {
   ];
 }
 
+/**
+ * Adds the local minimum-release-age override to a generated PWA pnpm command.
+ * The override is never returned for non-PWA package-manager operations.
+ */
+export function getPwaMinimumReleaseAgeRetryArgs(args: string[]): string[] {
+  return [...args, '--config.minimum-release-age=0'];
+}
+
 /** Returns true only for the pnpm minimum-release-age policy error. */
 export function isMinimumReleaseAgeViolation(output: string): boolean {
   return output.includes(MINIMUM_RELEASE_AGE_ERROR);
@@ -259,7 +267,23 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
     logs.push(`Running: ${manager} ${installArgs.join(' ')}`);
 
     const installEnv = manager === 'npm' ? { NPM_CONFIG_REGISTRY: PUBLIC_NPM_REGISTRY } : undefined;
-    const installResult = await runCommand(manager, installArgs, projectPath, installEnv);
+    let installResult: { stdout: string; stderr: string };
+    try {
+      installResult = await runCommand(manager, installArgs, projectPath, installEnv);
+    } catch (error: any) {
+      const combined = `${String(error.stdout ?? '')}\n${String(error.stderr ?? '')}\n${String(error.message ?? '')}`;
+      if (!usesVitePwa || manager !== 'pnpm' || !isMinimumReleaseAgeViolation(combined)) {
+        throw error;
+      }
+
+      logs.push('Generated PWA dependency install hit pnpm minimum-release-age policy. Retrying only this generated workspace with a local policy override.');
+      const retryArgs = getPwaMinimumReleaseAgeRetryArgs(installArgs);
+      logs.push(`Running: pnpm ${retryArgs.join(' ')}`);
+      installResult = await runCommand('pnpm', retryArgs, projectPath);
+      if (installResult.stdout) logs.push(`[PWA install retry stdout]: ${installResult.stdout}`);
+      if (installResult.stderr) logs.push(`[PWA install retry stderr]: ${installResult.stderr}`);
+      logs.push('Generated PWA dependency installation retry completed successfully.');
+    }
 
     if (installResult.stdout) logs.push(`[Install stdout]: ${installResult.stdout}`);
     if (installResult.stderr) logs.push(`[Install stderr]: ${installResult.stderr}`);
@@ -271,7 +295,18 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       const pwaInstallArgs = getPwaWorkboxInstallArgs();
       logs.push('Detected vite-plugin-pwa without workbox-window. Installing compatibility dependency.');
       logs.push(`Running: pnpm ${pwaInstallArgs.join(' ')}`);
-      const pwaInstallResult = await runCommand('pnpm', pwaInstallArgs, projectPath);
+      let pwaInstallResult: { stdout: string; stderr: string };
+      try {
+        pwaInstallResult = await runCommand('pnpm', pwaInstallArgs, projectPath);
+      } catch (error: any) {
+        const combined = `${String(error.stdout ?? '')}\n${String(error.stderr ?? '')}\n${String(error.message ?? '')}`;
+        if (!isMinimumReleaseAgeViolation(combined)) throw error;
+
+        const retryArgs = getPwaMinimumReleaseAgeRetryArgs(pwaInstallArgs);
+        logs.push('PWA compatibility dependency install hit minimum-release-age policy. Retrying only the generated workspace command with a local policy override.');
+        logs.push(`Running: pnpm ${retryArgs.join(' ')}`);
+        pwaInstallResult = await runCommand('pnpm', retryArgs, projectPath);
+      }
       if (pwaInstallResult.stdout) logs.push(`[PWA dependency stdout]: ${pwaInstallResult.stdout}`);
       if (pwaInstallResult.stderr) logs.push(`[PWA dependency stderr]: ${pwaInstallResult.stderr}`);
       logs.push('workbox-window compatibility dependency installed successfully.');
@@ -307,9 +342,9 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       // process. It is only activated after pnpm reports this exact policy
       // error; normal builds continue using the configured security policy.
       logs.push('PWA build hit pnpm minimum-release-age policy after compatibility install. Retrying generated workspace build with a local policy override.');
-      const retryEnv = { ...installEnv, npm_config_minimum_release_age: '0' };
-      logs.push('Running: pnpm run build (generated workspace policy retry)');
-      const retryResult = await runCommand('pnpm', ['run', 'build'], projectPath, retryEnv);
+      const retryArgs = getPwaMinimumReleaseAgeRetryArgs(['run', 'build']);
+      logs.push(`Running: pnpm ${retryArgs.join(' ')} (generated workspace policy retry)`);
+      const retryResult = await runCommand('pnpm', retryArgs, projectPath);
       if (retryResult.stdout) logs.push(`[Build retry stdout]: ${retryResult.stdout}`);
       if (retryResult.stderr) logs.push(`[Build retry stderr]: ${retryResult.stderr}`);
       logs.push('PWA build policy retry completed successfully.');
