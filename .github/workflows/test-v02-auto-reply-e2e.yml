@@ -1,0 +1,83 @@
+name: Test auto-reply-tools v0.2 through Universal ZIP-to-APK Builder
+
+on:
+  push:
+    branches:
+      - test/v0.2-auto-reply-e2e
+  workflow_dispatch:
+
+jobs:
+  native-android-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Universal ZIP-to-APK Builder
+        uses: actions/checkout@v4
+
+      - name: Checkout auto-reply-tools v0.2
+        uses: actions/checkout@v4
+        with:
+          repository: Khun19/auto-reply-tools
+          ref: v0.2
+          path: auto-reply-tools
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.4.1 --activate
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK platform 35
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install Gradle 8.7
+        run: |
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle.zip
+          sudo mkdir -p /opt/gradle
+          sudo unzip -q /tmp/gradle.zip -d /opt/gradle
+          echo "/opt/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
+
+      - name: Install Builder dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create exact v0.2 Android ZIP input
+        run: |
+          test "$(git -C auto-reply-tools rev-parse HEAD)" = "51170fd671b8bae87c4d3e048ff301bec9a6195f"
+          test "$(git -C auto-reply-tools describe --tags --exact-match)" = "v0.2"
+          cd auto-reply-tools/android
+          zip -qr ../../auto-reply-tools-v0.2-android.zip .
+          cd ../..
+          unzip -l auto-reply-tools-v0.2-android.zip | sed -n '1,80p'
+
+      - name: Run Universal ZIP-to-APK Builder
+        run: pnpm tsx lib/cli.ts "$GITHUB_WORKSPACE/auto-reply-tools-v0.2-android.zip"
+
+      - name: Validate generated APK
+        run: |
+          set -e
+          apk=$(find output -type f -name '*.apk' | head -n 1)
+          test -n "$apk"
+          test -s "$apk"
+          unzip -Z1 "$apk" | grep -Fx 'AndroidManifest.xml'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | tee /tmp/badging.txt
+          grep -F "package: name='com.autoreplytools'" /tmp/badging.txt
+          grep -F "versionName='0.2.0'" /tmp/badging.txt
+          sha256sum "$apk"
+
+      - name: Upload generated APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-reply-tools-v0.2-builder-apk
+          path: output/*.apk
