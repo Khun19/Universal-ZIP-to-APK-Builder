@@ -15,10 +15,17 @@ Provide a dependable path from a supported application ZIP to a real, installabl
 ### M0 — Foundation and Engineering Control
 - [x] Repository structure and core build layers established
 - [x] Security, analyzer, build-engine, queue, API, frontend, and worker layers documented in README
-- [ ] `AGENTS.md` adopted as project-wide agent contract
-- [ ] Architecture and decision records kept current
-- [ ] Test matrix maintained as an acceptance contract
-- [ ] CI and local/Termux workflow consistently documented
+- [x] `AGENTS.md` adopted as project-wide agent contract
+- [x] Architecture and decision records kept current
+- [x] Test matrix maintained as an acceptance contract
+- [x] CI and local/Termux workflow consistently documented
+
+M0 evidence:
+- `AGENTS.md` defines the source-of-truth, engineering, Git, CI/device, security, Termux, documentation, and definition-of-done contracts.
+- `docs/ARCHITECTURE.md` defines the current lifecycle and architectural boundaries.
+- `docs/ADR/0001-engineering-control-and-validation.md` records the accepted validation and milestone-gating decision.
+- `docs/TEST-MATRIX.md` is the acceptance contract and explicitly separates PASS/FAIL/BLOCKED/NOT RUN evidence.
+- `docs/VALIDATION-WORKFLOW.md` defines the GitHub → CI → Termux → real-device validation loop and documents current CI limitations.
 
 ### M1 — Core ZIP → APK Pipeline
 - [x] Secure ZIP extraction foundation
