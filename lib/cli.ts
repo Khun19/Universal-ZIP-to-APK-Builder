@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
-import { safeExtractAdmZip } from './security/src/index.ts';
+import { safeExtractAdmZip, validateApk } from './security/src/index.ts';
 import { handleBuildRequest } from './server.ts';
 import { listTemplates } from './template-registry';
 import { generateFromTemplate } from './template-generator';
@@ -22,8 +22,7 @@ async function main() {
 
   if (cmd === 'templates:list') {
     try {
-      const templates = listTemplates();
-      console.log(JSON.stringify(templates, null, 2));
+      console.log(JSON.stringify(listTemplates(), null, 2));
     } catch (e: any) {
       console.error('Failed to list templates:', e?.message || e);
       process.exit(1);
@@ -37,8 +36,7 @@ async function main() {
       console.error('templates:info requires a template id');
       process.exit(1);
     }
-    const templates = listTemplates();
-    const tmpl = templates.find(t => t.id === id);
+    const tmpl = listTemplates().find(t => t.id === id);
     if (!tmpl) {
       console.error('Template not found:', id);
       process.exit(1);
@@ -54,7 +52,6 @@ async function main() {
       console.error('Usage: templates:create <id> <project-name> [--app-name] [--package]');
       process.exit(1);
     }
-    // parse optional flags
     const appNameFlag = argv.find(a => a.startsWith('--app-name='));
     const packageFlag = argv.find(a => a.startsWith('--package='));
     const appName = appNameFlag ? appNameFlag.split('=')[1] : undefined;
@@ -71,6 +68,10 @@ async function main() {
       const result = await handleBuildRequest({ projectPath: gen.projectPath, filePaths: gen.filePaths, appName });
       result.logs.forEach(l => console.log('>', l));
       if (result.success && result.outputPath) {
+        const checked = await validateApk(result.outputPath);
+        console.log(`APK validated: ${checked.size} bytes`);
+        console.log(`SHA-256: ${checked.sha256}`);
+        console.log(`Application ID: ${checked.applicationId ?? 'unavailable'}`);
         console.log('\n✅ APK →', result.outputPath);
       } else {
         console.error('\n❌ Build failed:', result.error);
@@ -83,21 +84,18 @@ async function main() {
     return;
   }
 
-  // legacy CLI behaviour: build from zip
-  const zipArg = argv[0];
-  const zipPath = path.resolve(zipArg);
+  const zipPath = path.resolve(argv[0]);
   if (!fs.existsSync(zipPath)) {
     console.error(`File not found: ${zipPath}`);
     process.exit(1);
   }
 
-  const buildId  = `cli-build-${Date.now()}`;
-  const workDir  = path.resolve(`.workspace/${buildId}`);
+  const buildId = `cli-build-${Date.now()}-${process.pid}`;
+  const workDir = path.resolve(`.workspace/${buildId}`);
 
   console.log(`\n📦 ZIP  : ${zipPath}`);
   console.log(`📁 Work : ${workDir}\n`);
 
-  // 1. Secure ZIP extraction
   let filePaths: string[];
   try {
     const zip = new AdmZip(zipPath);
@@ -105,6 +103,7 @@ async function main() {
     filePaths = extraction.filePaths;
   } catch (e: any) {
     console.error(`Blocked ZIP: ${e.message}`);
+    fs.rmSync(workDir, { recursive: true, force: true });
     process.exit(1);
   }
 
@@ -112,20 +111,30 @@ async function main() {
 
   const zipBaseName = path.basename(zipPath, path.extname(zipPath));
   const result = await handleBuildRequest({ projectPath: workDir, filePaths, appName: zipBaseName });
-
   result.logs.forEach(l => console.log('>', l));
 
   if (result.success && result.outputPath) {
-    const outDir  = path.resolve('output');
-    fs.mkdirSync(outDir, { recursive: true });
-    const outFile = path.join(outDir, `${buildId}.apk`);
-    fs.copyFileSync(result.outputPath, outFile);
+    try {
+      const checked = await validateApk(result.outputPath);
+      const outDir = path.resolve('output');
+      fs.mkdirSync(outDir, { recursive: true });
+      const outFile = path.join(outDir, `${buildId}.apk`);
+      fs.copyFileSync(result.outputPath, outFile);
 
-    console.log(`\n✅ APK → ${outFile}`);
-    console.log(`\nInstall:`);
-    console.log(`  cp "${outFile}" /sdcard/Download/${buildId}.apk`);
+      console.log(`\n✅ APK → ${outFile}`);
+      console.log(`📦 Size: ${checked.size} bytes`);
+      console.log(`🔐 SHA-256: ${checked.sha256}`);
+      console.log(`🆔 Application ID: ${checked.applicationId ?? 'unavailable'}`);
+      console.log('\nInstall:');
+      console.log(`  cp "${outFile}" /storage/emulated/0/Download/${buildId}.apk`);
+    } catch (e: any) {
+      console.error(`\n❌ APK validation failed: ${e.message}`);
+      fs.rmSync(workDir, { recursive: true, force: true });
+      process.exit(1);
+    }
   } else {
     console.error(`\n❌ FAILED: ${result.error}`);
+    fs.rmSync(workDir, { recursive: true, force: true });
     process.exit(1);
   }
 }
