@@ -8,6 +8,7 @@ import {
   getPwaLockfileStabilizeArgs,
   getPwaWorkboxInstallArgs,
   hasInstalledPackage,
+  findWebBuildOutputDir,
   isMinimumReleaseAgeViolation,
   sanitizeNpmLockfile,
 } from '../lib/web-builder.ts';
@@ -110,5 +111,26 @@ test('checks whether workbox-window exists in the generated project', () => {
   assert.strictEqual(hasInstalledPackage(targetDir, 'workbox-window'), true);
   assert.strictEqual(hasInstalledPackage(targetDir, 'workbox-build'), false);
 
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+
+test('finds only a usable web build output containing index.html', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-web-output-'));
+  fs.mkdirSync(path.join(targetDir, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(targetDir, 'dist', 'assets.txt'), 'not a web entry point');
+  fs.mkdirSync(path.join(targetDir, 'build'), { recursive: true });
+  fs.writeFileSync(path.join(targetDir, 'build', 'index.html'), '<!doctype html>');
+
+  assert.strictEqual(findWebBuildOutputDir(targetDir), path.join(targetDir, 'build'));
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('returns undefined when build output folders exist without index.html', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-web-output-empty-'));
+  fs.mkdirSync(path.join(targetDir, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(targetDir, 'dist', 'app.js'), 'console.log(1)');
+
+  assert.strictEqual(findWebBuildOutputDir(targetDir), undefined);
   fs.rmSync(targetDir, { recursive: true, force: true });
 });

@@ -40,12 +40,13 @@ M0 evidence:
 Acceptance: a supported input can move through every required phase with truthful state and useful failure output.
 
 ### M2 — Static Web → APK
-- [ ] Stable static HTML/CSS/JS fixture
-- [ ] Wrapper generation verified
+- [x] Stable static HTML/CSS/JS fixture
+- [x] Wrapper generation verified
+- [x] Deterministic web output discovery
 - [ ] Debug APK generated
 - [ ] APK installed on Android
 - [ ] Launch/navigation verified
-- [ ] Regression test automated
+- [x] Regression test automated
 
 ### M3 — React/Vite → APK
 - [x] React/Vite strategy foundation

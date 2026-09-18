@@ -221,6 +221,18 @@ async function runCommand(command: string, args: string[], cwd: string, env?: No
   return { stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
 }
 
+export function findWebBuildOutputDir(projectPath: string): string | undefined {
+  const candidates = ['dist', 'build', 'out', 'www']
+    .map((directory) => path.join(projectPath, directory))
+    .filter((directory) => fs.existsSync(directory) && fs.statSync(directory).isDirectory());
+
+  for (const directory of candidates) {
+    if (fs.existsSync(path.join(directory, 'index.html'))) return directory;
+  }
+
+  return undefined;
+}
+
 export async function buildWebProject(projectPath: string): Promise<WebBuildResult> {
   const logs: string[] = [];
 
@@ -315,15 +327,17 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       logs.push('PWA build policy retry completed successfully.');
     }
 
-    for (const directory of ['dist', 'build', 'out', 'www']) {
-      const fullPath = path.join(projectPath, directory);
-      if (fs.existsSync(fullPath)) {
-        logs.push(`Build output found: ${fullPath}`);
-        return { success: true, outputDir: fullPath, logs };
-      }
+    const outputDir = findWebBuildOutputDir(projectPath);
+    if (outputDir) {
+      logs.push(`Build output found: ${outputDir}`);
+      return { success: true, outputDir, logs };
     }
 
-    return { success: false, logs, error: 'Web build completed but no dist, build, out, or www directory was found' };
+    return {
+      success: false,
+      logs,
+      error: 'Web build completed but no usable output directory containing index.html was found (checked dist, build, out, www)',
+    };
   } catch (error: any) {
     logs.push(`Web build failed: ${error.message}`);
     if (error.stdout) logs.push(`[Command stdout]: ${String(error.stdout)}`);
