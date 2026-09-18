@@ -5,7 +5,12 @@ export interface BuildRequest { workspace: string; analysis: ProjectAnalysis; on
 export function commandFor(analysis: ProjectAnalysis): { command: string; args: string[] } {
   if (analysis.framework === "Native Android") return { command: "./gradlew", args: ["assembleDebug", "--no-daemon", "--stacktrace"] };
   if (analysis.framework === "Capacitor") return { command: "sh", args: ["-lc", "npx cap sync android && cd android && ./gradlew assembleDebug --no-daemon --stacktrace"] };
-  if (analysis.framework === "Flutter") return { command: "sh", args: ["-lc", "flutter pub get && flutter build apk --debug"] };
+  if (analysis.framework === "Flutter") {
+    return {
+      command: "sh",
+      args: ["-lc", "command -v flutter >/dev/null 2>&1 || { echo 'Flutter SDK not found on PATH' >&2; exit 127; }; if [ ! -d android ]; then flutter create --platforms=android .; fi; flutter pub get; flutter build apk --debug"],
+    };
+  }
   return { command: "sh", args: ["-lc", "npm install --ignore-scripts && npm run build && npx cap add android && npx cap sync android && cd android && ./gradlew assembleDebug --no-daemon --stacktrace"] };
 }
 
