@@ -19,6 +19,11 @@ const detectors: Detector[] = [
     return { framework: "Capacitor", buildTool: "Gradle", language: ext(s.files, ".ts") ? "TypeScript" : "JavaScript", projectType: "Existing Capacitor project", confidence: 97, compatibilityScore: android ? 94 : 82, recommendedStrategy: android ? "Capacitor sync then Gradle build" : "Add Android platform, sync, then Gradle build", evidence: ["Capacitor configuration", ...(android ? ["Existing Android platform"] : [])] };
   },
   (s) => {
+    if (!has(s.files, "pubspec.yaml") || !has(s.files, "lib/main.dart")) return null;
+    const android = has(s.files, "android");
+    return { framework: "Flutter", buildTool: "Flutter", language: "Dart", projectType: "Flutter application", confidence: android ? 99 : 94, compatibilityScore: android ? 95 : 84, recommendedStrategy: android ? "flutter pub get then flutter build apk --debug" : "Generate the Android platform with flutter create . then build the APK", evidence: ["pubspec.yaml", "lib/main.dart", ...(android ? ["Flutter Android platform"] : [])], warnings: android ? [] : ["Android platform is missing; flutter create . is required before APK build"] };
+  },
+  (s) => {
     const pkg = s.packageJson ?? {};
     const deps = { ...(pkg.dependencies as Record<string, unknown> ?? {}), ...(pkg.devDependencies as Record<string, unknown> ?? {}) };
     if (!deps.react) return null;
@@ -31,7 +36,7 @@ const detectors: Detector[] = [
 export function analyzeProject(snapshot: ProjectSnapshot): ProjectAnalysis {
   const result = detectors.map((detector) => detector(snapshot)).find(Boolean) ?? {};
   const framework = (result.framework ?? "Unsupported") as Framework;
-  const blockers = framework === "Unsupported" ? ["No supported Android, React, Vite, Capacitor, or plain web structure was detected."] : [];
-  const warnings = framework === "Plain Web" ? ["No framework build metadata was found; verify the web root is index.html."] : [];
+  const blockers = framework === "Unsupported" ? ["No supported Android, React, Vite, Capacitor, Flutter, or plain web structure was detected."] : [];
+  const warnings = result.warnings ?? (framework === "Plain Web" ? ["No framework build metadata was found; verify the web root is index.html."] : []);
   return { framework, version: null, buildTool: result.buildTool ?? "Unknown", language: result.language ?? "Unknown", packageManager: snapshot.files.some((f) => f.endsWith("pnpm-lock.yaml")) ? "pnpm" : snapshot.files.some((f) => f.endsWith("yarn.lock")) ? "yarn" : "npm", projectType: result.projectType ?? "Unknown", confidence: result.confidence ?? 12, compatibilityScore: result.compatibilityScore ?? 0, warnings, blockers, recommendedStrategy: result.recommendedStrategy ?? "No build strategy available", evidence: result.evidence ?? [] };
 }
