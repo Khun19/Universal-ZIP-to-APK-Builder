@@ -287,6 +287,96 @@ function detectProjectJavaVersion(androidProjectPath: string): 17 | 21 {
   return highestRequired;
 }
 
+/**
+ * Detect the modern Flutter Gradle plugin structure before building. Older
+ * or hand-authored android/ trees can be rejected by newer Flutter releases.
+ */
+function isFlutterAndroidProjectCompatible(androidProjectPath: string): boolean {
+  const settingsCandidates = [
+    path.join(androidProjectPath, 'settings.gradle'),
+    path.join(androidProjectPath, 'settings.gradle.kts'),
+  ];
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+
+  const settings = settingsCandidates.find((filePath) => fs.existsSync(filePath));
+  const appBuild = appBuildCandidates.find((filePath) => fs.existsSync(filePath));
+  if (!settings || !appBuild) return false;
+
+  let settingsText = '';
+  let appBuildText = '';
+  try {
+    settingsText = fs.readFileSync(settings, 'utf8');
+    appBuildText = fs.readFileSync(appBuild, 'utf8');
+  } catch {
+    return false;
+  }
+
+  return /dev\.flutter\.flutter-plugin-loader/.test(settingsText) &&
+    /dev\.flutter\.flutter-gradle-plugin/.test(appBuildText);
+}
+
+/**
+ * Regenerate only android/ using a temporary Flutter scaffold.
+ * The original pubspec.yaml, lib/, assets and other project files are not
+ * passed through flutter create and therefore cannot be overwritten by it.
+ */
+async function regenerateFlutterAndroidPlatform(
+  projectPath: string,
+  logs: string[],
+): Promise<void> {
+  const existingAndroidPath = path.join(projectPath, 'android');
+  const parentDir = path.dirname(projectPath);
+  const scaffoldPath = path.join(
+    parentDir,
+    '.flutter-android-scaffold-' + path.basename(projectPath),
+  );
+  const backupRoot = path.join(projectPath, '.builder');
+  const backupPath = path.join(backupRoot, 'flutter-android-backup');
+
+  fs.rmSync(scaffoldPath, { recursive: true, force: true });
+  fs.mkdirSync(backupRoot, { recursive: true });
+  if (fs.existsSync(backupPath)) {
+    fs.rmSync(backupPath, { recursive: true, force: true });
+  }
+
+  if (fs.existsSync(existingAndroidPath)) {
+    fs.renameSync(existingAndroidPath, backupPath);
+    logs.push('Backed up unsupported Flutter Android platform to ' + backupPath + '.');
+  }
+
+  try {
+    logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
+    await execAsync(
+      'flutter create -t app --platforms=android "' + scaffoldPath + '"',
+      { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
+    );
+
+    const generatedAndroidPath = path.join(scaffoldPath, 'android');
+    if (!fs.existsSync(path.join(generatedAndroidPath, 'app'))) {
+      throw new Error(
+        'Flutter generated an Android scaffold without an android/app module.',
+      );
+    }
+
+    fs.cpSync(generatedAndroidPath, existingAndroidPath, {
+      recursive: true,
+      force: true,
+    });
+    logs.push('Replaced unsupported android/ with the Flutter SDK-generated Android platform.');
+  } catch (error) {
+    fs.rmSync(existingAndroidPath, { recursive: true, force: true });
+    if (fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, existingAndroidPath);
+      logs.push('Restored the original android/ platform after regeneration failure.');
+    }
+    throw error;
+  } finally {
+    fs.rmSync(scaffoldPath, { recursive: true, force: true });
+  }
+}
 function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   const requiredVersion = detectProjectJavaVersion(androidProjectPath);
 
@@ -393,27 +483,32 @@ export async function executeBuildJob(
     // Do not route Flutter through the generic Gradle strategy.
     if (strategy.strategyName === 'flutter') {
       const flutterAndroidPath = path.join(projectPath, 'android');
-      if (!fs.existsSync(flutterAndroidPath)) {
-        try {
-          logs.push('Flutter Android platform missing; generating it with flutter create --platforms=android .');
-          await execAsync('flutter create --platforms=android .', {
-            cwd: projectPath,
-            timeout: BUILD_TIMEOUT_MS,
-            env: process.env,
-          });
-        } catch (flutterCreateErr: any) {
-          const error = `Flutter Android platform generation failed: ${flutterCreateErr.message}`;
-          logs.push(`Error: ${error}`);
-          return { success: false, logs, error };
-        }
-      }
 
-      if (!fs.existsSync(path.join(projectPath, 'android', 'app'))) {
-        const error = 'Flutter Android platform was not generated correctly: android/app is missing.';
-        logs.push(`Error: ${error}`);
+      try {
+        if (!fs.existsSync(flutterAndroidPath)) {
+          logs.push(
+            'Flutter Android platform missing; generating it with flutter create --platforms=android.',
+          );
+          await regenerateFlutterAndroidPlatform(projectPath, logs);
+        } else if (!isFlutterAndroidProjectCompatible(flutterAndroidPath)) {
+          logs.push(
+            'Existing Flutter Android platform is unsupported by the installed Flutter SDK.',
+          );
+          await regenerateFlutterAndroidPlatform(projectPath, logs);
+        } else {
+          logs.push('Existing Flutter Android platform is Flutter-compatible.');
+        }
+      } catch (flutterCreateErr: any) {
+        const error = 'Flutter Android platform generation/recovery failed: ' + flutterCreateErr.message;
+        logs.push('Error: ' + error);
         return { success: false, logs, error };
       }
 
+      if (!fs.existsSync(path.join(projectPath, 'android', 'app'))) {
+        const error = 'Flutter Android platform is not available after compatibility recovery: android/app is missing.';
+        logs.push('Error: ' + error);
+        return { success: false, logs, error };
+      }
       const flutterAndroidProjectPath = path.join(projectPath, 'android');
       const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
       const localPropertiesPath = path.join(flutterAndroidProjectPath, 'local.properties');
