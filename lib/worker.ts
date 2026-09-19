@@ -388,6 +388,112 @@ export async function executeBuildJob(
       }
     }
 
+    // Flutter projects must be built through the Flutter CLI so Flutter owns
+    // Android project configuration, plugin resolution, and the Gradle invocation.
+    // Do not route Flutter through the generic Gradle strategy.
+    if (strategy.strategyName === 'flutter') {
+      const flutterAndroidPath = path.join(projectPath, 'android');
+      if (!fs.existsSync(flutterAndroidPath)) {
+        try {
+          logs.push('Flutter Android platform missing; generating it with flutter create --platforms=android .');
+          await execAsync('flutter create --platforms=android .', {
+            cwd: projectPath,
+            timeout: BUILD_TIMEOUT_MS,
+            env: process.env,
+          });
+        } catch (flutterCreateErr: any) {
+          const error = `Flutter Android platform generation failed: ${flutterCreateErr.message}`;
+          logs.push(`Error: ${error}`);
+          return { success: false, logs, error };
+        }
+      }
+
+      if (!fs.existsSync(path.join(projectPath, 'android', 'app'))) {
+        const error = 'Flutter Android platform was not generated correctly: android/app is missing.';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      const flutterAndroidProjectPath = path.join(projectPath, 'android');
+      const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+      const localPropertiesPath = path.join(flutterAndroidProjectPath, 'local.properties');
+
+      if (sdkPath) {
+        fs.writeFileSync(localPropertiesPath, `sdk.dir=${sdkPath}\n`);
+        logs.push('Generated local.properties from ANDROID_HOME.');
+      }
+
+      if (ensureAapt2Override(flutterAndroidProjectPath)) {
+        logs.push(
+          `Using AAPT2 override: ${process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2'}`,
+        );
+      }
+
+      const flutterEnvironment = getGradleEnvironment(flutterAndroidProjectPath);
+      logs.push(`Flutter Android build environment: JAVA_HOME=${flutterEnvironment.JAVA_HOME || 'default'}`);
+
+      try {
+        await execAsync('command -v flutter', {
+          cwd: projectPath,
+          timeout: 30_000,
+          env: flutterEnvironment,
+        });
+      } catch {
+        const error = 'Flutter SDK not found on PATH.';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      logs.push('Executing Flutter command: flutter pub get && flutter build apk --debug');
+
+      try {
+        const { stdout, stderr } = await execAsync('flutter pub get && flutter build apk --debug', {
+          cwd: projectPath,
+          timeout: BUILD_TIMEOUT_MS,
+          env: flutterEnvironment,
+        });
+        if (stdout) logs.push(`[Flutter Output]: ${stdout.slice(-4000)}`);
+        if (stderr) logs.push(`[Flutter Stderr]: ${stderr.slice(-2000)}`);
+      } catch (flutterErr: any) {
+        const stdout = flutterErr.stdout ? String(flutterErr.stdout).slice(-4000) : '';
+        const stderr = flutterErr.stderr ? String(flutterErr.stderr).slice(-4000) : '';
+        logs.push(`[Flutter Failure]: ${flutterErr.message}`);
+        if (stdout) logs.push(`[Flutter Output]: ${stdout}`);
+        if (stderr) logs.push(`[Flutter Stderr]: ${stderr}`);
+        return {
+          success: false,
+          logs,
+          error: `Flutter APK build failed: ${flutterErr.message}`,
+        };
+      }
+
+      const flutterApks = findApks(path.join(projectPath, 'build', 'app', 'outputs', 'flutter-apk'));
+      if (!flutterApks.length) {
+        const error = 'Flutter completed without errors but no APK was found in build/app/outputs/flutter-apk/.';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      const apkPath = flutterApks.find(p => p.endsWith('app-debug.apk')) ?? flutterApks.find(p => p.includes('debug')) ?? flutterApks[0];
+
+      let validated: { size: number; sha256: string };
+      try {
+        validated = await assertRealApk(apkPath);
+      } catch (validationErr: any) {
+        logs.push(`Error: ${validationErr.message}`);
+        return { success: false, logs, error: validationErr.message };
+      }
+
+      logs.push(
+        `Build finished. Verified real Flutter APK at ${apkPath} (${validated.size} bytes, SHA-256 ${validated.sha256}).`,
+      );
+
+      return {
+        success: true,
+        logs,
+        outputPath: apkPath,
+      };
+    }
     const androidProjectPath =
       syncedAndroidProjectPath && fs.existsSync(path.join(syncedAndroidProjectPath, 'app'))
         ? syncedAndroidProjectPath
