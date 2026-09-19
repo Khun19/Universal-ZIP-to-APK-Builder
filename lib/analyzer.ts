@@ -26,8 +26,8 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
 
   const hasBuildGradle = normalizedPaths.some((filePath) => filePath.endsWith('build.gradle') || filePath.endsWith('build.gradle.kts'));
   const hasAndroidManifest = normalizedPaths.some((filePath) => filePath.endsWith('AndroidManifest.xml'));
-  const hasCapacitorConfig = normalizedPaths.some((filePath) => /(^|\\/)capacitor\\.config\\.(json|js|cjs|ts|mjs)$/.test(filePath));
-  const hasAndroidDirectory = normalizedPaths.some((filePath) => /^android\\/(settings\\.gradle|settings\\.gradle\\.kts|app\\/)/.test(filePath));
+  const hasCapacitorConfig = normalizedPaths.some((filePath) => /(^|\/)capacitor\.config\.(json|js|cjs|ts|mjs)$/.test(filePath));
+  const hasAndroidDirectory = normalizedPaths.some((filePath) => /^android\/(settings\.gradle|settings\.gradle\.kts|app\/)/.test(filePath));
 
   if (hasCapacitorConfig) {
     evidence.push('Capacitor configuration detected');
@@ -38,7 +38,7 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
 
   const hasFlutterMarkers = normalizedPaths.some((filePath) => filePath === 'pubspec.yaml' || filePath.endsWith('/pubspec.yaml'));
   const hasFlutterDirectory = normalizedPaths.some((filePath) => filePath === 'lib/main.dart' || filePath.endsWith('/lib/main.dart'));
-  const hasFlutterAndroid = normalizedPaths.some((filePath) => /^android\\/(app\\/|settings\\.gradle|settings\\.gradle\\.kts)/.test(filePath));
+  const hasFlutterAndroid = normalizedPaths.some((filePath) => /^android\/(app\/|settings\.gradle|settings\.gradle\.kts)/.test(filePath));
   if (hasFlutterMarkers && hasFlutterDirectory) {
     evidence.push('Flutter pubspec.yaml detected');
     evidence.push('Flutter lib/main.dart detected');
