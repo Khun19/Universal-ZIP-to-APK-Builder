@@ -350,7 +350,7 @@ async function regenerateFlutterAndroidPlatform(
   try {
     logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
     await execAsync(
-      'flutter create -t app --platforms=android "' + scaffoldPath + '"',
+      'flutter create -t app --project-name builder_android_scaffold --platforms=android \\"' + scaffoldPath + '\\"',
       { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
     );
 
