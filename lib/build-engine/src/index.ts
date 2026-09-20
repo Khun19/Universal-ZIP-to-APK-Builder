@@ -8,7 +8,7 @@ export function commandFor(analysis: ProjectAnalysis): { command: string; args: 
   if (analysis.framework === "Flutter") {
     return {
       command: "sh",
-      args: ["-lc", "command -v flutter >/dev/null 2>&1 || { echo 'Flutter SDK not found on PATH' >&2; exit 127; }; if [ ! -d android ]; then flutter create --platforms=android .; fi; flutter pub get; flutter build apk --debug"],
+      args: ["-lc", "if command -v flutter >/dev/null 2>&1 && timeout 12s flutter --version >/dev/null 2>&1; then FLUTTER=flutter; else FLUTTER='proot-distro login ubuntu -- /opt/flutter/bin/flutter'; fi; command -v proot-distro >/dev/null 2>&1 || { command -v flutter >/dev/null 2>&1 || { echo 'Flutter SDK not found' >&2; exit 127; }; }; if [ ! -d android ]; then $FLUTTER create --platforms=android .; fi; $FLUTTER pub get && $FLUTTER build apk --debug"],
     };
   }
   return { command: "sh", args: ["-lc", "npm install --ignore-scripts && npm run build && npx cap add android && npx cap sync android && cd android && ./gradlew assembleDebug --no-daemon --stacktrace"] };
