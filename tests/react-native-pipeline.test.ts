@@ -15,12 +15,15 @@ test(
       'package.json',
       'index.js',
       'App.js',
+      'react-native.config.js',
+      'metro.config.js',
       'android/settings.gradle',
       'android/build.gradle',
       'android/gradle.properties',
       'android/app/build.gradle',
       'android/app/src/main/AndroidManifest.xml',
       'android/app/src/main/java/com/builder/m6reactnative/MainActivity.java',
+      'android/app/src/main/java/com/builder/m6reactnative/MainApplication.java',
       'android/app/src/main/res/values/styles.xml',
     ];
     const result = await runBuildPipeline({
@@ -45,6 +48,9 @@ test(
       execFileSync('aapt', ['dump', 'badging', apkPath], { encoding: 'utf8' }),
       /package: name='com\.builder\.m6reactnative'/,
     );
+    const apkEntries = execFileSync('unzip', ['-Z1', apkPath], { encoding: 'utf8' });
+    assert.match(apkEntries, /^assets\/index\.android\.bundle$/m);
+    assert.match(apkEntries, /^lib\/arm64-v8a\/libreactnative\.so$/m);
     assert.match(crypto.createHash('sha256').update(fs.readFileSync(apkPath)).digest('hex'), /^[a-f0-9]{64}$/);
     assert.ok(result.logs.some((log) => log.includes('Installing React Native dependencies')));
     assert.ok(result.logs.some((log) => log.includes('Verified real APK')));

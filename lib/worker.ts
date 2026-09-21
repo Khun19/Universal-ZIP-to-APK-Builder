@@ -630,6 +630,19 @@ export async function executeBuildJob(
         logs.push(`Error: ${message}`);
         return { success: false, logs, error: message };
       }
+
+      const reactNativeAndroidProject = findAndroidProjectRoot(projectPath);
+      if (reactNativeAndroidProject && !fs.existsSync(path.join(reactNativeAndroidProject, 'gradlew'))) {
+        const reactNativePluginRoot = path.join(projectPath, 'node_modules', '@react-native', 'gradle-plugin');
+        const pluginWrapper = path.join(reactNativePluginRoot, 'gradlew');
+        const pluginWrapperDir = path.join(reactNativePluginRoot, 'gradle');
+        if (fs.existsSync(pluginWrapper) && fs.existsSync(pluginWrapperDir)) {
+          fs.copyFileSync(pluginWrapper, path.join(reactNativeAndroidProject, 'gradlew'));
+          fs.cpSync(pluginWrapperDir, path.join(reactNativeAndroidProject, 'gradle'), { recursive: true, force: true });
+          fs.chmodSync(path.join(reactNativeAndroidProject, 'gradlew'), 0o755);
+          logs.push('Using the React Native Gradle plugin wrapper for a compatible Gradle toolchain.');
+        }
+      }
       logs.push('React Native project dependencies are ready for the Android Gradle build.');
     }
 
@@ -838,7 +851,7 @@ export async function executeBuildJob(
     const command = `${gradleCommand} assembleDebug --no-daemon --stacktrace`;
     logs.push(`Executing Gradle command: ${command}`);
     const gradleEnvironment =
-      gradleCommand === 'bash ./gradlew'
+      strategy.strategyName === 'react-native' || gradleCommand === 'bash ./gradlew'
         ? getGradleEnvironment(androidProjectPath)
         : process.env;
     if (gradleEnvironment.JAVA_HOME !== process.env.JAVA_HOME) {
