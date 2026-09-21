@@ -64,14 +64,14 @@ Acceptance: a supported input can move through every required phase with truthfu
 - [ ] Offline/runtime behavior tested where applicable
 - [x] PWA regression fixture kept permanently
 
-### M5 — Camera / QR PWA → APK
-- [x] Camera/QR test work exists in project history
-- [ ] APK installation verified
-- [ ] Runtime camera permission verified
-- [ ] Camera access verified on a real Android device
-- [ ] QR scanning behavior verified
-- [ ] Back/navigation behavior verified
-- [ ] Regression test retained
+### M5 — Flutter Direct Build → APK
+- [x] Flutter projects detected from `pubspec.yaml` and `lib/main.dart`
+- [x] Dedicated Flutter build strategy selected
+- [x] Native Flutter and Ubuntu PRoot Flutter executor selection supported
+- [x] `flutter pub get` and `flutter build apk --debug` executed directly
+- [x] Real Flutter APK discovered and validated
+- [x] Tracked Flutter regression fixture and integration test retained
+- [ ] APK installation and runtime behavior verified on a real Android device
 
 ### M6 — Multiple Build Strategies
 - [x] Native Gradle strategy foundation

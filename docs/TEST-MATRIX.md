@@ -55,6 +55,20 @@ This document is the acceptance contract for build compatibility. A test is only
 | Runtime | Navigation | Back/navigation behaves correctly |
 | APK | Validation | APK is valid and installable |
 
+## Test D — Flutter Direct Build
+
+| Area | Check | Acceptance |
+|---|---|---|
+| ZIP | Extraction | Flutter fixture extracts safely |
+| Analysis | Flutter detection | `pubspec.yaml` plus `lib/main.dart` selects Flutter |
+| Strategy | Direct build | Dedicated Flutter strategy is selected |
+| Dependencies | Pub resolution | `flutter pub get` completes and failures are logged |
+| Android | Platform preparation | Existing platform is used or Flutter generates one |
+| Build | Direct APK | `flutter build apk --debug` produces a real APK |
+| APK | Validation | Manifest, `aapt` badging, non-zero size, and package ID pass |
+| Artifact | Integrity | Pipeline returns the APK path and SHA-256 is calculable |
+| Environment | Termux/PRoot | Native Flutter is preferred; Ubuntu PRoot fallback remains supported |
+
 ## Core Unit/Integration Coverage
 
 ### Security
