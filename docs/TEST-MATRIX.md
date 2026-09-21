@@ -9,6 +9,48 @@ This document is the acceptance contract for build compatibility. A test is only
 - **BLOCKED** — cannot run because a required environment/device/tool is unavailable
 - **NOT RUN** — not executed yet
 
+## Current Milestone Order
+
+| Milestone | Scope | Status |
+|---|---|---|
+| M4 | PWA | PASS |
+| M5 | Flutter Direct APK | PASS |
+| M6 | React Native / Expo Direct APK | CURRENT |
+| M7 | Next/Nuxt/Angular/Vue/Svelte web-family expansion | PLANNED |
+| M8 | Ionic/Cordova hybrid Android expansion | PLANNED |
+| M9 | Godot Android export | PLANNED |
+| M10 | Unity Android export | PLANNED |
+| Later dedicated milestone | APK Identity Layer | PLANNED |
+
+Only one milestone is implemented at a time. The workflow is:
+
+`Implementation → GitHub push → Termux validation → real APK validation → real phone validation → explicit PASS → next milestone`
+
+If validation fails, work remains on the same milestone until it is fixed and
+revalidated.
+
+## Canonical Build-Family Principle
+
+The preferred architecture is:
+
+`Framework Detector → Canonical Build Family → Existing Build Strategy → APK Validator`
+
+Plain Web, React/Vite, Capacitor, Native Android, Flutter, and React
+Native/Expo should reuse existing build families where possible. Web-family
+expansion targets (Next.js, Nuxt, Angular, Vue, and Svelte) should reuse the
+Web Build → Web Wrapper → APK pipeline whenever their production output can be
+packaged as web content. Ionic and Cordova should reuse native Android/Gradle
+infrastructure where appropriate. Godot and Unity require dedicated adapters.
+
+## APK Identity Layer — Future Dedicated Milestone
+
+This is not part of M6. A future identity layer will expose one consistent
+Builder UI for App Name, App Icon, Package ID/Application ID, Theme/Accent
+Color, Light/Dark mode, Splash Screen, and Adaptive Icon. Each framework will
+receive the identity through its own adapter:
+
+`ZIP → Analyze → App Identity → Framework Strategy → Build → APK Validation → APK`
+
 ## Test A — Static Web
 
 | Area | Check | Acceptance |

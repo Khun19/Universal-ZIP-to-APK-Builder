@@ -10,6 +10,21 @@ Provide a dependable path from a supported application ZIP to a real, installabl
 `Termux = execute/build/test`  
 `GitHub = source of truth/history/CI`
 
+## Validated Build Families
+
+These are the current canonical build families and their status:
+
+1. Plain Web / HTML-CSS-JS — validated
+2. React / Vite — validated
+3. Capacitor — build path validated
+4. Native Android — validated
+5. Flutter — M5 validated; real Flutter → APK and real-phone runtime validation passed
+6. React Native / Expo — M6 in progress
+
+The family list is intentionally separate from framework names. Multiple
+frameworks should reuse a canonical build family whenever their output and
+tooling permit it.
+
 ## Milestones
 
 ### M0 — Foundation and Engineering Control
@@ -83,35 +98,69 @@ Acceptance: a supported input can move through every required phase with truthfu
 - [x] Tracked React Native fixture and integration test retained
 - [ ] Real-device installation and runtime behavior verified
 
-### M7 — Production Security and Isolation
-- [x] Unsafe archive-path checks exist
-- [ ] Build workspace isolation verified under concurrent jobs
-- [ ] Resource/time/file limits enforced consistently
-- [ ] Shell argument handling audited
-- [ ] Symlink behavior audited
-- [ ] Security regression suite established
+### M7 — Web-family Expansion
+Planned targets: Next.js, Nuxt, Angular, Vue, and Svelte.
 
-### M8 — Reliable CI + Real Device Validation
-- [ ] CI covers typecheck/build/tests
-- [ ] Build failures expose useful logs
-- [ ] Android build environment is reproducible
-- [ ] Artifact integrity checks run in CI where practical
-- [ ] Real-device validation procedure documented
-- [ ] CI and device results are clearly distinguished
+- [ ] Detect supported web-family projects reliably
+- [ ] Reuse Web Build → Web Wrapper → APK where production output is packageable as web content
+- [ ] Add framework fixtures and acceptance coverage
+- [ ] Create a separate APK engine only where framework tooling genuinely requires it
 
-### M9 — Production Artifact Pipeline
-- [ ] Build job lifecycle is reliable
-- [ ] Artifact metadata is complete
-- [ ] SHA-256 is consistently exposed
-- [ ] Failed/blocked jobs are diagnosable
-- [ ] Cleanup policy is reliable
-- [ ] Concurrent builds are safe
-- [ ] Release/debug artifact policy documented
+### M8 — Hybrid Android Expansion
+Planned targets: Ionic and Cordova.
 
-### M10 — Broader Universal Compatibility
+- [ ] Detect Ionic and Cordova projects
+- [ ] Reuse or generate the native Android project where appropriate
+- [ ] Reuse the existing Android/Gradle build infrastructure
+- [ ] Add hybrid-framework fixtures and acceptance coverage
+
+### M9 — Godot Android Export
+Planned target: Godot Android export.
+
+- [ ] Define a dedicated Godot adapter/export strategy
+- [ ] Validate a real Godot Android export
+- [ ] Add artifact and runtime acceptance coverage
+
+### M10 — Unity Android Export
+Planned target: Unity Android export.
+
+- [ ] Define a dedicated Unity adapter/export strategy
+- [ ] Validate a real Unity Android export
+- [ ] Add artifact and runtime acceptance coverage
+
+### Later Dedicated Milestone — APK Identity Layer
+Planned, explicitly outside M6.
+
+The Identity Layer will provide one user-facing configuration surface for:
+
+- App Name
+- App Icon
+- Package ID / Application ID
+- Theme / Accent Color
+- Light / Dark mode
+- Splash Screen
+- Adaptive Icon
+
+Identity must be applied framework-specifically while presenting one consistent
+Builder UI. It is a separate layer and must not be mixed into M6.
+
+## Architecture Principle
+
+Prefer:
+
+`Framework Detector → Canonical Build Family → Existing Build Strategy → APK Validator`
+
+over creating a completely separate APK pipeline for every framework. Use
+adapters only where framework-specific tooling is genuinely required.
+
+The future identity flow is:
+
+`ZIP → Analyze → App Identity → Framework Strategy → Build → APK Validation → APK`
+
+## Future Candidate Capabilities
+
 Candidate extensions, implemented only when acceptance tests justify them:
 
-- Additional web frameworks
 - More package managers
 - Additional PWA variants
 - Custom app name/package ID/icon
