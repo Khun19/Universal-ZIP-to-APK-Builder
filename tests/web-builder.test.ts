@@ -9,6 +9,7 @@ import {
   getPwaWorkboxInstallArgs,
   hasInstalledPackage,
   findWebBuildOutputDir,
+  inspectPwaBuildOutput,
   isMinimumReleaseAgeViolation,
   sanitizeNpmLockfile,
 } from '../lib/web-builder.ts';
@@ -132,5 +133,63 @@ test('returns undefined when build output folders exist without index.html', () 
   fs.writeFileSync(path.join(targetDir, 'dist', 'app.js'), 'console.log(1)');
 
   assert.strictEqual(findWebBuildOutputDir(targetDir), undefined);
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+function copyFixtureDist(name: string): string {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), `zip2apk-${name}-`));
+  const fixtureDir = path.resolve('tests/fixtures/pwa-dist');
+  fs.cpSync(fixtureDir, targetDir, { recursive: true });
+  return targetDir;
+}
+
+test('validates fixture-backed Vite PWA output', () => {
+  const targetDir = copyFixtureDist('pwa-valid');
+
+  const result = inspectPwaBuildOutput(targetDir);
+
+  assert.strictEqual(result.success, true);
+  assert.ok(result.manifestPath?.endsWith('manifest.webmanifest'));
+  assert.ok(result.registerScriptPath?.endsWith('registerSW.js'));
+  assert.ok(result.serviceWorkerPath?.endsWith('sw.js'));
+  assert.ok(result.logs.some((log) => log.includes('PWA manifest verified')));
+  assert.ok(result.logs.some((log) => log.includes('PWA service worker verified')));
+
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('fails PWA output validation when the manifest is missing', () => {
+  const targetDir = copyFixtureDist('pwa-missing-manifest');
+  fs.rmSync(path.join(targetDir, 'manifest.webmanifest'));
+
+  const result = inspectPwaBuildOutput(targetDir);
+
+  assert.strictEqual(result.success, false);
+  assert.match(result.error || '', /manifest/i);
+
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('fails PWA output validation when the service worker target is invalid', () => {
+  const targetDir = copyFixtureDist('pwa-invalid-service-worker');
+  fs.writeFileSync(path.join(targetDir, 'sw.js'), 'console.log("not a service worker");\n');
+
+  const result = inspectPwaBuildOutput(targetDir);
+
+  assert.strictEqual(result.success, false);
+  assert.match(result.error || '', /service-worker code/i);
+
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('fails PWA output validation when the service worker target file is missing', () => {
+  const targetDir = copyFixtureDist('pwa-missing-service-worker');
+  fs.rmSync(path.join(targetDir, 'sw.js'));
+
+  const result = inspectPwaBuildOutput(targetDir);
+
+  assert.strictEqual(result.success, false);
+  assert.match(result.error || '', /service worker registration target is missing/i);
+
   fs.rmSync(targetDir, { recursive: true, force: true });
 });

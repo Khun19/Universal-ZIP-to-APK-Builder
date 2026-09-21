@@ -21,6 +21,15 @@ type PackageJson = {
   scripts?: Record<string, string>;
 };
 
+export interface PwaBuildOutputInspection {
+  success: boolean;
+  logs: string[];
+  manifestPath?: string;
+  registerScriptPath?: string;
+  serviceWorkerPath?: string;
+  error?: string;
+}
+
 const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org';
 const PWA_WORKBOX_PACKAGE = 'workbox-window';
 const VITE_PWA_PACKAGE = 'vite-plugin-pwa';
@@ -233,6 +242,178 @@ export function findWebBuildOutputDir(projectPath: string): string | undefined {
   return undefined;
 }
 
+function stripUrlSuffix(value: string): string {
+  return value.split('#')[0].split('?')[0];
+}
+
+function resolveOutputFile(outputDir: string, href: string): string | undefined {
+  const cleanHref = stripUrlSuffix(href).replace(/^\/+/, '');
+  if (
+    !cleanHref ||
+    cleanHref.startsWith('http://') ||
+    cleanHref.startsWith('https://') ||
+    cleanHref.startsWith('//')
+  ) {
+    return undefined;
+  }
+
+  const resolved = path.resolve(outputDir, cleanHref);
+  const relative = path.relative(outputDir, resolved);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
+  return resolved;
+}
+
+function findLinkedManifestHref(indexHtml: string): string | undefined {
+  const linkPattern = /<link\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkPattern.exec(indexHtml)) !== null) {
+    const tag = match[0];
+    if (!/\brel\s*=\s*["'][^"']*\bmanifest\b[^"']*["']/i.test(tag)) continue;
+
+    const hrefMatch = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+    if (hrefMatch?.[1]) return hrefMatch[1];
+  }
+
+  return undefined;
+}
+
+function findScriptSrcs(indexHtml: string): string[] {
+  const scriptPattern = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  const scripts: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptPattern.exec(indexHtml)) !== null) {
+    scripts.push(match[1]);
+  }
+
+  return scripts;
+}
+
+function findServiceWorkerRegistrationTarget(source: string): string | undefined {
+  const registerMatch = source.match(/navigator\.serviceWorker\.register\(\s*["']([^"']+)["']/);
+  return registerMatch?.[1];
+}
+
+function looksLikeServiceWorker(source: string): boolean {
+  return /(?:self\.)?(?:addEventListener|skipWaiting|clientsClaim|precacheAndRoute|importScripts)\s*\(/.test(source);
+}
+
+export function inspectPwaBuildOutput(outputDir: string): PwaBuildOutputInspection {
+  const logs: string[] = [];
+  const indexPath = path.join(outputDir, 'index.html');
+
+  if (!fs.existsSync(indexPath)) {
+    return {
+      success: false,
+      logs,
+      error: 'PWA build output is missing index.html.',
+    };
+  }
+
+  const indexHtml = fs.readFileSync(indexPath, 'utf8');
+  const manifestHref = findLinkedManifestHref(indexHtml);
+  if (!manifestHref) {
+    return {
+      success: false,
+      logs,
+      error: 'PWA build output is missing a manifest link in index.html.',
+    };
+  }
+
+  const manifestPath = resolveOutputFile(outputDir, manifestHref);
+  if (!manifestPath || !fs.existsSync(manifestPath)) {
+    return {
+      success: false,
+      logs,
+      error: `PWA manifest link points to a missing or unsafe file: ${manifestHref}.`,
+    };
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    if (typeof manifest.name !== 'string' && typeof manifest.short_name !== 'string') {
+      return {
+        success: false,
+        logs,
+        manifestPath,
+        error: 'PWA manifest is missing both name and short_name.',
+      };
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      error: `PWA manifest is not valid JSON: ${error.message}`,
+    };
+  }
+
+  let registerScriptPath: string | undefined;
+  let serviceWorkerHref: string | undefined;
+
+  for (const scriptSrc of findScriptSrcs(indexHtml)) {
+    const scriptPath = resolveOutputFile(outputDir, scriptSrc);
+    if (!scriptPath || !fs.existsSync(scriptPath)) continue;
+
+    const scriptSource = fs.readFileSync(scriptPath, 'utf8');
+    const target = findServiceWorkerRegistrationTarget(scriptSource);
+    if (target) {
+      registerScriptPath = scriptPath;
+      serviceWorkerHref = target;
+      break;
+    }
+  }
+
+  if (!serviceWorkerHref) {
+    serviceWorkerHref = findServiceWorkerRegistrationTarget(indexHtml);
+  }
+
+  if (!serviceWorkerHref) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      error: 'PWA build output is missing a service worker registration target.',
+    };
+  }
+
+  const serviceWorkerPath = resolveOutputFile(outputDir, serviceWorkerHref);
+  if (!serviceWorkerPath || !fs.existsSync(serviceWorkerPath)) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      registerScriptPath,
+      error: `PWA service worker registration target is missing or unsafe: ${serviceWorkerHref}.`,
+    };
+  }
+
+  const serviceWorkerSource = fs.readFileSync(serviceWorkerPath, 'utf8');
+  if (!looksLikeServiceWorker(serviceWorkerSource)) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      registerScriptPath,
+      serviceWorkerPath,
+      error: `PWA service worker does not contain recognizable service-worker code: ${serviceWorkerHref}.`,
+    };
+  }
+
+  logs.push(`PWA manifest verified: ${manifestPath}`);
+  if (registerScriptPath) logs.push(`PWA service worker registration verified: ${registerScriptPath}`);
+  logs.push(`PWA service worker verified: ${serviceWorkerPath}`);
+
+  return {
+    success: true,
+    logs,
+    manifestPath,
+    registerScriptPath,
+    serviceWorkerPath,
+  };
+}
+
 export async function buildWebProject(projectPath: string): Promise<WebBuildResult> {
   const logs: string[] = [];
 
@@ -330,6 +511,17 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
     const outputDir = findWebBuildOutputDir(projectPath);
     if (outputDir) {
       logs.push(`Build output found: ${outputDir}`);
+      if (usesVitePwa) {
+        const pwaOutput = inspectPwaBuildOutput(outputDir);
+        logs.push(...pwaOutput.logs);
+        if (!pwaOutput.success) {
+          return {
+            success: false,
+            logs,
+            error: pwaOutput.error || 'PWA build output validation failed',
+          };
+        }
+      }
       return { success: true, outputDir, logs };
     }
 
