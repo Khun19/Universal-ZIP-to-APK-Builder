@@ -32,7 +32,7 @@ This document is the acceptance contract for build compatibility. A test is only
 | Analysis | React/Vite detection | Correct strategy selected |
 | Dependencies | Lockfile policy | Existing package manager respected |
 | Web | Vite build | Build completes |
-| PWA | Plugin/runtime | PWA build completes without unresolved runtime dependencies |
+| PWA | Plugin/runtime | Tracked Vite PWA fixture builds with a manifest, service worker, registration script, icon, and bundled JavaScript asset |
 | Workbox | Compatibility | Workbox dependencies resolve deterministically |
 | Assets | Output | Built assets are packaged correctly |
 | Android | Wrapper | Android wrapper is valid |

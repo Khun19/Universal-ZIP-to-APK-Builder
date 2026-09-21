@@ -5,13 +5,17 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   detectVitePluginPwaUsage,
+  findGeneratedWorkboxBundle,
   getPwaLockfileStabilizeArgs,
   getPwaWorkboxInstallArgs,
   hasInstalledPackage,
+  buildWebProject,
+  patchGeneratedWorkboxTerser,
   findWebBuildOutputDir,
   inspectPwaBuildOutput,
   isMinimumReleaseAgeViolation,
   sanitizeNpmLockfile,
+  verifyGeneratedWorkboxTerserPatch,
 } from '../lib/web-builder.ts';
 
 test('removes Replit internal resolved URLs while preserving integrity', () => {
@@ -115,6 +119,33 @@ test('checks whether workbox-window exists in the generated project', () => {
   fs.rmSync(targetDir, { recursive: true, force: true });
 });
 
+test('patches the generated Workbox Terser invocation idempotently', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-workbox-patch-'));
+  const bundlePath = path.join(targetDir, 'node_modules', 'workbox-build', 'build', 'lib', 'bundle.js');
+  fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+  fs.writeFileSync(bundlePath, 'const plugin = plugin_terser_1.default)({\n  mangle: { minify: true }\n});');
+
+  assert.strictEqual(findGeneratedWorkboxBundle(targetDir), bundlePath);
+  assert.strictEqual(patchGeneratedWorkboxTerser(targetDir).changed, true);
+  assert.match(fs.readFileSync(bundlePath, 'utf8'), /plugin_terser_1\.default\)\(\{\s*maxWorkers: 1,\s*mangle:/);
+  assert.strictEqual(verifyGeneratedWorkboxTerserPatch(targetDir), bundlePath);
+  assert.strictEqual(patchGeneratedWorkboxTerser(targetDir).changed, false);
+
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
+test('patches the legacy Workbox Terser invocation', () => {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-workbox-legacy-'));
+  const bundlePath = path.join(targetDir, 'node_modules', 'workbox-build', 'build', 'lib', 'bundle.js');
+  fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+  fs.writeFileSync(bundlePath, 'terser({\n  mangle: { minify: true }\n});');
+
+  patchGeneratedWorkboxTerser(targetDir);
+  assert.match(fs.readFileSync(bundlePath, 'utf8'), /terser\(\{\s*maxWorkers: 1,\s*mangle:/);
+
+  fs.rmSync(targetDir, { recursive: true, force: true });
+});
+
 
 test('finds only a usable web build output containing index.html', () => {
   const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-web-output-'));
@@ -142,6 +173,35 @@ function copyFixtureDist(name: string): string {
   fs.cpSync(fixtureDir, targetDir, { recursive: true });
   return targetDir;
 }
+
+function copyVitePwaProjectFixture(): string {
+  const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-vite-pwa-project-'));
+  const fixtureDir = path.resolve('tests/fixtures/vite-pwa-project');
+  fs.cpSync(fixtureDir, targetDir, { recursive: true });
+  return targetDir;
+}
+
+test('builds and validates the tracked Vite PWA project fixture', { timeout: 180_000 }, async () => {
+  const targetDir = copyVitePwaProjectFixture();
+
+  try {
+    const build = await buildWebProject(targetDir);
+
+    assert.strictEqual(build.success, true, build.error || build.logs.join('\n'));
+    assert.ok(build.outputDir);
+    assert.ok(fs.existsSync(path.join(build.outputDir, 'index.html')));
+    assert.ok(fs.existsSync(path.join(build.outputDir, 'manifest.webmanifest')));
+    assert.ok(fs.existsSync(path.join(build.outputDir, 'sw.js')));
+    assert.ok(fs.existsSync(path.join(build.outputDir, 'registerSW.js')));
+    assert.ok(fs.existsSync(path.join(build.outputDir, 'icon.svg')));
+    assert.ok(fs.readdirSync(path.join(build.outputDir, 'assets')).some((entry) => entry.endsWith('.js')));
+    assert.ok(build.logs.some((log) => log.includes('PWA manifest verified')));
+    assert.ok(build.logs.some((log) => log.includes('PWA service worker verified')));
+    assert.ok(build.logs.some((log) => log.includes('generated Workbox Terser maxWorkers: 1')));
+  } finally {
+    fs.rmSync(targetDir, { recursive: true, force: true });
+  }
+});
 
 test('validates fixture-backed Vite PWA output', () => {
   const targetDir = copyFixtureDist('pwa-valid');

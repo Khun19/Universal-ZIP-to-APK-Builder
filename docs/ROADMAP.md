@@ -58,11 +58,11 @@ Acceptance: a supported input can move through every required phase with truthfu
 
 ### M4 — PWA → APK
 - [x] PWA/Workbox compatibility work exists in project history
-- [ ] `workbox-window` handling remains deterministic
-- [ ] Service-worker build verified
-- [ ] Manifest handling verified
+- [x] `workbox-window` handling remains deterministic
+- [x] Service-worker build verified
+- [x] Manifest handling verified
 - [ ] Offline/runtime behavior tested where applicable
-- [ ] PWA regression fixture kept permanently
+- [x] PWA regression fixture kept permanently
 
 ### M5 — Camera / QR PWA → APK
 - [x] Camera/QR test work exists in project history

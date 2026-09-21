@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { commandFor } from '../lib/build-engine/src/index.ts';
 
-test('Flutter build strategy invokes Flutter directly', () => {
+test('Flutter build strategy selects a runnable Flutter executor', () => {
   const command = commandFor({
     framework: 'Flutter',
     version: null,
@@ -18,6 +18,9 @@ test('Flutter build strategy invokes Flutter directly', () => {
     evidence: ['pubspec.yaml', 'lib/main.dart'],
   });
   assert.strictEqual(command.command, 'sh');
-  assert.ok(command.args.join(' ').includes('flutter pub get'));
-  assert.ok(command.args.join(' ').includes('flutter build apk --debug'));
+  const shellCommand = command.args.join(' ');
+  assert.ok(shellCommand.includes("FLUTTER=flutter"));
+  assert.ok(shellCommand.includes("FLUTTER='proot-distro login ubuntu -- /opt/flutter/bin/flutter'"));
+  assert.ok(shellCommand.includes('$FLUTTER pub get'));
+  assert.ok(shellCommand.includes('$FLUTTER build apk --debug'));
 });
