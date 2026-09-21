@@ -33,6 +33,17 @@ function findApks(directory: string): string[] {
   return results;
 }
 
+function nodeInstallCommand(projectPath: string): string {
+  if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
+    return 'pnpm install --ignore-workspace --dangerously-allow-all-builds';
+  }
+  if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) return 'yarn install --frozen-lockfile';
+  if (fs.existsSync(path.join(projectPath, 'bun.lockb')) || fs.existsSync(path.join(projectPath, 'bun.lock'))) {
+    return 'bun install';
+  }
+  return 'npm install --no-audit --no-fund';
+}
+
 function isAndroidProject(directory: string): boolean {
   return (
     fs.existsSync(path.join(directory, 'app')) &&
@@ -559,6 +570,67 @@ export async function executeBuildJob(
         logs.push(`Error: ${error}`);
         return { success: false, logs, error };
       }
+    }
+
+    if (strategy.strategyName === 'react-native') {
+      const packageJsonPath = path.join(projectPath, 'package.json');
+      let packageJson: Record<string, unknown> = {};
+      try {
+        packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
+      } catch (error: any) {
+        const message = `React Native dependency setup failed: ${error.message}`;
+        logs.push(`Error: ${message}`);
+        return { success: false, logs, error: message };
+      }
+
+      const dependencies = {
+        ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
+        ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
+      };
+      const usesExpo = typeof dependencies.expo === 'string' ||
+        fs.existsSync(path.join(projectPath, 'app.json')) ||
+        fs.existsSync(path.join(projectPath, 'app.config.js')) ||
+        fs.existsSync(path.join(projectPath, 'app.config.ts'));
+
+      const installCommand = nodeInstallCommand(projectPath);
+      logs.push(`Installing React Native dependencies: ${installCommand}`);
+      try {
+        const installResult = await execAsync(installCommand, {
+          cwd: projectPath,
+          timeout: BUILD_TIMEOUT_MS,
+          env: process.env,
+        });
+        if (installResult.stdout) logs.push(`[Dependency stdout]: ${installResult.stdout.slice(-4000)}`);
+        if (installResult.stderr) logs.push(`[Dependency stderr]: ${installResult.stderr.slice(-2000)}`);
+      } catch (installError: any) {
+        const message = `React Native dependency installation failed: ${commandErrorText(installError)}`;
+        logs.push(`Error: ${message}`);
+        return { success: false, logs, error: message };
+      }
+
+      if (!findAndroidProjectRoot(projectPath) && usesExpo) {
+        logs.push('Expo Android project missing; running local Expo prebuild.');
+        try {
+          const prebuild = await execAsync('npx expo prebuild --platform android --no-install --non-interactive', {
+            cwd: projectPath,
+            timeout: BUILD_TIMEOUT_MS,
+            env: process.env,
+          });
+          if (prebuild.stdout) logs.push(`[Expo prebuild stdout]: ${prebuild.stdout.slice(-4000)}`);
+          if (prebuild.stderr) logs.push(`[Expo prebuild stderr]: ${prebuild.stderr.slice(-2000)}`);
+        } catch (prebuildError: any) {
+          const message = `Expo Android prebuild failed: ${commandErrorText(prebuildError)}`;
+          logs.push(`Error: ${message}`);
+          return { success: false, logs, error: message };
+        }
+      }
+
+      if (!findAndroidProjectRoot(projectPath)) {
+        const message = 'React Native build requires an Android project; Expo prebuild did not produce one.';
+        logs.push(`Error: ${message}`);
+        return { success: false, logs, error: message };
+      }
+      logs.push('React Native project dependencies are ready for the Android Gradle build.');
     }
 
     // Flutter projects must be built through the Flutter CLI so Flutter owns

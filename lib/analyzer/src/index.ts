@@ -7,6 +7,15 @@ const ext = (files: string[], suffix: string) => files.some((file) => file.endsW
 
 const detectors: Detector[] = [
   (s) => {
+    const pkg = s.packageJson ?? {};
+    const deps = { ...(pkg.dependencies as Record<string, unknown> ?? {}), ...(pkg.devDependencies as Record<string, unknown> ?? {}) };
+    const expo = typeof deps.expo === "string" || has(s.files, "app.json") || has(s.files, "app.config.js") || has(s.files, "app.config.ts");
+    const reactNative = typeof deps["react-native"] === "string";
+    if (!expo && !reactNative) return null;
+    const android = has(s.files, "settings.gradle") || has(s.files, "settings.gradle.kts") || s.files.some((file) => file.startsWith("android/"));
+    return { framework: expo ? "Expo" : "React Native", buildTool: "Gradle", language: "JavaScript", projectType: expo ? "Expo application" : "React Native application", confidence: android ? 97 : 90, compatibilityScore: android ? 94 : 84, recommendedStrategy: expo ? "Install dependencies, run Expo prebuild, then build Android with Gradle" : "Install dependencies, then build the Android project with Gradle", evidence: [expo ? "Expo project markers" : "React Native dependency", ...(android ? ["Android platform"] : [])] };
+  },
+  (s) => {
     const native = has(s.files, "settings.gradle") || has(s.files, "settings.gradle.kts") || has(s.files, "gradlew") || s.files.some((f) => f.endsWith("AndroidManifest.xml"));
     if (!native) return null;
     const kotlin = ext(s.files, ".kt") || s.files.some((f) => f.includes("kotlin"));

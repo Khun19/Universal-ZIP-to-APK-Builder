@@ -31,3 +31,17 @@ test('Determines Flutter strategy for Flutter projects', () => {
   assert.strictEqual(strategy.outputArtifact, 'app-debug.apk');
   assert.ok(strategy.buildSteps.some((step) => step.includes('flutter build apk')));
 });
+
+test('Determines dedicated React Native strategy', () => {
+  const analysis: AnalysisResult = { projectType: 'React Native', confidence: 97, evidence: ['React Native dependency detected'], warnings: [] };
+  const strategy = determineBuildStrategy(analysis);
+  assert.strictEqual(strategy.strategyName, 'react-native');
+  assert.ok(strategy.buildSteps.some((step) => step.includes('Android Gradle')));
+});
+
+test('Determines dedicated Expo strategy', () => {
+  const analysis: AnalysisResult = { projectType: 'Expo', confidence: 92, evidence: ['Expo project markers detected'], warnings: [] };
+  const strategy = determineBuildStrategy(analysis);
+  assert.strictEqual(strategy.strategyName, 'react-native');
+  assert.ok(strategy.buildSteps.some((step) => step.includes('Expo prebuild')));
+});

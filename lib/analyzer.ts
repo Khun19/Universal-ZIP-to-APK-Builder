@@ -7,6 +7,8 @@ export interface AnalysisResult {
     | 'React/Vite Web App'
     | 'Plain HTML/JS'
     | 'Flutter'
+    | 'React Native'
+    | 'Expo'
     | 'Unknown';
   confidence: number;
   evidence: string[];
@@ -19,7 +21,10 @@ export function validateZipEntry(entryPath: string): boolean {
   return true;
 }
 
-export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
+export function analyzeProjectFiles(
+  filePaths: string[],
+  packageJson: Record<string, unknown> = {},
+): AnalysisResult {
   const evidence: string[] = [];
   const warnings: string[] = [];
   const normalizedPaths = filePaths.map((filePath) => filePath.replace(/\\/g, '/'));
@@ -45,6 +50,29 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
     if (hasFlutterAndroid) evidence.push('Flutter Android platform detected');
     else warnings.push('Flutter Android platform is missing; run flutter create . with the local Flutter SDK before building');
     return { projectType: 'Flutter', confidence: hasFlutterAndroid ? 99 : 94, evidence, warnings };
+  }
+
+  const dependencies = {
+    ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
+  };
+  const hasExpoConfig = normalizedPaths.some((filePath) => /(^|\/)app\.config\.(js|ts|json)$/.test(filePath) || /(^|\/)app\.json$/.test(filePath));
+  const hasExpoDependency = typeof dependencies.expo === 'string';
+  const hasReactNativeDependency = typeof dependencies['react-native'] === 'string';
+  const hasAndroidProject = normalizedPaths.some((filePath) => /^android\/(settings\.gradle|settings\.gradle\.kts|app\/)/.test(filePath));
+  if (hasExpoDependency || hasExpoConfig) {
+    evidence.push('Expo project markers detected');
+    if (hasExpoDependency) evidence.push('expo dependency detected');
+    if (hasExpoConfig) evidence.push('Expo configuration detected');
+    if (hasAndroidProject) evidence.push('Android project detected');
+    else warnings.push('Android platform is missing; local Expo prebuild is required before Gradle');
+    return { projectType: 'Expo', confidence: hasAndroidProject ? 97 : 92, evidence, warnings };
+  }
+  if (hasReactNativeDependency) {
+    evidence.push('React Native dependency detected');
+    if (hasAndroidProject) evidence.push('Android project detected');
+    else warnings.push('Android platform is missing; a native Android project is required for local APK builds');
+    return { projectType: 'React Native', confidence: hasAndroidProject ? 97 : 88, evidence, warnings };
   }
 
   if (hasBuildGradle && hasAndroidManifest) {

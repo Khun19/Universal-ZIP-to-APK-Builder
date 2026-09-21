@@ -1,7 +1,7 @@
 import { AnalysisResult } from './analyzer.ts';
 
 export interface BuildStrategy {
-  strategyName: 'native-gradle' | 'capacitor' | 'web-wrapper' | 'flutter' | 'unknown';
+  strategyName: 'native-gradle' | 'capacitor' | 'web-wrapper' | 'flutter' | 'react-native' | 'unknown';
   buildSteps: string[];
   outputArtifact: string;
 }
@@ -18,6 +18,9 @@ export function determineBuildStrategy(analysis: AnalysisResult): BuildStrategy 
       return { strategyName: 'web-wrapper', buildSteps: ['Sanitize HTML/JS assets', 'Inject assets into Android WebView Wrapper', 'Run Gradle build to package APK'], outputArtifact: 'app-html-debug.apk' };
     case 'Flutter':
       return { strategyName: 'flutter', buildSteps: ['Verify Flutter SDK and Android toolchain', 'Run flutter pub get', 'Run flutter build apk --debug', 'Locate APK in build/app/outputs/flutter-apk/'], outputArtifact: 'app-debug.apk' };
+    case 'React Native':
+    case 'Expo':
+      return { strategyName: 'react-native', buildSteps: ['Install project dependencies with the detected package manager', 'Run local Expo prebuild when Android is missing', 'Run the Android Gradle build', 'Locate and validate the generated APK'], outputArtifact: 'app-debug.apk' };
     default:
       return { strategyName: 'unknown', buildSteps: [], outputArtifact: '' };
   }

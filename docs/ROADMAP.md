@@ -73,13 +73,15 @@ Acceptance: a supported input can move through every required phase with truthfu
 - [x] Tracked Flutter regression fixture and integration test retained
 - [ ] APK installation and runtime behavior verified on a real Android device
 
-### M6 — Multiple Build Strategies
-- [x] Native Gradle strategy foundation
-- [x] Capacitor strategy foundation
-- [x] Web-wrapper strategy foundation
-- [ ] Strategy interface/contract hardened
-- [ ] Detection confidence and unsupported-project behavior improved
-- [ ] Strategy-specific fixtures and acceptance tests expanded
+### M6 — React Native / Expo Direct Build → APK
+- [x] React Native projects detected from package metadata and Android structure
+- [x] Expo projects detected from dependency/configuration markers
+- [x] Dedicated React Native / Expo strategy selected
+- [x] Dependency installation uses the project package manager
+- [x] Local Expo prebuild supported when Android is missing
+- [x] Real Android Gradle APK build and validation verified
+- [x] Tracked React Native fixture and integration test retained
+- [ ] Real-device installation and runtime behavior verified
 
 ### M7 — Production Security and Isolation
 - [x] Unsafe archive-path checks exist

@@ -37,3 +37,21 @@ test('Detects Flutter application without Android platform and reports the requi
   assert.strictEqual(result.confidence, 94);
   assert.ok(result.warnings.some((warning) => warning.includes('flutter create')));
 });
+
+test('Detects React Native projects before generic web detection', () => {
+  const result = analyzeProjectFiles(
+    ['package.json', 'index.js', 'App.js', 'android/settings.gradle', 'android/app/build.gradle'],
+    { dependencies: { react: '18.3.1', 'react-native': '0.76.9' } },
+  );
+  assert.strictEqual(result.projectType, 'React Native');
+  assert.ok(result.evidence.some((item) => item.includes('React Native')));
+});
+
+test('Detects Expo projects from dependency and config markers', () => {
+  const result = analyzeProjectFiles(
+    ['package.json', 'app.json', 'App.js'],
+    { dependencies: { expo: '^52.0.0' } },
+  );
+  assert.strictEqual(result.projectType, 'Expo');
+  assert.ok(result.warnings.some((warning) => warning.includes('prebuild')));
+});

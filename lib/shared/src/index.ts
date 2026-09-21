@@ -1,5 +1,5 @@
 export type JobStatus = "QUEUED" | "ANALYZING" | "PREPARING" | "BUILDING" | "VALIDATING" | "SUCCESS" | "FAILED";
-export type Framework = "Native Android" | "React" | "React + Vite" | "Plain Web" | "Capacitor" | "Flutter" | "Unsupported";
+export type Framework = "Native Android" | "React" | "React + Vite" | "React Native" | "Expo" | "Plain Web" | "Capacitor" | "Flutter" | "Unsupported";
 export interface ProjectAnalysis {
   framework: Framework; version: string | null; buildTool: string; language: string;
   packageManager: string; projectType: string; confidence: number; compatibilityScore: number;

@@ -69,6 +69,21 @@ This document is the acceptance contract for build compatibility. A test is only
 | Artifact | Integrity | Pipeline returns the APK path and SHA-256 is calculable |
 | Environment | Termux/PRoot | Native Flutter is preferred; Ubuntu PRoot fallback remains supported |
 
+## Test E — React Native / Expo Direct Build
+
+| Area | Check | Acceptance |
+|---|---|---|
+| ZIP | Extraction | React Native fixture extracts safely |
+| Analysis | React Native detection | React Native metadata is not classified as generic web/PWA |
+| Analysis | Expo detection | Expo dependency/configuration selects the Expo project type |
+| Strategy | Direct Android build | Dedicated React Native strategy is selected |
+| Dependencies | Package manager | Project dependencies install through the detected package manager |
+| Android | Native project | Existing Android project is built, or Expo prebuild creates one locally |
+| Gradle | Build | Real Android Gradle build completes |
+| APK | Validation | Manifest, `aapt` badging, package ID, and non-zero size pass |
+| Artifact | Integrity | Pipeline returns the APK path and SHA-256 is calculable |
+| Environment | Termux/ARM64 | Existing Android SDK and local Java/Gradle environment are used |
+
 ## Core Unit/Integration Coverage
 
 ### Security
