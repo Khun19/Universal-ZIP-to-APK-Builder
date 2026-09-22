@@ -11,6 +11,11 @@ test(
   { skip: process.env.RUN_ANDROID_INTEGRATION !== '1', timeout: 20 * 60 * 1000 },
   async () => {
     const fixtureDir = path.resolve('./tests/fixtures/react-native-project');
+    const applicationSource = fs.readFileSync(
+      path.join(fixtureDir, 'android/app/src/main/java/com/builder/m6reactnative/MainApplication.java'),
+      'utf8',
+    );
+    assert.match(applicationSource, /getUseDeveloperSupport\(\)[\s\S]*?return false;/);
     const fixtureFiles = [
       'package.json',
       'index.js',

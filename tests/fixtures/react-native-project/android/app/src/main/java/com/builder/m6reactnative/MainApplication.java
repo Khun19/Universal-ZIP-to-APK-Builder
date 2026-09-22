@@ -13,7 +13,9 @@ public final class MainApplication extends Application implements ReactApplicati
     private final ReactNativeHost reactNativeHost = new DefaultReactNativeHost(this) {
         @Override
         public boolean getUseDeveloperSupport() {
-            return BuildConfig.DEBUG;
+            // This fixture bundles JavaScript into the debug APK, so it must
+            // launch offline on a phone without a Metro development server.
+            return false;
         }
 
         @Override
