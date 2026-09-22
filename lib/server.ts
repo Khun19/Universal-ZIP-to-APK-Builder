@@ -1,6 +1,8 @@
-import { analyzeProjectFiles, validateZipEntry } from './analyzer.ts';
+import { validateZipEntry } from './analyzer.ts';
 import { determineBuildStrategy } from './strategy.ts';
 import { executeBuildJob } from './worker.ts';
+import { runAutoRepair, type RepairEvidence, type RepairIssue } from './auto-repair.ts';
+import { sha256 } from './security/src/index.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -8,6 +10,8 @@ export interface BuildRequestPayload {
   projectPath: string;
   filePaths: string[];
   appName?: string;
+  inputZipPath?: string;
+  dryRun?: boolean;
 }
 
 export interface BuildResponse {
@@ -17,6 +21,11 @@ export interface BuildResponse {
   logs: string[];
   outputPath?: string;
   error?: string;
+  dryRun?: boolean;
+  buildReady?: boolean;
+  repairIssues?: RepairIssue[];
+  repairEvidence?: RepairEvidence[];
+  blocker?: RepairIssue;
 }
 
 /**
@@ -36,7 +45,7 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
     }
   }
 
-  // 2. Project Analysis & Framework Detection
+  // 2. Analyze and repair only in a separate per-build workspace.
   let packageJson: Record<string, unknown> = {};
   const packageJsonPath = path.join(projectPath, 'package.json');
   if (fs.existsSync(packageJsonPath)) {
@@ -50,12 +59,48 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
       };
     }
   }
-  const analysis = analyzeProjectFiles(filePaths, packageJson);
-  if (analysis.projectType === 'Unknown') {
+  let inputZipHash: string | null = null;
+  if (payload.inputZipPath) {
+    try { inputZipHash = await sha256(payload.inputZipPath); }
+    catch (error) {
+      return { success: false, logs: [`Unable to hash input ZIP: ${error instanceof Error ? error.message : String(error)}`], error: 'Unable to verify input ZIP' };
+    }
+  }
+  let repair;
+  try {
+    repair = await runAutoRepair(projectPath, filePaths, { dryRun: payload.dryRun, inputZipHash });
+  } catch (error) {
     return {
       success: false,
-      logs: analysis.warnings,
-      error: 'Unable to determine project type'
+      logs: [`Auto-Repair rejected input: ${error instanceof Error ? error.message : String(error)}`],
+      error: 'Unsafe or invalid repair input',
+      buildReady: false,
+    };
+  }
+  const analysis = repair.analysis;
+  const repairLogs = repair.issues.map((item) => `${item.classification}: ${item.rule} (${item.file}) - ${item.reason}`);
+  if (repair.blocker || !repair.buildReady) {
+    return {
+      success: false,
+      logs: [...repairLogs, ...analysis.warnings],
+      error: repair.blocker?.reason ?? 'Unable to determine project type after repair analysis',
+      buildReady: false,
+      dryRun: repair.dryRun,
+      repairIssues: repair.issues,
+      repairEvidence: repair.evidence,
+      blocker: repair.blocker,
+    };
+  }
+
+  if (payload.dryRun) {
+    return {
+      success: true,
+      projectType: analysis.projectType,
+      logs: [...repairLogs, ...analysis.warnings, ...repair.plan.map((item) => `PLAN: ${item.rule} ${item.file}`)],
+      dryRun: true,
+      buildReady: true,
+      repairIssues: repair.issues,
+      repairEvidence: [],
     };
   }
 
@@ -64,7 +109,7 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
 
   // 4. Build Worker Execution
   const jobResult = await executeBuildJob(
-    projectPath,
+    repair.projectPath,
     strategy,
     payload.appName,
   );
@@ -73,9 +118,12 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
     success: jobResult.success,
     projectType: analysis.projectType,
     strategyName: strategy.strategyName,
-    logs: jobResult.logs,
+    logs: [...repairLogs, ...jobResult.logs],
     outputPath: jobResult.outputPath,
-    error: jobResult.error
+    error: jobResult.error,
+    buildReady: true,
+    repairIssues: repair.issues,
+    repairEvidence: repair.evidence,
   };
 }
 

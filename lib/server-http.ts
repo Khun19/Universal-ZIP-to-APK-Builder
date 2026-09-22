@@ -3,11 +3,6 @@ import formidable from 'formidable';
 import AdmZip from 'adm-zip';
 import * as path from 'path';
 import * as fs from 'fs';
-import { executeBuildJob } from './worker.ts';
-import {
-  analyzeProjectFiles,
-} from './analyzer.ts';
-import { determineBuildStrategy } from './strategy.ts';
 import { URL } from 'url';
 import { listTemplates, getTemplate } from './template-registry';
 import { generateFromTemplate } from './template-generator';
@@ -170,33 +165,32 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
           const extraction = (await import('./security/src/index.ts')).safeExtractAdmZip(zip, workspaceDir);
           const filePaths = extraction.filePaths;
 
-        console.log(`🚀 Building APK...`);
-        const analysis = analyzeProjectFiles(filePaths);
-        if (analysis.projectType === 'Unknown') {
-          throw new Error('Unable to determine project type');
-        }
-
-        const strategy = determineBuildStrategy(analysis);
+        console.log(`🚀 Analyzing and preparing isolated repair workspace...`);
         const uploadedName =
           typeof uploadedFile.originalFilename === 'string'
             ? uploadedFile.originalFilename.replace(/\.zip$/i, '')
             : 'GeneratedApp';
-        const result = await executeBuildJob(
-          workspaceDir,
-          strategy,
-          uploadedName,
-        );
+        const result = await handleBuildRequest({
+          projectPath: workspaceDir,
+          filePaths,
+          appName: uploadedName,
+          inputZipPath: uploadedFile.filepath,
+        });
 
         if (result.success) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             message: 'APK Build Successful',
             buildId: buildId,
-            apkPath: result.outputPath
+            apkPath: result.outputPath,
+            projectType: result.projectType,
+            repairIssues: result.repairIssues,
+            repairEvidence: result.repairEvidence,
+            logs: result.logs,
           }));
         } else {
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'APK Build Failed', logs: result.logs }));
+          res.end(JSON.stringify({ error: result.error ?? 'APK Build Failed', buildReady: result.buildReady, blocker: result.blocker, repairIssues: result.repairIssues, repairEvidence: result.repairEvidence, logs: result.logs }));
         }
       } catch (error: any) {
         res.writeHead(500, { 'Content-Type': 'application/json' });

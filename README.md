@@ -658,6 +658,9 @@ pnpm run build
 
 Run the project's configured test suite when applicable.
 
+Build-readiness Auto-Repair rules, isolation, evidence, dry-run usage, and
+current limitations are documented in [docs/AUTO-REPAIR.md](docs/AUTO-REPAIR.md).
+
 ---
 
 📄 License

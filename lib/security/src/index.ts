@@ -1,4 +1,4 @@
-import { createReadStream, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { createReadStream, lstatSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -16,13 +16,13 @@ export const ZIP_LIMITS = {
 
 export function validateZipName(name: string): void {
   const normalized = name.replace(/\\/g, "/");
+  const segments = normalized.split("/");
 
   if (
     !normalized ||
     normalized.startsWith("/") ||
     normalized.includes("\0") ||
-    path.posix.normalize(normalized).startsWith("../") ||
-    normalized === ".." ||
+    segments.some((segment) => segment === ".." || segment === ".") ||
     /^[A-Za-z]:($|\/)/.test(normalized)
   ) {
     throw new Error(`Unsafe archive path: ${name}`);
@@ -42,11 +42,35 @@ export function inspectAdmZip(zip: AdmZip): string[] {
   }
 
   let totalUncompressed = 0;
+  const seenNames = new Set<string>();
+
+  for (const entry of entries) {
+    const rawName = (entry as typeof entry & { rawEntryName?: Buffer }).rawEntryName;
+    const name = (rawName ? rawName.toString('utf8') : entry.entryName).replace(/\\/g, "/");
+
+    validateZipName(name);
+
+    const collisionKey = path.posix.normalize(name).replace(/\/$/, "").normalize("NFC").toLowerCase();
+    if (seenNames.has(collisionKey)) {
+      throw new Error(`Duplicate archive entry: ${name}`);
+    }
+    seenNames.add(collisionKey);
+
+    if (entry.attr !== undefined && entry.attr !== 0) {
+      const unixMode = (Number(entry.attr) >>> 16) & 0xffff;
+      const fileType = unixMode & 0xf000;
+
+      if (fileType === 0xa000) {
+        throw new Error(`Symbolic links are not allowed in uploaded archives: ${name}`);
+      }
+      if (fileType !== 0 && fileType !== 0x8000 && fileType !== 0x4000) {
+        throw new Error(`Unsupported special file in uploaded archive: ${name}`);
+      }
+    }
+  }
 
   for (const entry of entries) {
     const name = entry.entryName.replace(/\\/g, "/");
-
-    validateZipName(name);
 
     if (entry.isDirectory) continue;
 
@@ -69,14 +93,6 @@ export function inspectAdmZip(zip: AdmZip): string[] {
       }
     }
 
-    if (entry.attr !== undefined && entry.attr !== 0) {
-      const unixMode = (Number(entry.attr) >>> 16) & 0xffff;
-      const fileType = unixMode & 0xf000;
-
-      if (fileType === 0xa000) {
-        throw new Error(`Symbolic links are not allowed in uploaded archives: ${name}`);
-      }
-    }
   }
 
   return entries
@@ -91,6 +107,10 @@ export function safeExtractAdmZip(
   const resolvedDestination = path.resolve(destination);
 
   mkdirSync(resolvedDestination, { recursive: true });
+
+  if (lstatSync(resolvedDestination).isSymbolicLink()) {
+    throw new Error("Extraction destination must not be a symbolic link");
+  }
 
   const canonicalDestination = realpathSync(resolvedDestination);
   const filePaths = inspectAdmZip(zip);
@@ -108,7 +128,31 @@ export function safeExtractAdmZip(
       throw new Error(`Blocked ZIP path breakout: ${relativePath}`);
     }
 
-    mkdirSync(path.dirname(targetPath), { recursive: true });
+    let parentPath = canonicalDestination;
+    const parentSegments = relativePath.split('/').slice(0, -1);
+    for (const segment of parentSegments) {
+      parentPath = path.join(parentPath, segment);
+      try {
+        const parentInfo = lstatSync(parentPath);
+        if (parentInfo.isSymbolicLink() || !parentInfo.isDirectory()) {
+          throw new Error(`Blocked ZIP parent path: ${relativePath}`);
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        mkdirSync(parentPath);
+      }
+      const canonicalParent = realpathSync(parentPath);
+      if (!canonicalParent.startsWith(canonicalDestination + path.sep)) {
+        throw new Error(`Blocked ZIP parent path breakout: ${relativePath}`);
+      }
+    }
+    try {
+      if (lstatSync(targetPath).isSymbolicLink()) {
+        throw new Error(`Blocked ZIP overwrite of symbolic link: ${relativePath}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
     writeFileSync(targetPath, entry.getData());
   }
 

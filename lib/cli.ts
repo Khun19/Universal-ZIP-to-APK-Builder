@@ -14,7 +14,7 @@ async function main() {
     console.error('  templates:list');
     console.error('  templates:info <id>');
     console.error('  templates:create <id> <project-name> [--app-name="App"] [--package="com.example.app"]');
-    console.error('  build-zip <path-to-zip>');
+    console.error('  build-zip <path-to-zip> [--dry-run]');
     process.exit(1);
   }
 
@@ -83,8 +83,14 @@ async function main() {
     return;
   }
 
-  // legacy CLI behaviour: build from zip
-  const zipArg = argv[0];
+  // Legacy positional ZIP input remains supported alongside the explicit command.
+  const explicitBuild = cmd === 'build-zip';
+  const zipArg = explicitBuild ? argv[1] : argv[0];
+  const dryRun = argv.includes('--dry-run');
+  if (!zipArg || zipArg.startsWith('--')) {
+    console.error('Usage: pnpm tsx lib/cli.ts build-zip <path-to-zip> [--dry-run]');
+    process.exit(1);
+  }
   const zipPath = path.resolve(zipArg);
   if (!fs.existsSync(zipPath)) {
     console.error(`File not found: ${zipPath}`);
@@ -111,11 +117,33 @@ async function main() {
   console.log(`Extracted ${filePaths.length} files.\n`);
 
   const zipBaseName = path.basename(zipPath, path.extname(zipPath));
-  const result = await handleBuildRequest({ projectPath: workDir, filePaths, appName: zipBaseName });
+  const result = await handleBuildRequest({ projectPath: workDir, filePaths, appName: zipBaseName, inputZipPath: zipPath, dryRun });
 
   result.logs.forEach(l => console.log('>', l));
 
-  if (result.success && result.outputPath) {
+  if (!result.dryRun && result.repairIssues?.length) {
+    console.log(JSON.stringify({
+      buildReady: result.buildReady,
+      blocker: result.blocker,
+      repairIssues: result.repairIssues,
+      repairEvidence: result.repairEvidence,
+    }, null, 2));
+  }
+
+  if (result.dryRun) {
+    console.log(JSON.stringify({
+      success: result.success,
+      dryRun: true,
+      buildReady: result.buildReady,
+      projectType: result.projectType,
+      repairIssues: result.repairIssues,
+      repairEvidence: result.repairEvidence,
+      blocker: result.blocker,
+      logs: result.logs,
+      error: result.error,
+    }, null, 2));
+    if (!result.success) process.exit(1);
+  } else if (result.success && result.outputPath) {
     const outDir  = path.resolve('output');
     fs.mkdirSync(outDir, { recursive: true });
     const outFile = path.join(outDir, `${buildId}.apk`);
