@@ -123,8 +123,11 @@ receive the identity through its own adapter:
 | Android | Native project | Existing Android project is built, or Expo prebuild creates one locally |
 | Gradle | Build | Real Android Gradle build completes |
 | APK | Validation | Manifest, `aapt` badging, package ID, and non-zero size pass |
+| React Native runtime | Native bootstrap | `MainApplication` initializes SoLoader with the RN merged-library mapping |
+| React Native runtime | ARM64 JavaScript engine | Version-matched Hermes libraries are present for `arm64-v8a` |
 | Artifact | Integrity | Pipeline returns the APK path and SHA-256 is calculable |
 | Environment | Termux/ARM64 | Existing Android SDK and local Java/Gradle environment are used |
+| Device | Fresh install and launcher start | Must be verified on the target phone; package registration alone is not evidence |
 
 ## Core Unit/Integration Coverage
 

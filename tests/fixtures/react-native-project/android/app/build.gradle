@@ -6,6 +6,15 @@ plugins {
 react {
     autolinkLibrariesWithApp()
     debuggableVariants = []
+
+    // RN 0.76 ships a Linux x86_64 hermesc but no Linux ARM64 host compiler.
+    // On Termux ARM64, run that version-matched compiler through qemu-user.
+    def termuxHermesCompiler = rootProject.file('../hermesc-termux.sh')
+    def termuxQemu = new File(System.getenv('PREFIX') ?: '', 'bin/qemu-x86_64')
+    if (System.getProperty('os.arch') == 'aarch64' && termuxHermesCompiler.isFile() && termuxQemu.isFile()) {
+        termuxHermesCompiler.setExecutable(true)
+        hermesCommand = termuxHermesCompiler.absolutePath
+    }
 }
 
 android {
@@ -21,9 +30,13 @@ android {
     }
 }
 
+configurations.configureEach {
+    exclude group: 'org.webkit', module: 'android-jsc'
+}
+
 dependencies {
     implementation('com.facebook.react:react-android')
     if (hermesEnabled.toBoolean()) {
-        implementation('com.facebook.react:hermes-android')
+        implementation('com.facebook.react:hermes-android:0.76.9')
     }
 }

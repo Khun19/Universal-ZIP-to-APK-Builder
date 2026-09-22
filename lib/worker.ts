@@ -404,10 +404,26 @@ function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
 
   if (!selectedHome) return process.env;
 
+  // Gradle's native SystemInfo service is unavailable on Termux. Without an
+  // explicit installation path, Gradle cannot resolve the Java toolchain used
+  // while configuring React Native's included Gradle plugin, even though the
+  // selected JDK is installed and runnable.
+  const isTermux = Boolean(process.env.PREFIX?.includes('/com.termux/'));
+  const gradleOptions = isTermux
+    ? [
+        process.env.GRADLE_OPTS,
+        '-Dorg.gradle.java.installations.auto-detect=false',
+        `-Dorg.gradle.java.installations.paths=${selectedHome}`,
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : process.env.GRADLE_OPTS;
+
   return {
     ...process.env,
     JAVA_HOME: selectedHome,
     PATH: `${path.join(selectedHome, 'bin')}${path.delimiter}${process.env.PATH || ''}`,
+    ...(gradleOptions ? { GRADLE_OPTS: gradleOptions } : {}),
   };
 }
 export function isGradleJavaCompatibilityFailure(error: unknown): boolean {
