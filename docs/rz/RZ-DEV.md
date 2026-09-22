@@ -1,0 +1,5 @@
+# RZ-DEV — Same-Milestone Remediation
+
+**Input:** same-milestone FAIL/BLOCKED finding, exact evidence, approved scope. **Action:** locate the failing stage; establish root cause from evidence or record it as unknown; design the smallest in-scope correction and regression test. **Output:** remediation record and scoped fix. **Evidence:** reproducer/logs, cause confidence, changed files, test/build results, affected requirement IDs. **Acceptance:** fix addresses demonstrated cause without suppressing errors, stubbing functionality, weakening criteria, or changing another milestone; regression plan is complete. **Owner:** implementer; scope owner approves any change. **Status:** use RZ statuses. **Failure:** remain on same milestone; if new evidence changes architecture/criteria, route through RZ-DEFINE and RZ-REVIEW before implementation. **Exit:** return to RZ-BUILD/RZ-CHECK and repeat artifact, Termux, runtime, and gate stages affected by the fix.
+
+Forbidden transition: FAIL/BLOCKED → next milestone.

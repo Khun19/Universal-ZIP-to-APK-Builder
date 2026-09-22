@@ -1,0 +1,5 @@
+# RZ-CHECK — Verification and Regression
+
+**Input:** approved criteria, candidate changes/artifact, protected milestone register. **Action:** run focused tests/typechecks/static checks before publication and required post-build/integration/regression checks; compare each result with its acceptance threshold. **Output:** test and regression verdicts mapped to REQ/test IDs. **Evidence:** exact commands, environment, exit codes, logs/reports, commit SHA, skipped tests with reasons. **Acceptance:** every required check ran and passed; skipped/unavailable checks are NOT VERIFIED/BLOCKED, never PASS; impact-relevant protected milestones remain passing. **Owner:** verification operator; test author reports results, accountable owner accepts coverage. **Status:** use RZ statuses. **Failure:** failed tests/regressions block the current milestone; route fix through RZ-DEV and rerun affected plus required broad checks. **Exit:** all planned checks have observed outcomes and their evidence is linked to RZ-GATE.
+
+Do not infer real APK, installation, or device runtime behavior from automated test results unless those tests actually exercise and report that behavior.

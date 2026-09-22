@@ -10,6 +10,10 @@ structured ZIP projects, selects an appropriate Android build strategy, executes
 the build pipeline, validates the resulting APK, and makes the final artifact
 available for download.
 
+## Project Governance
+
+The active development and release workflow is [RZ Governance](docs/rz/README.md). It requires one milestone at a time and separates source, build, artifact, Termux, device-runtime, and release evidence. Older workflow pages are retained for context but are superseded by RZ. Retained BMAD skill files are not the project's active workflow.
+
 The project is designed to support local Android build environments, including
 phone-based development environments such as Termux, as well as containerized
 build environments.

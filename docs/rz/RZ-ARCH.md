@@ -1,0 +1,5 @@
+# RZ-ARCH — Architecture
+
+**Input:** approved RZ-DEFINE record and current architecture baseline. **Action:** identify system boundaries, trust boundaries, strategy interfaces, data flow, failure states, and environment constraints needed for the approved objective. Consider Termux and CI/Docker compatibility. **Output:** versioned architecture decisions/diagrams and affected components. **Evidence:** links to source context, decision records, risks, and alternatives considered. **Acceptance:** boundaries and dependencies are explicit; security and backward-compatibility impacts are assessed; no unresolved decision blocks the objective. **Owner:** architecture owner; human accountable for approval. **Status:** use RZ statuses. **Failure:** return unclear scope to RZ-DEFINE; unresolved critical design risk blocks RZ-REVIEW. **Exit:** architecture baseline approved and traceable to objective/requirements.
+
+Do not implement here. Architecture changes after approval require controlled change and re-review.

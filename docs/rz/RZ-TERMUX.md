@@ -1,0 +1,5 @@
+# RZ-TERMUX — Exact-Commit Termux Validation
+
+**Input:** pushed source commit, required input fixture/ZIP, validation commands, environment checklist. **Action:** operator synchronizes Termux to the exact commit (no unrecorded source substitution), installs/resolves dependencies as specified, runs required typecheck/tests/build and captures persisted APK evidence. **Output:** external validation record tied to commit and artifact hash. **Evidence:** operator, date/timezone, branch/SHA, clean/dirty state, OS/ABI, tool versions, fixture hash, exact commands/exit codes/logs, APK path/size/SHA-256. **Acceptance:** all Termux requirements pass on the exact commit and matching input; local-only changes are disclosed and cannot be attributed to the pushed commit. **Owner:** Termux operator; gate owner reviews. **Status:** use RZ statuses. **Failure:** missing device/tool/network prerequisite is BLOCKED; executed failure is FAIL; keep same milestone and use RZ-DEV. **Exit:** external evidence is complete and artifact is ready for required RZ-RUNTIME validation or gate.
+
+CI/local developer evidence cannot be relabeled as Termux evidence.

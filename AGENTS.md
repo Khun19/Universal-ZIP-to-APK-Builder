@@ -18,6 +18,10 @@ GitHub is the source of truth for code, history, issues, pull requests, CI resul
 
 Before important changes, inspect the current repository state, recent commits, related files, tests, issues/PRs, and GitHub Actions. Never rely on stale chat history when the repository can answer the question.
 
+## Workflow Authority
+
+`docs/rz/RZ-GOVERNANCE.md` is the canonical project workflow. Follow its one-milestone-at-a-time, evidence-first gates. BMAD material retained in local skill catalogs is not an active project workflow and must not be invoked as a substitute for RZ. Legacy workflow documents are historical/reference material where they conflict with RZ.
+
 ## Roles
 
 ### ChatGPT / Lead Agent

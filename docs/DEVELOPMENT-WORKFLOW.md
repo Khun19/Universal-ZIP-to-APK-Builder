@@ -1,14 +1,16 @@
-# GitHub-Gated Milestone Development & Termux Validation Loop
+# Legacy GitHub-Gated Milestone Development & Termux Validation Loop
 
-This document is the canonical development protocol for Universal-ZIP-to-APK-Builder.
+> **Governance authority:** This legacy protocol is superseded by [`docs/rz/RZ-GOVERNANCE.md`](rz/RZ-GOVERNANCE.md) and its stage documents. Follow RZ when this page conflicts. This page is retained as historical workflow context; it is not a second active process.
+
+This page preserves the earlier development protocol for historical context. The active procedure is RZ; do not treat the sequence or project-state snapshot below as current where it differs from RZ.
 
 ## Purpose
 
-Keep implementation and real Android validation synchronized. GitHub is the canonical development source; Termux on Android is the real local validation/build environment.
+The earlier protocol aimed to keep implementation and real Android validation synchronized. RZ now governs source publication and Termux/device evidence.
 
 ## Source of Truth
 
-- `origin/main` / GitHub `main` is the canonical development state.
+- Historical rule: `origin/main` / GitHub `main` was treated as the canonical development state. RZ instead records and validates the exact approved branch/commit for each milestone.
 - Do not treat an unpushed local change as the completed milestone.
 - Before testing, Termux must be synchronized to the exact GitHub commit being validated.
 
@@ -86,13 +88,13 @@ At the time this protocol was added:
 - The next action is the real Test A Termux build/validation.
 - Test B must not begin until Test A is explicitly confirmed `PASS`.
 
-## New AI / GPT Session Bootstrap
+## Historical AI / GPT Session Bootstrap (Superseded)
 
-When a new AI/GPT session starts on this repository, first read this file and treat it as the project workflow contract. Then inspect the current GitHub `main` state before making changes.
+The instruction below is retained for history only. Current sessions must follow `docs/rz/RZ-GOVERNANCE.md` and inspect the exact approved GitHub baseline.
 
 Recommended bootstrap instruction:
 
-> Read `docs/DEVELOPMENT-WORKFLOW.md` first. Treat GitHub `main` as the source of truth and Termux as the real validation environment. Follow the GitHub-Gated Milestone Development & Termux Validation Loop exactly. Work on only one milestone at a time, push changes to GitHub, wait for Termux validation, and do not advance until the user explicitly confirms PASS. If validation fails, fix the same milestone and republish it.
+> Historical only: read `docs/DEVELOPMENT-WORKFLOW.md` first. This bootstrap is superseded by RZ and must not be used as the active workflow.
 
 ## Acceptance Language
 

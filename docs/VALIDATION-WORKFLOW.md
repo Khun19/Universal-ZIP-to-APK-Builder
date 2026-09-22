@@ -1,6 +1,8 @@
-# Validation Workflow
+# Legacy Validation Workflow
 
-This document defines the project-wide verification loop for the Universal ZIP-to-APK Builder.
+> **Governance authority:** This legacy protocol is superseded by [`docs/rz/RZ-GOVERNANCE.md`](rz/RZ-GOVERNANCE.md) and its stage documents. Follow RZ when this page conflicts. This page is retained as historical workflow context; it is not a second active process.
+
+This page preserves an earlier verification procedure for context. The active project-wide verification loop is defined by `docs/rz/RZ-GOVERNANCE.md`; do not treat commands or state snapshots below as current when they differ from an approved RZ milestone record.
 
 ## Source-of-Truth Loop
 

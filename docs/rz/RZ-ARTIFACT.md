@@ -1,0 +1,5 @@
+# RZ-ARTIFACT — APK Inspection
+
+**Input:** persisted candidate APK and source/build evidence. **Action:** verify file integrity and inspect APK structure, manifest, package/application identity, version/SDK, signing, ABI/native libraries, required bundle/assets, permissions, and duplicate/conflicting libraries as applicable. **Output:** immutable artifact identity and inspection result. **Evidence:** path/name, size, SHA-256, inspection commands/tool versions/output, source commit, package/version/signing/ABI facts. **Acceptance:** exact artifact is readable, internally consistent, meets milestone criteria, and hash is calculated from persisted bytes; applicability is justified for each check. **Owner:** artifact inspector. **Status:** use RZ statuses. **Failure:** invalid/mismatched artifact fails or remains unverified; rebuild same milestone; do not substitute an APK. **Exit:** exact artifact record is linked to subsequent install/runtime and gate evidence.
+
+Structural validity is not runtime proof.
