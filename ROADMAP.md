@@ -1,619 +1,498 @@
-# Universal ZIP-to-APK Builder — M1–M12 Roadmap
+# Universal ZIP-to-APK Builder — Master Roadmap M1–M12
 
-This roadmap defines the milestone gates for the Universal ZIP-to-APK Builder.
+**Status: APPROVED / SINGLE SOURCE OF TRUTH**
 
-## Core development rule
+This file is the only roadmap for the project. Milestone numbering is fixed unless an explicit architecture decision is recorded in GitHub.
 
-**One milestone at a time.**
+## Product Goal
 
-1. Implement only the current milestone.
-2. Commit and push the milestone branch to GitHub.
-3. Pull the exact branch/commit in Termux.
-4. Run the prescribed validation and real-project test ZIP.
-5. Record the exact commit SHA, environment, commands, artifact path, APK size, and SHA-256.
-6. **PASS:** only then move to the next milestone.
-7. **FAIL/BLOCKED:** stay on the same milestone, fix it, push again, and re-test.
-8. Never declare a milestone PASS from source inspection alone when the acceptance criteria require a real build.
+Build a dependable, phone-first Universal ZIP-to-APK Builder:
 
-## Global PASS/FAIL rules
+`ZIP → Security → Analyze → Select Strategy → Prepare Environment → Build → Validate APK → Hash → Deliver → Install/Launch when required`
 
-A milestone is **PASS** only when every mandatory acceptance criterion is satisfied.
+The Builder must prefer truthful diagnostics over false success. “Universal” means broad, deterministic compatibility through explicit supported strategies—not a promise that every arbitrary project can build.
 
-A milestone is **FAIL** when a mandatory criterion fails.
+## Core Development and Validation Rule
 
-A milestone is **BLOCKED** when the test cannot be completed because of an external/environmental prerequisite. A BLOCKED milestone is not a PASS.
+One milestone at a time.
 
-Every real APK validation must record:
+1. Start from the latest validated `main` commit.
+2. Implement only the current milestone.
+3. Run applicable automated tests and real build tests.
+4. Push a focused branch/commit to GitHub.
+5. Pull the exact commit in Termux.
+6. Run the prescribed fixture(s).
+7. For runtime-sensitive criteria, install and test on a real Android device.
+8. Record evidence: branch, commit SHA, fixture SHA-256, environment, commands, result, APK path/size/SHA-256, runtime result, and limitations.
+9. **PASS** only when every mandatory criterion passes.
+10. **FAIL** stays on the same milestone and requires a root-cause fix and re-test.
+11. **BLOCKED** stays on the same milestone and records the missing environment/device prerequisite.
+12. Never convert build success, CI success, or source inspection into a runtime PASS.
 
-- Git branch
-- Git commit SHA
-- Test ZIP filename
-- Test ZIP SHA-256
-- Project type detected
-- Toolchain/version used
-- Build command
-- Build result
-- APK path
-- APK byte size
-- APK SHA-256
-- Install/runtime result when required
-- Known limitations
+## Architecture Order
+
+Every supported strategy follows the same contract:
+
+`Secure Input → Detect → Evidence/Confidence → Strategy → Environment → Build → APK Discovery → APK Validation → Hash → Delivery`
+
+Shared infrastructure must remain separate from strategy-specific behavior.
 
 ---
 
-# M1 — Detection, Security & Build Foundation
+# M1 — Foundation, Security & Artifact Integrity
 
 ## Goal
 
-Establish a canonical project analyzer, safe ZIP extraction/validation, project-type detection, build strategy selection, and APK artifact validation.
+Establish the trusted base on which every later strategy depends.
 
-## Mandatory acceptance criteria
+## Scope
 
-- ZIP traversal/path escape is rejected.
-- Suspicious/unsafe archive entries are rejected according to the security policy.
-- Project extraction uses an isolated workspace.
-- Canonical analyzer path is used consistently.
-- Native Android projects are detected.
-- Flutter projects are detected.
-- Capacitor projects are detected.
-- React/Vite projects are detected.
-- Plain Web projects are detected.
-- React Native/Expo projects are identified.
-- Other supported framework signatures are classified or reported as unsupported.
-- Backend/server-only projects are not incorrectly treated as directly buildable Android apps.
-- APK validation checks existence, ZIP/APK structure, Android manifest presence, application ID where applicable, and SHA-256.
-- Legacy analyzer adapters do not bypass the canonical analyzer.
-
-## Test ZIPs
-
-- Malicious/traversal ZIP fixtures
-- Native Android fixture
-- React/Vite fixture
-- Plain Web fixture
-- Capacitor fixture
-- Flutter fixture
+- Safe ZIP validation and extraction
+- Path traversal/absolute-path protection
+- Unsafe filename and symlink handling
+- Workspace isolation
+- File-count/uncompressed-size/compression-ratio controls
+- Safe process/argument handling
+- Environment detection
+- Deterministic APK discovery
+- APK structure/manifest/application-ID validation where applicable
+- SHA-256 artifact hashing
+- PASS/FAIL/BLOCKED/NOT RUN evidence model
 
 ## Gate
 
-**PASS:** all security, detection, strategy-selection, and APK-validator tests pass.
-
-**FAIL:** any unsafe archive is accepted, required project type is misclassified, or APK validation is unreliable.
+All mandatory security, extraction, environment, and APK-integrity tests pass.
 
 ---
 
-# M2 — Modern Static Web → APK
+# M2 — Universal Analyzer & Strategy Registry
 
 ## Goal
 
-Build modern static HTML/CSS/JS applications into installable APKs.
+Make project detection and strategy selection deterministic before expanding build coverage.
 
-## Mandatory acceptance criteria
+## Scope
 
-- ZIP containing a modern static web application is detected as Web.
-- HTML/CSS/JS assets are copied into the generated Android wrapper.
-- Offline assets work without requiring a development server.
-- index.html launches correctly.
-- JavaScript executes correctly.
-- Android APK is generated successfully.
-- APK passes structural validation.
-- APK can be copied to Android Download storage.
-- APK installs through the phone UI.
-- Installed app launches and displays the expected test screen.
+Detect using multiple evidence signals, not a single filename:
 
-## Required test ZIP
+- Native Android / Gradle
+- Flutter
+- React Native
+- Expo
+- React/Vite
+- Plain Web
+- PWA
+- Capacitor
+- Ionic/Cordova
+- Vue/Svelte/Angular
+- Next/Nuxt
+- Godot/Unity Android-buildable projects
+- Unsupported/server-only projects
 
-M2-Modern-Static-Web-Test.zip
+Add:
+
+- structured detection evidence
+- confidence/ambiguity handling
+- nested project-root detection
+- explicit strategy registry
+- deterministic unsupported-project diagnostics
+- no unrelated silent fallback
 
 ## Gate
 
-**PASS:** Builder-generated APK installs and launches on the phone.
-
-**FAIL:** build succeeds but APK is invalid, cannot install, or runtime content is broken.
+Required analyzer fixtures classify correctly and strategy selection is deterministic.
 
 ---
 
-# M3 — Flutter → APK
+# M3 — Static Web → APK
 
 ## Goal
 
-Support real Flutter projects through the Builder using a real Flutter toolchain.
+Prove the simplest complete ZIP → APK → phone workflow.
 
-## Mandatory acceptance criteria
+## Scope
 
-- Flutter project is detected from pubspec.yaml.
-- Flutter build strategy is selected.
-- Flutter SDK is available to the build worker.
-- Android SDK is available to Flutter.
-- Java/Gradle compatibility is valid.
-- flutter pub get passes.
-- flutter analyze passes for the canonical test fixture.
-- flutter build apk --debug passes.
-- Builder itself invokes the Flutter strategy rather than merely treating the project as generic Web.
-- Generated APK exists and passes APK validation.
-- APK can be copied to Download and installed.
-- Installed Flutter app launches successfully.
+- Plain HTML/CSS/JS
+- Modern static web assets
+- Offline packaging
+- Android WebView wrapper
+- Gradle build
+- APK validation
+- Download/copy
+- Phone install
+- Launch and expected screen smoke test
 
-## Required test ZIP
+## Required Fixture
 
-M3-Flutter-Real-Test.zip
-
-Expected fixture contents include:
-
-- pubspec.yaml
-- lib/main.dart
-- android/settings.gradle.kts
-- android/app/build.gradle.kts
-- Android manifest
+`M3-Modern-Static-Web-Test.zip`
 
 ## Gate
 
-**Direct Flutter build PASS** is necessary but not sufficient.
-
-**M3 PASS:** direct Flutter build + Builder integration build + APK install/runtime all pass.
+Builder-generated APK installs and launches successfully.
 
 ---
 
-# M4 — React Native → APK
+# M4 — React / Vite / PWA → APK
 
 ## Goal
 
-Build a real React Native Android project through the Builder.
+Extend the Web strategy to modern frontend applications and PWA behavior.
 
-## Mandatory acceptance criteria
+## Scope
 
-- React Native project is detected.
-- Android project is detected/validated.
-- Node dependency installation succeeds.
-- Metro/bundling requirements are handled for release/debug APK generation.
-- Gradle Android build succeeds.
-- APK passes validation.
-- APK installs and launches.
-- Test screen renders correctly.
+- React
+- Vite
+- package-manager/lockfile handling
+- output-directory detection
+- base-path/assets
+- PWA manifest
+- service worker
+- Workbox compatibility
+- offline runtime
+- camera/QR PWA compatibility where applicable
 
-## Required test ZIP
+## Required Fixtures
 
-M4-React-Native-Real-Test.zip
+- `M4-React-Vite-Real-Test.zip`
+- `M4-Camera-QR-PWA-Test.zip`
 
 ## Gate
 
-**PASS:** real React Native source ZIP produces an installable, runnable APK through the Builder.
+Required fixtures build, install, and pass their applicable runtime smoke tests.
 
 ---
 
-# M5 — Expo → APK
+# M5 — Flutter → APK
 
 ## Goal
 
-Support Expo projects that can be converted/built for Android.
+Build a real Flutter project through the Builder using the real Flutter toolchain.
 
-## Mandatory acceptance criteria
+## Scope
 
-- Expo project is detected from its configuration.
-- Builder determines whether the project is locally buildable.
-- Required native Android generation/prebuild step is handled when applicable.
-- Dependencies resolve.
-- Android build succeeds without relying on an unavailable remote-only service.
-- APK passes validation.
-- APK installs and launches.
+- `pubspec.yaml` detection
+- Flutter SDK/environment validation
+- `flutter pub get`
+- `flutter analyze`
+- `flutter build apk --debug`
+- Builder Flutter strategy
+- Android SDK/Java/Gradle compatibility
+- APK validation
+- phone install/launch
 
-## Required test ZIP
+## Required Fixture
 
-M5-Expo-Real-Test.zip
+`M5-Flutter-Real-Test.zip`
 
 ## Gate
 
-**PASS:** a real supported Expo project is transformed into an Android build and produces a runnable APK.
-
-Unsupported Expo configurations must return a clear diagnostic rather than a false PASS.
+Direct Flutter build + Builder integration build + install/runtime all pass.
 
 ---
 
-# M6 — Capacitor / Ionic / Cordova Hardening
+# M6 — React Native → APK
 
 ## Goal
 
-Make hybrid WebView projects reliable, especially permissions, native plugins, and Android configuration.
+Build a real official React Native Android project through the Builder's native Android path.
 
-## Mandatory acceptance criteria
+## Scope
 
-- Capacitor projects are detected.
-- Ionic/Cordova projects are detected where supported.
-- Existing Android projects are preserved when valid.
-- Web assets are synchronized correctly.
-- Android permissions are preserved/generated correctly.
-- Runtime permissions required by the test app work.
-- Native plugin dependencies resolve.
-- Gradle build succeeds.
-- APK installs and launches.
-- At least one permission/plugin smoke test is executed.
+- Real RN project detection
+- Real Android project validation
+- Node dependency installation
+- Metro/bundling
+- Gradle Android build
+- JSI/native libraries
+- Hermes/JSC configuration consistency
+- APK validation
+- phone install/launch
+- runtime smoke test
 
-## Required test ZIPs
+## Required Fixture
 
-- M6-Capacitor-Permissions-Test.zip
-- M6-Ionic-Real-Test.zip
-- M6-Cordova-Real-Test.zip
+`M6-React-Native-Real-Test.zip`
 
 ## Gate
 
-**PASS:** build + install + required native permission/plugin runtime behavior all pass.
+A real RN source ZIP produces an installable, runnable APK through the Builder.
 
-A build-only result is not sufficient.
+A compile-only result is not sufficient.
 
 ---
 
-# M7 — Native Android Kotlin/Java
+# M7 — Expo → APK
 
 ## Goal
 
-Support ordinary native Android projects, including Kotlin and Java projects.
+Support real locally buildable Expo projects without pretending remote-only workflows are local builds.
 
-## Mandatory acceptance criteria
+## Scope
 
-- Existing Gradle Android project is detected.
-- Kotlin Android project builds.
-- Java Android project builds.
-- Existing application ID is preserved unless explicitly configured otherwise.
-- Manifest and resources are preserved.
-- Dependencies resolve.
-- Debug APK builds successfully.
-- APK passes validation.
-- APK installs and launches.
-- Basic UI/runtime smoke test passes.
+- Expo configuration detection
+- managed/prebuild/native-build capability classification
+- dependency resolution
+- native Android generation/prebuild when required
+- local Android build
+- APK validation
+- phone install/launch
+- deterministic diagnostics for unsupported remote-only configurations
 
-## Required test ZIPs
+## Required Fixture
 
-- M7-Native-Kotlin-Real-Test.zip
-- M7-Native-Java-Real-Test.zip
+`M7-Expo-Real-Test.zip`
 
 ## Gate
 
-**PASS:** both required native fixtures produce installable/runnable APKs.
+A supported real Expo project produces a runnable APK through the Builder.
 
 ---
 
-# M8 — Additional Web/Hybrid Frameworks
+# M8 — Capacitor / Ionic / Cordova → APK
 
 ## Goal
 
-Expand framework coverage without weakening detection or safety.
+Make hybrid WebView projects reliable when Android configuration, permissions, and native plugins are involved.
 
-## Target frameworks
+## Scope
+
+- Capacitor detection and sync
+- Ionic detection
+- Cordova detection
+- existing Android project preservation
+- web asset synchronization
+- manifest/permission handling
+- runtime permission testing
+- native plugin dependency resolution
+- Gradle build
+- install/launch/runtime smoke tests
+
+## Required Fixtures
+
+- `M8-Capacitor-Permissions-Test.zip`
+- `M8-Ionic-Real-Test.zip`
+- `M8-Cordova-Real-Test.zip`
+
+## Gate
+
+Build + install + required permission/plugin runtime behavior all pass.
+
+---
+
+# M9 — Native Android Kotlin / Java → APK
+
+## Goal
+
+Support ordinary existing Android projects without replacing their native structure.
+
+## Scope
+
+- Existing Gradle Android project detection
+- Kotlin Android projects
+- Java Android projects
+- application-ID preservation unless explicitly configured
+- manifest/resources preservation
+- dependency resolution
+- debug APK
+- APK validation
+- phone install/launch
+- basic UI/runtime smoke test
+
+## Required Fixtures
+
+- `M9-Native-Kotlin-Real-Test.zip`
+- `M9-Native-Java-Real-Test.zip`
+
+## Gate
+
+Both required native fixtures produce installable/runnable APKs.
+
+---
+
+# M10 — Additional Frameworks & Special Project Types
+
+## Goal
+
+Expand compatibility only where a deterministic Android build path exists.
+
+## Web/Hybrid Targets
 
 - Vue
 - Svelte
 - Angular
 - Next.js
 - Nuxt
-- Ionic
-- Other supported Web/hybrid frameworks with a deterministic Android build path
+- additional package managers
+- additional PWA variants
 
-## Mandatory acceptance criteria
+## Special Targets
 
-- Each supported framework has a documented detector signature.
-- Each supported framework has an explicit build strategy.
-- Frameworks that require a server/backend are not falsely reported as standalone APK-ready.
-- At least one real fixture per newly supported framework builds successfully.
-- APK validation succeeds.
-- Runtime smoke testing is completed for supported app fixtures.
-
-## Required test ZIPs
-
-- M8-Vue-Real-Test.zip
-- M8-Svelte-Real-Test.zip
-- M8-Angular-Real-Test.zip
-- M8-Next-Nuxt-Real-Test.zip
-
-## Gate
-
-**PASS:** every framework marked supported has a passing real-project build test.
-
----
-
-# M9 — Game / Exported Project Support
-
-## Goal
-
-Handle game-engine projects only where the supplied ZIP contains a valid Android-buildable export/project.
-
-## Target frameworks
-
-- Godot
+- Godot Android-buildable projects
 - Unity Android exports/projects
-- Other supported game-engine Android exports
+- other explicitly supported game-engine Android exports
 
-## Mandatory acceptance criteria
+## Rules
 
-- Engine/project type is detected.
-- Unsupported source-only game projects are clearly rejected or marked unsupported.
-- Valid Android exports build successfully.
-- Required Android SDK/NDK dependencies are detected.
-- APK passes validation.
-- Install/runtime smoke test passes for supported fixtures.
-
-## Required test ZIPs
-
-- M9-Godot-Android-Test.zip
-- M9-Unity-Android-Test.zip
+- Each supported framework has detector evidence.
+- Each supported framework has an explicit strategy.
+- Backend/server-only projects are not falsely treated as standalone APKs.
+- Source-only game projects without an Android-buildable export are rejected or marked unsupported.
+- Every newly supported target gets a real fixture and runtime acceptance test.
 
 ## Gate
 
-**PASS:** supported exported projects build and run; unsupported projects receive deterministic diagnostics.
+Every framework/project type marked supported has a passing real-project test.
 
 ---
 
-# M10 — Universal Detection, Fallback & Diagnostics
+# M11 — Universal Diagnostics, Reliability & Production Security
 
 ## Goal
 
-Make the Builder predictable when projects are ambiguous, incomplete, nested, or unsupported.
+Harden the complete system after strategy coverage is established.
 
-## Mandatory acceptance criteria
+## Scope
 
-- Multi-project ZIPs are handled deterministically.
-- Nested project roots are detected.
-- Conflicting framework signatures are reported.
-- Unsupported projects receive actionable diagnostics.
-- Missing dependency/toolchain errors identify the missing component.
-- Build logs identify the selected strategy.
-- Build IDs/workspaces do not collide.
-- A failed strategy does not silently fall back to an unrelated strategy.
-- Artifact paths are deterministic.
-- Final response reports PASS/FAIL/BLOCKED accurately.
+### Diagnostics
 
-## Required test ZIPs
+- nested/multi-project ZIPs
+- conflicting framework signatures
+- missing dependencies/toolchains
+- actionable phase-specific errors
+- explicit selected strategy
+- deterministic artifact paths
+- accurate final status
+- no silent unrelated fallback
 
-- M10-Multi-Project-Test.zip
-- M10-Nested-Project-Test.zip
-- M10-Unsupported-Project-Test.zip
-- M10-Conflicting-Signatures-Test.zip
+### Security / Isolation
+
+- ZIP traversal and symlink attacks
+- command/shell argument safety
+- build workspace isolation
+- concurrent-build isolation
+- secret leakage prevention
+- timeouts
+- child-process cleanup
+- disk/file/resource limits
+
+### Reliability / CI
+
+- reproducible build environments
+- CI regression coverage
+- artifact integrity checks
+- failure recovery
+- cleanup policy
+- CI vs Termux vs real-device evidence kept separate
 
 ## Gate
 
-**PASS:** all ambiguity/error fixtures produce deterministic, actionable results and no false-success APKs.
+Security, reliability, diagnostics, concurrency, and recovery tests pass without false-success artifacts.
 
 ---
 
-# M11 — Production Security, Isolation & Reliability
+# M12 — Standalone Android Builder Product & Final E2E
 
 ## Goal
 
-Harden the Builder for hostile or unreliable input and long-running real builds.
+Turn the validated build engine into the beginner-friendly standalone Android Builder.
 
-## Mandatory acceptance criteria
+## User Flow
 
-- ZIP extraction is isolated.
-- Path traversal is blocked.
-- Symlink/path tricks are handled safely.
-- Build workspace isolation is enforced.
-- Sensitive files/secrets are not copied into artifacts unintentionally.
-- Build timeouts are enforced.
-- Child processes are cleaned up after failures.
-- Disk/resource limits are enforced or clearly monitored.
-- APK SHA-256 is recorded.
-- Build failures are reproducible from the same input and environment.
-- No successful build is reported when artifact validation fails.
+**Pick ZIP → Analyze → Show Project Type → Build → Real Build Phase → APK Ready → Install / Share**
 
-## Required test ZIPs
+## UX
 
-- M11-ZIP-Traversal-Test.zip
-- M11-Symlink-Test.zip
-- M11-Secrets-Test.zip
-- M11-Large-Archive-Test.zip
-- M11-Build-Failure-Recovery-Test.zip
+- mobile-first UI
+- simple ZIP picker
+- clear detection result
+- clear Build action
+- real phase-based progress
+- understandable success/failure
+- APK open/share/copy to Download
+- developer logs hidden by default
+- Developer Mode for detailed logs
+- no unnecessary backend/admin/tooling UI for normal users
 
-## Gate
+## Builder Integration
 
-**PASS:** all security/reliability tests pass and failure recovery leaves the worker in a usable state.
+- all passed M1–M11 strategies remain available
+- Web
+- React/Vite/PWA
+- Flutter
+- React Native
+- Expo
+- Capacitor/Ionic/Cordova
+- Native Android
+- additional supported frameworks
 
----
+## Reliability
 
-# M12 — Standalone Android Builder Product
+- isolated workspace per build
+- repeated builds do not corrupt each other
+- APK validation before SUCCESS
+- exact failure reason where possible
+- artifact SHA-256 recorded
 
-## Goal
+## Final E2E Fixtures
 
-Turn the validated build engine into a beginner-friendly standalone Android Builder app.
-
-## Target workflow
-
-**Pick ZIP → Analyze → Show detected project type → Build → Progress → APK ready → Install/Share**
-
-## Mandatory acceptance criteria
-
-### UX
-
-- Mobile-first UI.
-- Simple ZIP picker.
-- Clear project detection result.
-- Clear Build button.
-- Visible build progress.
-- Success/failure state is understandable to beginners.
-- APK output can be opened/shared/copied to Download.
-- Developer logs are hidden by default.
-- Developer Mode can expose detailed logs.
-- No unnecessary backend/admin/tooling UI is exposed to normal users.
-
-### Builder integration
-
-- All M1–M11 supported strategies remain available through the product.
-- Flutter is integrated.
-- React Native/Expo support is integrated where M4/M5 passed.
-- Native Android support is integrated.
-- Web/hybrid support is integrated.
-- Security validation runs before build.
-
-### Reliability
-
-- Repeated builds use isolated workspaces.
-- Failed builds do not corrupt subsequent builds.
-- APK artifact validation runs before success is shown.
-- App reports exact failure reasons when possible.
-
-### Release validation
-
-- Release/debug product APK builds.
-- Product APK installs on the target Android device.
-- ZIP selection works.
-- At least one Web build works end-to-end.
-- At least one Flutter build works end-to-end.
-- At least one Native Android build works end-to-end.
-- Build result can be installed/launched from the phone.
-
-## Required end-to-end fixtures
-
-- M12-Web-E2E-Test.zip
-- M12-Flutter-E2E-Test.zip
-- M12-Native-E2E-Test.zip
+- `M12-Web-E2E-Test.zip`
+- `M12-Flutter-E2E-Test.zip`
+- `M12-Native-E2E-Test.zip`
 
 ## Gate
 
-**M12 PASS:** the standalone Builder app completes the full ZIP → Analyze → Build → APK → Install/Launch workflow for all mandatory end-to-end fixtures.
+**M12 PASS:** the standalone Builder completes ZIP → Analyze → Build → APK → Install/Launch for all mandatory end-to-end fixtures.
 
 ---
 
-# GitHub Milestone Workflow
+# Milestone Status Policy
 
-For every milestone:
+| State | Meaning |
+|---|---|
+| PASS | All mandatory evidence exists and acceptance criteria pass |
+| FAIL | A mandatory criterion failed and must be fixed before advancing |
+| BLOCKED | Required external environment/device/tool is unavailable |
+| NOT RUN | Verification has not been executed |
 
-## 1. Start from the current validated commit
+**BLOCKED is never PASS.**
 
-Record:
+## Required Evidence Record
 
-    git status
-    git branch --show-current
-    git rev-parse HEAD
-
-Do not begin the next milestone from an unverified working tree.
-
-## 2. Create milestone branch
-
-Recommended naming:
-
-    feat/m<N>-<short-name>
-
-Example:
-
-    feat/m3-flutter-real-build
-
-## 3. Implement only the milestone
-
-Do not mix unrelated refactors or future milestone features into the branch.
-
-## 4. Run local checks
-
-At minimum, run the repository's applicable:
-
-- dependency checks
-- typecheck
-- unit tests
-- analyzer/static checks
-- milestone-specific tests
-- real build test
-
-## 5. Commit
-
-Commit message format:
-
-    feat(m<N>): <milestone description>
-
-## 6. Push GitHub
-
-Push the milestone branch.
-
-Record:
+For every milestone's important real test record:
 
 - branch
 - commit SHA
-- remote
-- push result
+- test ZIP filename
+- test ZIP SHA-256
+- detected project type
+- toolchain/version
+- build command
+- build result
+- APK path
+- APK byte size
+- APK SHA-256
+- install result
+- runtime result
+- device/emulator information when applicable
+- failure logs when failed
+- known limitations
 
-## 7. Termux validation
+## Definition of Done
 
-Pull the exact pushed commit.
+The project is complete only when:
 
-Run the milestone validation using the specified real test ZIP.
+1. M1–M12 each has a recorded PASS.
+2. Every mandatory real fixture has a SHA-256 record.
+3. Every required APK has an artifact SHA-256.
+4. Every runtime-required milestone has real-device evidence.
+5. No mandatory blocker is hidden behind PASS.
+6. GitHub contains the implementation/evidence history.
+7. The standalone Builder completes the documented end-to-end workflow.
+8. Unsupported/incompatible projects receive deterministic diagnostics instead of false success.
 
-Record:
+## Roadmap Governance
 
-    git rev-parse HEAD
-
-and compare it with the pushed SHA.
-
-## 8. Artifact validation
-
-For every APK:
-
-- verify file exists
-- verify APK structure
-- verify manifest
-- verify application ID where applicable
-- record byte size
-- calculate SHA-256
-- copy to Android Download when phone validation is required
-- install through the phone UI
-- launch and smoke-test the app
-
-## 9. Decision gate
-
-### PASS
-
-Only when every mandatory acceptance criterion passes.
-
-Then:
-
-- record milestone report
-- tag if desired
-- merge according to repository policy
-- begin the next milestone
-
-### FAIL
-
-Do not advance.
-
-- capture exact error
-- identify root cause
-- fix the same milestone
-- push a new commit
-- repeat validation
-
-### BLOCKED
-
-Do not call it PASS.
-
-- record the missing external/environment prerequisite
-- preserve the exact failing state
-- resume the same milestone when the blocker is resolved
-
----
-
-# Milestone Status Table
-
-| Milestone | Area | Required gate |
-|---|---|---|
-| M1 | Detection + Security Foundation | Analyzer/security/APK tests PASS |
-| M2 | Static Web → APK | Build + install + runtime PASS |
-| M3 | Flutter → APK | Direct + Builder + install/runtime PASS |
-| M4 | React Native | Real build + install/runtime PASS |
-| M5 | Expo | Real supported build + install/runtime PASS |
-| M6 | Capacitor/Ionic/Cordova | Build + native permission/plugin runtime PASS |
-| M7 | Kotlin/Java Native Android | Both real fixtures PASS |
-| M8 | Additional Web/Hybrid | Every marked-supported framework has real PASS |
-| M9 | Godot/Unity exports | Supported exports build + runtime PASS |
-| M10 | Universal fallback/diagnostics | Ambiguous/unsupported fixtures deterministic |
-| M11 | Security + Reliability | Adversarial + recovery tests PASS |
-| M12 | Standalone Builder App | Full ZIP → APK → Install/Launch E2E PASS |
-
----
-
-# Definition of Done
-
-The project is considered **M1–M12 complete** only when:
-
-1. Every milestone has a recorded PASS.
-2. Every mandatory real test ZIP has a recorded SHA-256.
-3. Every mandatory APK build has an artifact SHA-256.
-4. Every required phone runtime test passes.
-5. No milestone is marked PASS while a mandatory blocker remains.
-6. GitHub contains the implementation history and milestone commits.
-7. The standalone Builder can perform the documented end-to-end workflow.
-
-**Important:** M12 completion does not mean every software project on the internet is guaranteed to build. Unsupported/incompatible projects must receive deterministic diagnostics rather than false success.
+- `/ROADMAP.md` is the **only roadmap**.
+- `docs/ROADMAP.md` must not be recreated as a second roadmap.
+- Changes to milestone numbering or milestone scope require an explicit GitHub architectural decision.
+- Supporting documents may define tests, architecture, or validation procedures, but they must not redefine milestone numbering.
