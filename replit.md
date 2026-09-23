@@ -1,54 +1,105 @@
-# Universal ZIP-to-APK Builder
+# Universal ZIP-to-APK Builder — Agent/Workspace Notes
 
-Securely analyzes uploaded AI-generated projects and builds validated Android APKs through an isolated worker when supported.
+## Project direction
 
-## Run & Operate
+This is a **phone-first Universal ZIP-to-APK Builder**.
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Local build mode: Android SDK + Gradle on Termux; Redis/Docker are not required.
+Primary local target:
 
-## Stack
+- Android phone
+- Termux
+- ARM64 Android tooling
+- real local APK builds
+- real install/launch/runtime validation
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle), Docker Android worker
+Secondary environments such as Docker and CI may be used for reproducibility and regression testing, but they do not replace the phone/Termux validation gate.
 
-## Where things live
+## Development workflow
 
-- `lib/analyzer` — detector registry and compatibility analysis
-- `lib/security` — ZIP validation, safe extraction, and SHA-256
-- `lib/build-engine` — real Gradle/Capacitor command selection and process runner
-- `lib/worker.ts` — local real APK build execution boundary
+Use the **GitHub-Gated Milestone Development & Termux Validation Loop**:
+
+1. Work on one milestone.
+2. Push the focused change to GitHub.
+3. Pull the exact commit in Termux.
+4. Run the prescribed real fixture/build.
+5. Install and runtime-test when required.
+6. Record evidence.
+7. PASS → next milestone.
+8. FAIL/BLOCKED → remain on the same milestone.
+
+Do not claim PASS from CI, source inspection, or compile-only output.
+
+## Architecture
+
+Canonical sources:
+
+- `ROADMAP.md` — milestone scope and gates
+- `docs/ARCHITECTURE.md` — architecture
+- `docs/TEST-MATRIX.md` — evidence requirements
+- `docs/VALIDATION-WORKFLOW.md` — validation procedure
+- `docs/ADR/` — architectural decisions
+
+### Official Flow Adapter
+
+Frameworks with an established official/native Android build flow must use an Official Flow Adapter.
+
+`Official Framework Flow → Phone-Compatible Environment → Real Native Build → Real APK → Runtime Validation`
+
+Initial priority:
+
+- React Native
+- Expo
+- Flutter
+- Capacitor
+- Native Android
+
+The adapter may adapt the execution environment for Termux/ARM64, but must not replace native framework semantics with fake builds, generic wrappers, or silent fallback.
+
+## Repository boundaries
+
+- `lib/analyzer` — project detection/evidence
+- `lib/security` — ZIP validation/extraction/hash/APK validation
+- `lib/build-engine` — shared build execution
+- Official Flow Adapters/strategy registry — framework-specific real build orchestration
+- `lib/worker.ts` — build execution boundary used by the current local/server architecture
 - `lib/api-spec/openapi.yaml` — API contract
-- `lib/db/src/schema` — PostgreSQL schema
+- `lib/db/src/schema` — database schema
+- `artifacts/zip-to-apk-builder` — React/Vite UI
 
-## Architecture decisions
+## Commands
 
-- Native Android projects stay native and use their own Gradle wrapper.
-- Web projects build production assets before Capacitor Android generation.
-- Uploaded source is never executed on the host; the container boundary is mandatory for production.
-- Build success is gated by APK validation and SHA-256, not exit codes alone.
+```bash
+pnpm install
+pnpm run typecheck
+pnpm run build
+pnpm test
+```
 
-## Product
+Regenerate API artifacts after OpenAPI changes:
 
-Users can upload a ZIP, inspect detected framework and compatibility evidence, queue a real Android build, inspect real logs, and download a validated APK artifact.
+```pnpm --filter @workspace/api-spec run codegen
+```
 
-## User preferences
+## Product truth
 
- - Do not create mock APKs, simulated progress, or fake logs.
+- No mock APKs.
+- No fake build logs.
+- No simulated progress presented as real build state.
+- APK success requires validation and SHA-256.
+- Runtime-sensitive success requires real device evidence.
 
-## Gotchas
+## UI mock/demo data
 
-- `pnpm --filter @workspace/api-spec run codegen` must run after OpenAPI changes.
-- The local preview may analyze projects but cannot build Android without the Docker worker toolchain.
+The UI currently contains development/demo state under `artifacts/zip-to-apk-builder/src/services/mockData.ts`.
 
-## Pointers
+That data is **not build evidence**. Do not use it to claim that a real project was analyzed, built, installed, or run. Any future cleanup of the UI should replace demo state with real API/build state rather than silently preserving mock behavior.
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+## Termux
+
+The exact Android SDK, Java, Gradle, Node, package-manager, and framework toolchain versions are environment-specific. Detect them at runtime; do not hard-code paths.
+
+The local build environment may use Android SDK + Gradle on Termux. Docker/Redis are not prerequisites for the phone-first local build path.
+
+## Notes
+
+Before modifying shared build infrastructure, inspect existing implementations and tests first. Prefer the smallest safe change and preserve evidence requirements.
