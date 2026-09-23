@@ -37,6 +37,49 @@ Every supported strategy follows the same contract:
 
 Shared infrastructure must remain separate from strategy-specific behavior.
 
+## Approved Architecture Decision — Official Framework Flow Adapters
+
+**Approved: 2026-09-23**
+
+Frameworks that have an established official/native Android build flow must be implemented through an **Official Flow Adapter** rather than through a Builder-invented substitute build system.
+
+The target architecture is:
+
+`Official Framework Flow → Phone-Compatible Execution Environment → Real Native Build → Real APK → Install/Launch → Runtime Validation`
+
+The Builder's responsibility is to:
+
+1. Detect the framework/project type.
+2. Select the corresponding Official Flow Adapter.
+3. Prepare or validate a phone-compatible local environment (including Termux/ARM64 constraints where applicable).
+4. Invoke the framework's real tooling and preserve its native build semantics.
+5. Produce a real Android APK through the framework's actual native build path.
+6. Validate the APK structure, package identity, native contents where applicable, and SHA-256.
+7. Deliver the artifact to the phone.
+8. Require install/launch/runtime evidence for runtime-sensitive PASS criteria.
+
+The Builder must **not**:
+
+- emulate or reimplement a framework build when the official tooling can be used;
+- generate a fake or mock APK;
+- replace a native framework build with a generic WebView wrapper;
+- silently fall back to an unrelated strategy;
+- treat source inspection, CI success, or compile-only success as runtime PASS.
+
+The adapter layer is an architecture-level concern spanning the strategy registry and framework milestones (M2 and M3–M10), while the shared Build Engine remains responsible for process execution, workspace isolation, resource/time limits, artifact discovery, and common validation.
+
+Initial priority for official-flow validation is:
+
+- React Native
+- Expo
+- Flutter
+- Capacitor
+- Native Android
+
+Additional frameworks may be added only when a deterministic Android build path exists and can be validated with a real fixture and runtime evidence.
+
+This decision does **not** require copying framework source code. It requires reproducing the documented/real build procedure through the Builder while adapting only the execution environment needed for phone/Termux operation.
+
 ---
 
 # M1 — Foundation, Security & Artifact Integrity
@@ -97,6 +140,8 @@ Add:
 - explicit strategy registry
 - deterministic unsupported-project diagnostics
 - no unrelated silent fallback
+
+Official Flow Adapter selection belongs to this strategy registry.
 
 ## Gate
 
@@ -209,6 +254,8 @@ Build a real official React Native Android project through the Builder's native 
 - phone install/launch
 - runtime smoke test
 
+The M6 implementation must use the Official Flow Adapter principle above and must not replace the real RN native build path with a mock, generic WebView, or compile-only substitute.
+
 ## Required Fixture
 
 `M6-React-Native-Real-Test.zip`
@@ -237,6 +284,8 @@ Support real locally buildable Expo projects without pretending remote-only work
 - APK validation
 - phone install/launch
 - deterministic diagnostics for unsupported remote-only configurations
+
+The M7 implementation must use the Official Flow Adapter principle above, including the real Expo native/prebuild flow where applicable.
 
 ## Required Fixture
 
@@ -344,6 +393,7 @@ Expand compatibility only where a deterministic Android build path exists.
 Every framework/project type marked supported has a passing real-project test.
 
 ---
+
 
 # M11 — Universal Diagnostics, Reliability & Production Security
 
