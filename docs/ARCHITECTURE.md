@@ -2,358 +2,258 @@
 
 ## 1. Purpose
 
-The architecture separates untrusted input handling, project analysis, build-strategy selection, build execution, Android packaging, artifact validation, API/UI, and worker infrastructure.
+The Builder is a phone-first ZIP-to-APK orchestration system. It accepts an untrusted project ZIP, determines what kind of Android-buildable project it contains, invokes the correct real build flow, validates the resulting APK, and reports truthful evidence.
 
-The central principle is:
+Canonical lifecycle:
 
-`Analyze → Select Strategy → Execute → Validate → Deliver`
+`Secure Input → Detect → Evidence/Confidence → Strategy → Environment → Build → APK Discovery → APK Validation → Hash → Delivery → Runtime Validation when required`
 
-A new supported project type should be addable without rewriting the entire builder.
+The master milestone contract is defined only in `/ROADMAP.md`.
 
-## 2. High-Level System
+## 2. Approved Official Flow Adapter Principle
 
-```text
-                    ZIP INPUT
-                        |
-                        v
-                +----------------+
-                | ZIP Security   |
-                | validate/extract|
-                +-------+--------+
-                        |
-                        v
-                +----------------+
-                | Project        |
-                | Analyzer       |
-                +-------+--------+
-                        |
-                        v
-                +----------------+
-                | Strategy       |
-                | Selection      |
-                +---+--------+---+
-                    |        |
-          +---------+        +----------+
-          v                              v
-  +---------------+              +---------------+
-  | Web Wrapper   |              | Native Gradle |
-  +-------+-------+              +-------+-------+
-          |                              |
-          +-------------+----------------+
-                        v
-                +----------------+
-                | Build Executor |
-                +-------+--------+
-                        |
-                        v
-                    Gradle/APK
-                        |
-                        v
-                +----------------+
-                | APK Discovery  |
-                | + Validation   |
-                +-------+--------+
-                        |
-                        v
-                +----------------+
-                | Hash / Artifact|
-                +-------+--------+
-                        |
-                        v
-                    DELIVERY
-```
+Frameworks with an established official/native Android build flow use an **Official Flow Adapter**.
 
-## 3. Repository Layers
+`Official Framework Flow → Phone-Compatible Execution Environment → Real Native Build → Real APK → Install/Launch → Runtime Validation`
 
-The repository currently separates major responsibilities across `lib/`, `artifacts/`, `worker/`, `docker/`, `scripts/`, and `tests/`.
+The Builder adapts the execution environment for phone/Termux/ARM64 constraints where necessary. It does not replace the framework's native build semantics with a mock compiler, fake APK, unrelated wrapper, or silent fallback.
 
-### `lib/shared`
-Shared types and utilities.
+Initial priority:
+
+- React Native
+- Expo
+- Flutter
+- Capacitor
+- Native Android
+
+A framework is not considered supported merely because a detector recognizes it. Support requires a deterministic strategy, real fixture, real build, APK validation, and the runtime evidence required by its milestone.
+
+## 3. Repository Boundaries
 
 ### `lib/security`
-ZIP validation, safe extraction, hashing, and APK validation. This layer must treat ZIP content as untrusted.
+
+Untrusted ZIP handling, safe extraction, path/symlink checks, limits, hashing, and APK validation.
 
 ### `lib/analyzer`
-Project-type detection and project analysis. It should produce structured evidence rather than relying on a single guessed framework.
+
+Evidence-based project detection, confidence/ambiguity handling, nested-root detection, and strategy selection inputs.
 
 ### `lib/build-engine`
-Strategy selection and process/build execution. Keep strategy-specific behavior isolated.
+
+Shared process execution, workspace isolation, time/resource limits, environment handling, artifact discovery, and common build lifecycle.
+
+### Official Flow Adapter layer
+
+Framework-specific orchestration belongs here or in the strategy registry. An adapter should invoke the framework's real tooling rather than reimplementing it.
+
+Conceptually:
+
+```text
+Strategy Registry
+      |
+      +--> Native Android → native Gradle flow
+      +--> React Native  → official RN Android flow
+      +--> Expo          → official Expo prebuild/native flow
+      +--> Flutter       → official Flutter toolchain
+      +--> Capacitor     → official Capacitor sync/native flow
+      +--> Web           → approved Web-to-APK strategy
+```
 
 ### `lib/build-queue`
-Queue/job infrastructure. Jobs must have isolated workspaces and explicit lifecycle state.
+
+Optional job/queue infrastructure. It must not change the meaning of build success or bypass the shared validation contract.
 
 ### `lib/api-spec`, `lib/api-zod`, `lib/api-client-react`
-API contracts, validation schemas, and generated client/hooks.
+
+API contract, validation schemas, and generated client code.
 
 ### `lib/db`
-Persistence/repository layer.
+
+Persistence/repository layer where the selected product deployment uses a database.
 
 ### `artifacts/api-server`
-Application API connecting the UI to project/build state.
+
+API application layer.
 
 ### `artifacts/zip-to-apk-builder`
-React/Vite dashboard for uploads, analysis, build state, logs, artifacts, and downloads.
 
-### `worker`
-Background/containerized build infrastructure.
+User-facing React/Vite interface. UI state must come from real build state; demo/local fixture data must never be treated as build evidence.
 
-### `docker/android-builder`
-Reproducible Android build environment.
+### `worker` and `docker/android-builder`
+
+Secondary/CI/container execution environments. They are not a substitute for the phone-first Termux target.
 
 ### `tests`
-Fixtures and regression/acceptance coverage.
 
-## 4. Build Strategies
+Unit, integration, fixture, compatibility, security, and acceptance tests.
 
-### Native Gradle
+## 4. Build Contract
 
-For an input that is already an Android/Gradle project:
+Every strategy must expose the same high-level contract:
 
-`ZIP → Extract → Analyze → Prepare Environment → Gradle → Locate APK → Validate → Hash`
+1. Validate input.
+2. Detect and record evidence.
+3. Select an explicit strategy.
+4. Validate/prepare the required environment.
+5. Execute the real build flow.
+6. Locate the APK deterministically.
+7. Validate the APK.
+8. Calculate SHA-256.
+9. Deliver the artifact.
+10. Perform install/launch/runtime validation when the milestone requires it.
 
-### Capacitor
+A successful process exit code alone is never enough to claim runtime success.
 
-For projects containing Capacitor configuration:
+## 5. Status Semantics
 
-`ZIP → Extract → Analyze → Web Build → Capacitor Sync → Gradle → Validate → Hash`
+`PASS` — every mandatory criterion has evidence and passed.
 
-### Web Wrapper
+`FAIL` — a mandatory criterion failed.
 
-For supported web applications:
+`BLOCKED` — an external prerequisite such as a required device/toolchain is unavailable.
 
-`ZIP → Extract → Analyze → Web Build → Android Wrapper → Gradle → Validate → Hash`
+`NOT RUN` — verification has not been executed.
 
-Future strategies should follow the same contract and must not introduce global assumptions into unrelated strategies.
+**BLOCKED is never PASS.**
 
-## 5. Build State Model
+CI success, source inspection, APK creation, or compile-only success must not be promoted to a runtime PASS.
 
-Use real phase state instead of fabricated percentage progress.
+## 6. Build Isolation
 
-Typical states:
+Every build must have:
 
-`QUEUED`
-`EXTRACTING`
-`ANALYZING`
-`PREPARING_ENV`
-`WEB_BUILD`
-`CAPACITOR_SYNC`
-`GRADLE_BUILD`
-`LOCATING_APK`
-`VALIDATING_APK`
-`HASHING`
-`SUCCESS`
-`FAILED`
-`BLOCKED`
+- unique job/workspace identity;
+- controlled input/output directories;
+- bounded resource and timeout policy;
+- captured stdout/stderr;
+- child-process cleanup;
+- artifact path tracking;
+- cleanup after completion/failure.
 
-A UI state should be derived from backend truth.
+One build must not modify another build's workspace.
 
-## 6. Build Job Isolation
+## 7. Environment Boundary
 
-Every build job should have:
+Do not hard-code SDK, Java, Node, package-manager, NDK, or build-tool paths.
 
-- unique job ID
-- isolated workspace
-- controlled input/output directories
-- bounded resources
-- captured stdout/stderr
-- exit code
-- timeout policy
-- cleanup policy
+Environment detection reports tool availability and versions.
 
-One build must never be able to modify another build's workspace.
+The same orchestration model can run in:
 
-## 7. Environment Abstraction
+- Termux/local Android phone;
+- Docker Android builder;
+- CI/GitHub Actions.
 
-Do not hard-code the Android SDK, Java, Node, package-manager, or build-tools location.
+Environment-specific adaptations belong at the environment boundary.
 
-Environment detection should report the availability and versions of required tools.
+## 8. Web and Hybrid Strategies
 
-The same build logic should be usable in:
+Web/PWA projects may use the approved Web-to-APK strategy when their output is suitable for offline Android packaging.
 
-- Termux/local Android development
-- Docker Android builder
-- GitHub Actions/CI
+Capacitor/Ionic/Cordova projects retain their native Android semantics and use their real sync/build flows.
 
-Environment-specific configuration belongs at the environment boundary.
+A generic WebView wrapper must not silently replace a detected native framework strategy.
 
-## 8. Package Manager Detection
+## 9. Security Boundary
 
-When a project contains lockfiles, prefer the corresponding package manager and avoid creating unnecessary additional lockfiles.
-
-Potential indicators include:
-
-- `pnpm-lock.yaml`
-- `package-lock.json`
-- `yarn.lock`
-
-The detector should make the decision explicit and log it.
-
-## 9. PWA Architecture Considerations
-
-PWA support is a compatibility layer, not a reason to weaken the general build system.
-
-Handle:
-
-- `vite-plugin-pwa`
-- `workbox-window`
-- Workbox runtime/build dependencies
-- manifest files
-- service workers
-- generated asset paths
-- architecture-specific native tooling issues
-
-Compatibility fixes should be deterministic, documented, and regression-tested.
-
-## 10. Android Wrapper Responsibilities
-
-The Android wrapper should own Android-specific concerns such as:
-
-- manifest
-- application ID
-- app name
-- permissions
-- WebView configuration
-- local web assets
-- navigation behavior
-- required bridges
-- Gradle configuration
-
-The web application itself should remain as unmodified as practical.
-
-## 11. Security Boundary
-
-The first trust boundary is ZIP ingestion.
+ZIP content is untrusted.
 
 Required protections include:
 
-- absolute-path rejection
-- traversal rejection
-- Windows drive-path rejection
-- unsafe NUL/path handling
-- symlink escape protection
-- file-count limits
-- uncompressed-size limits
-- compression-ratio controls
-- safe workspace resolution
-- shell argument safety
+- absolute-path rejection;
+- traversal rejection;
+- Windows drive-path rejection;
+- unsafe/NUL path handling;
+- symlink escape protection;
+- file-count limits;
+- uncompressed-size limits;
+- compression-ratio controls;
+- safe workspace resolution;
+- shell/argument safety.
 
-Do not execute user-controlled filenames as shell syntax.
+User-controlled filenames must never become shell syntax.
 
-## 12. Artifact Boundary
+## 10. Artifact Boundary
 
-An APK is not considered a successful artifact until the required validation stage passes.
+An APK is successful only after the required validation stage.
 
-Artifact metadata should include, where available:
+Artifact evidence should include where available:
 
-- build ID
-- filename
-- size
-- path/download reference
-- SHA-256
-- validation status
+- build ID;
+- filename;
+- byte size;
+- artifact path;
+- SHA-256;
+- package/application ID;
+- validation status;
+- runtime result when required.
 
-Do not expose an invalid or missing APK as SUCCESS.
+Invalid or missing APKs must never be reported as SUCCESS.
 
-## 13. API Boundary
+## 11. Frontend Boundary
 
-The API should expose project/build lifecycle without leaking implementation details unnecessarily.
+The UI should display:
 
-Important operations include the repository's currently documented build/health/environment/analysis/log/artifact flows. The exact endpoint set must be taken from the current API contract rather than assumed from documentation.
+- selected/detected project type;
+- compatibility evidence;
+- real build phase;
+- meaningful logs;
+- failure reason;
+- artifact metadata;
+- download/open/share state.
 
-API contracts belong under `lib/api-spec/` and related generated validation/client packages.
+Do not fabricate percentage progress.
 
-## 14. Frontend Boundary
+Demo fixtures or local UI mock data, if retained for development, must remain clearly separated from real build state and must never establish build evidence.
 
-The frontend should display:
+## 12. Testing Model
 
-- upload state
-- analysis result
-- actual build phase
-- logs
-- failure reason
-- artifact metadata
-- download state
-
-Do not fabricate progress percentages when the backend does not provide real percentage progress.
-
-## 15. Extension Model
-
-Future compatibility should be implemented through explicit extension points where practical:
-
-```text
-Project Analyzer
-      |
-      v
-Strategy Registry
-      |
-      +--> native-gradle
-      +--> capacitor
-      +--> web-wrapper
-      +--> future strategy...
-```
-
-A strategy should declare what it supports and expose a predictable build contract.
-
-## 16. Observability
-
-Each phase should make it possible to answer:
-
-- What was attempted?
-- Which command ran?
-- In which workspace?
-- What environment was detected?
-- What exit code occurred?
-- What stderr/stdout matters?
-- Which phase failed?
-- Was the result validated?
-
-Logs must not contain secrets.
-
-## 17. Testing Architecture
-
-Tests should exist at multiple levels:
+Testing has multiple levels:
 
 1. Unit tests for security, analysis, strategy selection, validation, and utilities.
-2. Integration tests for build pipeline behavior.
-3. Fixture-based compatibility tests for project types.
-4. CI tests for reproducibility.
-5. Real-device tests for Android runtime behavior.
+2. Integration tests for build orchestration.
+3. Real fixture tests for each supported project type.
+4. CI/reproducibility tests.
+5. Termux execution tests.
+6. Real-device install/launch/runtime tests for runtime-sensitive milestones.
 
-Tests A/B/C are the current compatibility baseline; see `docs/TEST-MATRIX.md`.
+The test matrix and validation workflow define the evidence required for milestone gates.
 
-## 18. Architectural Decision Rules
+## 13. Extension Rules
 
-When a proposed change affects shared infrastructure, evaluate:
+Adding a framework requires:
 
-- compatibility impact
-- security impact
-- Termux impact
-- Docker/CI impact
-- concurrency impact
-- testability
-- future strategy support
-- migration cost
+- detector evidence;
+- explicit strategy/Official Flow Adapter;
+- deterministic unsupported diagnostics where necessary;
+- real fixture;
+- real build command/result;
+- validated APK;
+- runtime acceptance evidence where applicable.
 
-Large architectural changes should be recorded as an ADR under `docs/ADR/` when they affect long-term project structure.
+Do not claim universal support from a detector alone.
 
-## 19. Anti-Patterns
+## 14. Anti-Patterns
 
 Avoid:
 
-- giant build functions
-- framework-specific hacks in shared security code
-- hard-coded environment paths
-- fake build progress
-- silent fallback after errors
-- global mutable build state
-- copying one strategy's assumptions into another
-- modifying user source unnecessarily
-- declaring universal support without a fixture and acceptance test
+- fake/mock APKs;
+- fake build logs or progress;
+- compile-only runtime claims;
+- silent strategy fallback;
+- generic WebView replacement for native frameworks;
+- hard-coded environment paths;
+- global mutable build state;
+- framework-specific hacks in shared security code;
+- modifying user source unnecessarily;
+- duplicate parallel pipelines without an explicit ADR.
 
-## 20. Target Evolution
+## 15. Source of Truth
 
-The architecture should allow progression from the current supported strategies to broader compatibility while retaining the same lifecycle:
+- `/ROADMAP.md` — milestone scope and gates.
+- `docs/ARCHITECTURE.md` — this architecture.
+- `docs/TEST-MATRIX.md` — test/evidence requirements.
+- `docs/VALIDATION-WORKFLOW.md` — GitHub → Termux → real-device validation procedure.
+- `docs/ADR/` — long-term architectural decisions.
 
-`INPUT → ANALYZE → STRATEGY → BUILD → VALIDATE → ARTIFACT`
-
-New functionality should attach to this lifecycle rather than creating parallel pipelines unless there is a documented architectural reason.
+Do not create a second roadmap or a second architecture document with competing rules.
