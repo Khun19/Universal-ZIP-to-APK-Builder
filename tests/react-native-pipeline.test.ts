@@ -16,6 +16,18 @@ test(
       'utf8',
     );
     assert.match(applicationSource, /getUseDeveloperSupport\(\)[\s\S]*?return false;/);
+    assert.match(
+      fs.readFileSync(path.join(fixtureDir, 'android/settings.gradle'), 'utf8'),
+      /includeBuild\('\.\.\/node_modules\/@react-native\/gradle-plugin'\)/,
+    );
+    assert.match(
+      fs.readFileSync(path.join(fixtureDir, 'android/app/build.gradle'), 'utf8'),
+      /id 'com\.facebook\.react'/,
+    );
+    assert.match(
+      fs.readFileSync(path.join(fixtureDir, 'android/gradle.properties'), 'utf8'),
+      /^hermesEnabled=false$/m,
+    );
     const fixtureFiles = [
       'package.json',
       'index.js',
@@ -56,6 +68,10 @@ test(
     const apkEntries = execFileSync('unzip', ['-Z1', apkPath], { encoding: 'utf8' });
     assert.match(apkEntries, /^assets\/index\.android\.bundle$/m);
     assert.match(apkEntries, /^lib\/arm64-v8a\/libreactnative\.so$/m);
+    assert.match(apkEntries, /^lib\/arm64-v8a\/libjsi\.so$/m);
+    assert.match(apkEntries, /^lib\/arm64-v8a\/libfbjni\.so$/m);
+    assert.doesNotMatch(apkEntries, /libhermes\.so/);
+    assert.doesNotMatch(apkEntries, /libjscexecutor\.so/);
     assert.match(crypto.createHash('sha256').update(fs.readFileSync(apkPath)).digest('hex'), /^[a-f0-9]{64}$/);
     assert.ok(result.logs.some((log) => log.includes('Installing React Native dependencies')));
     assert.ok(result.logs.some((log) => log.includes('Verified real APK')));
