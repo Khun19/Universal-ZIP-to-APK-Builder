@@ -8,19 +8,20 @@
 
 The builder is a phone-first ZIP-to-APK system, while GitHub and GitHub Actions provide source control and automated verification. Android runtime behavior cannot be inferred from source inspection or a successful CI/build command alone.
 
-The roadmap therefore requires a repeatable separation between repository checks, local Termux execution, and real Android runtime evidence.
+The project therefore requires a repeatable separation between repository checks, local Termux execution, and real Android runtime evidence.
 
 ## Decision
 
 1. `main` is the stable source-of-truth branch.
 2. Meaningful work uses a focused branch and a focused commit/PR.
-3. Milestones are implemented and validated one at a time.
+3. Milestones are implemented and validated one at a time according to the single Master Roadmap in `/ROADMAP.md`.
 4. GitHub Actions is a verification gate, not proof of real-device behavior.
 5. Termux is the primary local execution environment for the phone-first workflow.
 6. Runtime-sensitive Android acceptance requires installation and feature verification on a real Android device or explicitly records `BLOCKED` when the required environment is unavailable.
 7. The test matrix is the acceptance contract and must distinguish `PASS`, `FAIL`, `BLOCKED`, and `NOT RUN`.
 8. Build artifacts are not considered successful solely because Gradle exits successfully; APK discovery, validation, and integrity evidence are required where the milestone calls for them.
 9. CI/device limitations are documented rather than hidden by broad PASS claims.
+10. `/ROADMAP.md` is the only milestone roadmap. Supporting documents may define architecture, tests, and validation procedures but must not redefine milestone numbering or scope.
 
 ## Consequences
 
@@ -29,7 +30,7 @@ This keeps source changes, automated checks, local phone builds, and runtime ver
 ## Related Documents
 
 - `AGENTS.md`
-- `docs/ROADMAP.md`
+- `ROADMAP.md` — single Master Roadmap
 - `docs/ARCHITECTURE.md`
 - `docs/TEST-MATRIX.md`
 - `docs/VALIDATION-WORKFLOW.md`
