@@ -34,6 +34,17 @@ test(
       fs.readFileSync(path.join(fixtureDir, 'android/gradle.properties'), 'utf8'),
       /^newArchEnabled=true$/m,
     );
+    assert.match(
+      fs.readFileSync(path.join(fixtureDir, 'android/gradle.properties'), 'utf8'),
+      /^reactNativeArchitectures=arm64-v8a$/m,
+    );
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(fixtureDir, 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    assert.strictEqual(packageJson.dependencies?.['react-native'], '0.76.9');
+    assert.strictEqual(packageJson.dependencies?.['@react-native/gradle-plugin'], '0.76.9');
+    assert.strictEqual(packageJson.dependencies?.expo, undefined);
+    assert.strictEqual(packageJson.devDependencies?.['@react-native-community/cli-platform-android'], undefined);
     const fixtureFiles = [
       'package.json',
       'index.js',
