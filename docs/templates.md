@@ -33,16 +33,19 @@ Only text files are variable-substituted. Binary files are copied verbatim.
 - Template IDs are validated to `/^[a-z0-9\-_]+$/`.
 - Project names cannot contain path separators and are restricted to a safe character set.
 - Android package names must be at least two dot-separated segments and each segment must match `/^[a-z][a-z0-9_]*$/`.
-- Path traversal is prevented by resolving destination paths and ensuring they remain inside the generated workspace.
+- Destination paths are resolved before writing, and every generated file is checked to remain inside the requested output directory.
+- Existing output directories are never overwritten.
 - Template generation does not execute any scripts from templates.
 
 ## Generation
 
 API: `POST /api/templates/:id/generate` with JSON body `{ "projectName": "myproj", "appName": "My App", "packageName": "com.example.app" }`.
 
-CLI: `pnpm tsx lib/cli.ts templates:create <id> <projectName> [--app-name=] [--package=]`
+CLI: `pnpm tsx lib/cli.ts templates:create <id> <output-dir> [--project-name=] [--app-name=] [--package=]`
 
-After generation the server will run the repository's existing analysis -> strategy -> build pipeline on the created project. The generated project is placed under `.workspace/template-<id>-<ts>-<name>`.
+The CLI treats `<output-dir>` as the exact directory in which the generated project is written. If `--project-name` is omitted, the final path component of `<output-dir>` is used as the project name. This keeps filesystem destinations separate from project-name validation.
+
+After API generation the server runs the repository's existing analysis -> strategy -> build pipeline on the created project. The default API/CLI generation destination remains under `.workspace` when no explicit output directory is supplied by the caller.
 
 ## Adding a new template
 

@@ -6,6 +6,18 @@ import { handleBuildRequest } from './server.ts';
 import { listTemplates } from './template-registry';
 import { generateFromTemplate } from './template-generator';
 
+function getFlag(argv: string[], name: string): string | undefined {
+  const prefix = `${name}=`;
+  const value = argv.find(a => a.startsWith(prefix));
+  return value ? value.slice(prefix.length) : undefined;
+}
+
+function deriveProjectName(outputDir: string): string {
+  const base = path.basename(path.resolve(outputDir));
+  if (!base) throw new Error('Output directory must have a project name');
+  return base;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0) {
@@ -13,7 +25,7 @@ async function main() {
     console.error('Commands:');
     console.error('  templates:list');
     console.error('  templates:info <id>');
-    console.error('  templates:create <id> <project-name> [--app-name="App"] [--package="com.example.app"]');
+    console.error('  templates:create <id> <output-dir> [--project-name="MyProject"] [--app-name="App"] [--package="com.example.app"]');
     console.error('  build-zip <path-to-zip>');
     process.exit(1);
   }
@@ -22,8 +34,7 @@ async function main() {
 
   if (cmd === 'templates:list') {
     try {
-      const templates = listTemplates();
-      console.log(JSON.stringify(templates, null, 2));
+      console.log(JSON.stringify(listTemplates(), null, 2));
     } catch (e: any) {
       console.error('Failed to list templates:', e?.message || e);
       process.exit(1);
@@ -37,8 +48,7 @@ async function main() {
       console.error('templates:info requires a template id');
       process.exit(1);
     }
-    const templates = listTemplates();
-    const tmpl = templates.find(t => t.id === id);
+    const tmpl = listTemplates().find(t => t.id === id);
     if (!tmpl) {
       console.error('Template not found:', id);
       process.exit(1);
@@ -49,24 +59,24 @@ async function main() {
 
   if (cmd === 'templates:create') {
     const id = argv[1];
-    const projectName = argv[2];
-    if (!id || !projectName) {
-      console.error('Usage: templates:create <id> <project-name> [--app-name] [--package]');
+    const outputDir = argv[2];
+    if (!id || !outputDir) {
+      console.error('Usage: templates:create <id> <output-dir> [--project-name] [--app-name] [--package]');
       process.exit(1);
     }
-    // parse optional flags
-    const appNameFlag = argv.find(a => a.startsWith('--app-name='));
-    const packageFlag = argv.find(a => a.startsWith('--package='));
-    const appName = appNameFlag ? appNameFlag.split('=')[1] : undefined;
-    const packageName = packageFlag ? packageFlag.split('=')[1] : undefined;
+
+    const projectName = getFlag(argv, '--project-name') || deriveProjectName(outputDir);
+    const appName = getFlag(argv, '--app-name');
+    const packageName = getFlag(argv, '--package');
 
     try {
-      const gen = await generateFromTemplate(id, { projectName, appName, packageName });
+      const gen = await generateFromTemplate(id, { projectName, appName, packageName, outputDir });
       if (!gen.success || !gen.projectPath || !gen.filePaths) {
         console.error('Generation failed:', gen.error);
         process.exit(1);
       }
       console.log('Project generated at:', gen.projectPath);
+      console.log('Generated files:', gen.filePaths.length);
       console.log('Starting build...');
       const result = await handleBuildRequest({ projectPath: gen.projectPath, filePaths: gen.filePaths, appName });
       result.logs.forEach(l => console.log('>', l));
@@ -83,7 +93,7 @@ async function main() {
     return;
   }
 
-  // legacy CLI behaviour: build from zip
+  // Legacy CLI behaviour: build from zip.
   const zipArg = argv[0];
   const zipPath = path.resolve(zipArg);
   if (!fs.existsSync(zipPath)) {
@@ -91,13 +101,12 @@ async function main() {
     process.exit(1);
   }
 
-  const buildId  = `cli-build-${Date.now()}`;
-  const workDir  = path.resolve(`.workspace/${buildId}`);
+  const buildId = `cli-build-${Date.now()}`;
+  const workDir = path.resolve(`.workspace/${buildId}`);
 
   console.log(`\n📦 ZIP  : ${zipPath}`);
   console.log(`📁 Work : ${workDir}\n`);
 
-  // 1. Secure ZIP extraction
   let filePaths: string[];
   try {
     const zip = new AdmZip(zipPath);
@@ -116,7 +125,7 @@ async function main() {
   result.logs.forEach(l => console.log('>', l));
 
   if (result.success && result.outputPath) {
-    const outDir  = path.resolve('output');
+    const outDir = path.resolve('output');
     fs.mkdirSync(outDir, { recursive: true });
     const outFile = path.join(outDir, `${buildId}.apk`);
     fs.copyFileSync(result.outputPath, outFile);
