@@ -16,6 +16,8 @@ test(
       'utf8',
     );
     assert.match(applicationSource, /getUseDeveloperSupport\(\)[\s\S]*?return false;/);
+    assert.match(applicationSource, /SoLoader\.init\(this, OpenSourceMergedSoMapping\)/);
+    assert.match(applicationSource, /DefaultNewArchitectureEntryPoint\.load\(\)/);
     assert.match(
       fs.readFileSync(path.join(fixtureDir, 'android/settings.gradle'), 'utf8'),
       /includeBuild\('\.\.\/node_modules\/@react-native\/gradle-plugin'\)/,
@@ -70,7 +72,7 @@ test(
     assert.match(apkEntries, /^lib\/arm64-v8a\/libreactnative\.so$/m);
     assert.match(apkEntries, /^lib\/arm64-v8a\/libjsi\.so$/m);
     assert.match(apkEntries, /^lib\/arm64-v8a\/libfbjni\.so$/m);
-    assert.doesNotMatch(apkEntries, /libhermes\.so/);
+    assert.match(apkEntries, /libhermes\.so/);
     assert.doesNotMatch(apkEntries, /libjscexecutor\.so/);
     assert.match(crypto.createHash('sha256').update(fs.readFileSync(apkPath)).digest('hex'), /^[a-f0-9]{64}$/);
     assert.ok(result.logs.some((log) => log.includes('Installing React Native dependencies')));
