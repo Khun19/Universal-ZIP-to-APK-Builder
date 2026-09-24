@@ -53,7 +53,5 @@ Thumbs.db
 *.apk
 local.properties
 test-frontend.zip
-_bmad/
-_bmad-output/
 dashboard.html
 public/
