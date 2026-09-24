@@ -28,7 +28,11 @@ test(
     );
     assert.match(
       fs.readFileSync(path.join(fixtureDir, 'android/gradle.properties'), 'utf8'),
-      /^hermesEnabled=false$/m,
+      /^hermesEnabled=true$/m,
+    );
+    assert.match(
+      fs.readFileSync(path.join(fixtureDir, 'android/gradle.properties'), 'utf8'),
+      /^newArchEnabled=true$/m,
     );
     const fixtureFiles = [
       'package.json',
