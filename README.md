@@ -376,7 +376,6 @@ Universal-ZIP-to-APK-Builder/
 │
 ├── .workspace/
 │
-├── _bmad/
 │
 ├── artifacts/
 │   ├── api-server/
