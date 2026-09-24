@@ -1,0 +1,14 @@
+{
+  "name": "m6-react-native-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "android": "cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "@react-native/metro-config": "0.76.9",
+    "@react-native/gradle-plugin": "0.76.9"
+  }
+}

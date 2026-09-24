@@ -9,6 +9,48 @@ This document is the acceptance contract for build compatibility. A test is only
 - **BLOCKED** — cannot run because a required environment/device/tool is unavailable
 - **NOT RUN** — not executed yet
 
+## Current Milestone Order
+
+| Milestone | Scope | Status |
+|---|---|---|
+| M4 | PWA | PASS |
+| M5 | Flutter Direct APK | PASS |
+| M6 | React Native / Expo Direct APK | CURRENT |
+| M7 | Next/Nuxt/Angular/Vue/Svelte web-family expansion | PLANNED |
+| M8 | Ionic/Cordova hybrid Android expansion | PLANNED |
+| M9 | Godot Android export | PLANNED |
+| M10 | Unity Android export | PLANNED |
+| Later dedicated milestone | APK Identity Layer | PLANNED |
+
+Only one milestone is implemented at a time. The workflow is:
+
+`Implementation → GitHub push → Termux validation → real APK validation → real phone validation → explicit PASS → next milestone`
+
+If validation fails, work remains on the same milestone until it is fixed and
+revalidated.
+
+## Canonical Build-Family Principle
+
+The preferred architecture is:
+
+`Framework Detector → Canonical Build Family → Existing Build Strategy → APK Validator`
+
+Plain Web, React/Vite, Capacitor, Native Android, Flutter, and React
+Native/Expo should reuse existing build families where possible. Web-family
+expansion targets (Next.js, Nuxt, Angular, Vue, and Svelte) should reuse the
+Web Build → Web Wrapper → APK pipeline whenever their production output can be
+packaged as web content. Ionic and Cordova should reuse native Android/Gradle
+infrastructure where appropriate. Godot and Unity require dedicated adapters.
+
+## APK Identity Layer — Future Dedicated Milestone
+
+This is not part of M6. A future identity layer will expose one consistent
+Builder UI for App Name, App Icon, Package ID/Application ID, Theme/Accent
+Color, Light/Dark mode, Splash Screen, and Adaptive Icon. Each framework will
+receive the identity through its own adapter:
+
+`ZIP → Analyze → App Identity → Framework Strategy → Build → APK Validation → APK`
+
 ## Test A — Static Web
 
 | Area | Check | Acceptance |
@@ -32,7 +74,7 @@ This document is the acceptance contract for build compatibility. A test is only
 | Analysis | React/Vite detection | Correct strategy selected |
 | Dependencies | Lockfile policy | Existing package manager respected |
 | Web | Vite build | Build completes |
-| PWA | Plugin/runtime | PWA build completes without unresolved runtime dependencies |
+| PWA | Plugin/runtime | Tracked Vite PWA fixture builds with a manifest, service worker, registration script, icon, and bundled JavaScript asset |
 | Workbox | Compatibility | Workbox dependencies resolve deterministically |
 | Assets | Output | Built assets are packaged correctly |
 | Android | Wrapper | Android wrapper is valid |
@@ -54,6 +96,35 @@ This document is the acceptance contract for build compatibility. A test is only
 | Runtime | QR | QR scanner detects a valid test QR |
 | Runtime | Navigation | Back/navigation behaves correctly |
 | APK | Validation | APK is valid and installable |
+
+## Test D — Flutter Direct Build
+
+| Area | Check | Acceptance |
+|---|---|---|
+| ZIP | Extraction | Flutter fixture extracts safely |
+| Analysis | Flutter detection | `pubspec.yaml` plus `lib/main.dart` selects Flutter |
+| Strategy | Direct build | Dedicated Flutter strategy is selected |
+| Dependencies | Pub resolution | `flutter pub get` completes and failures are logged |
+| Android | Platform preparation | Existing platform is used or Flutter generates one |
+| Build | Direct APK | `flutter build apk --debug` produces a real APK |
+| APK | Validation | Manifest, `aapt` badging, non-zero size, and package ID pass |
+| Artifact | Integrity | Pipeline returns the APK path and SHA-256 is calculable |
+| Environment | Termux/PRoot | Native Flutter is preferred; Ubuntu PRoot fallback remains supported |
+
+## Test E — React Native / Expo Direct Build
+
+| Area | Check | Acceptance |
+|---|---|---|
+| ZIP | Extraction | React Native fixture extracts safely |
+| Analysis | React Native detection | React Native metadata is not classified as generic web/PWA |
+| Analysis | Expo detection | Expo dependency/configuration selects the Expo project type |
+| Strategy | Direct Android build | Dedicated React Native strategy is selected |
+| Dependencies | Package manager | Project dependencies install through the detected package manager |
+| Android | Native project | Existing Android project is built, or Expo prebuild creates one locally |
+| Gradle | Build | Real Android Gradle build completes |
+| APK | Validation | Manifest, `aapt` badging, package ID, and non-zero size pass |
+| Artifact | Integrity | Pipeline returns the APK path and SHA-256 is calculable |
+| Environment | Termux/ARM64 | Existing Android SDK and local Java/Gradle environment are used |
 
 ## Core Unit/Integration Coverage
 
