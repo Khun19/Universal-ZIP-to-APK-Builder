@@ -392,8 +392,49 @@ async function regenerateFlutterAndroidPlatform(
     fs.rmSync(scaffoldPath, { recursive: true, force: true });
   }
 }
+function isReactNativeAndroidProject(androidProjectPath: string): boolean {
+  const settingsCandidates = [
+    path.join(androidProjectPath, 'settings.gradle'),
+    path.join(androidProjectPath, 'settings.gradle.kts'),
+  ];
+  const packageJsonPath = path.join(path.dirname(androidProjectPath), 'package.json');
+
+  let settings = '';
+  let packageJson = '';
+  try {
+    const settingsPath = settingsCandidates.find((filePath) => fs.existsSync(filePath));
+    if (settingsPath) settings = fs.readFileSync(settingsPath, 'utf8');
+    if (fs.existsSync(packageJsonPath)) packageJson = fs.readFileSync(packageJsonPath, 'utf8');
+  } catch {
+    return false;
+  }
+
+  return /com\.facebook\.react/.test(settings) && /"react-native"\s*:/.test(packageJson);
+}
 function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   const requiredVersion = detectProjectJavaVersion(androidProjectPath);
+
+  // React Native 0.76.x's real Gradle plugin declares kotlin.jvmToolchain(17).
+  // The Android build therefore requires an actual local JDK 17 installation;
+  // JDK 21 cannot satisfy a Java 17 toolchain request. Do not let Gradle
+  // silently fall through to Foojay provisioning on Termux.
+  if (isReactNativeAndroidProject(androidProjectPath)) {
+    const java17Home = findJavaHome(17);
+    if (!java17Home) {
+      throw new Error(
+        'React Native Android build requires a local JDK 17 installation because ' +
+        '@react-native/gradle-plugin declares kotlin.jvmToolchain(17). ' +
+        'JDK 21 alone cannot satisfy this toolchain. Install JDK 17 or set JAVA_17_HOME ' +
+        'to a valid JDK 17 directory before building.',
+      );
+    }
+
+    return {
+      ...process.env,
+      JAVA_HOME: java17Home,
+      PATH: path.join(java17Home, 'bin') + path.delimiter + (process.env.PATH || ''),
+    };
+  }
 
   // Use the project's required JDK when it is installed.
   // If Java 21 is required but unavailable, fall back to Java 17 only so
@@ -407,7 +448,7 @@ function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
     JAVA_HOME: selectedHome,
-    PATH: `${path.join(selectedHome, 'bin')}${path.delimiter}${process.env.PATH || ''}`,
+    PATH: path.join(selectedHome, 'bin') + path.delimiter + (process.env.PATH || ''),
   };
 }
 export function isGradleJavaCompatibilityFailure(error: unknown): boolean {
