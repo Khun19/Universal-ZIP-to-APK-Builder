@@ -7,6 +7,15 @@ const ext = (files: string[], suffix: string) => files.some((file) => file.endsW
 
 const detectors: Detector[] = [
   (s) => {
+    const pkg = s.packageJson ?? {};
+    const deps = { ...(pkg.dependencies as Record<string, unknown> ?? {}), ...(pkg.devDependencies as Record<string, unknown> ?? {}) };
+    const expo = typeof deps.expo === "string" || has(s.files, "app.json") || has(s.files, "app.config.js") || has(s.files, "app.config.ts");
+    const reactNative = typeof deps["react-native"] === "string";
+    if (!expo && !reactNative) return null;
+    const android = has(s.files, "settings.gradle") || has(s.files, "settings.gradle.kts") || s.files.some((file) => file.startsWith("android/"));
+    return { framework: expo ? "Expo" : "React Native", buildTool: "Gradle", language: "JavaScript", projectType: expo ? "Expo application" : "React Native application", confidence: android ? 97 : 90, compatibilityScore: android ? 94 : 84, recommendedStrategy: expo ? "Install dependencies, run Expo prebuild, then build Android with Gradle" : "Install dependencies, then build the Android project with Gradle", evidence: [expo ? "Expo project markers" : "React Native dependency", ...(android ? ["Android platform"] : [])] };
+  },
+  (s) => {
     const native = has(s.files, "settings.gradle") || has(s.files, "settings.gradle.kts") || has(s.files, "gradlew") || s.files.some((f) => f.endsWith("AndroidManifest.xml"));
     if (!native) return null;
     const kotlin = ext(s.files, ".kt") || s.files.some((f) => f.includes("kotlin"));
@@ -17,6 +26,11 @@ const detectors: Detector[] = [
     if (!has(s.files, "capacitor.config.ts") && !has(s.files, "capacitor.config.json") && !has(s.files, "capacitor.config.js")) return null;
     const android = has(s.files, "android");
     return { framework: "Capacitor", buildTool: "Gradle", language: ext(s.files, ".ts") ? "TypeScript" : "JavaScript", projectType: "Existing Capacitor project", confidence: 97, compatibilityScore: android ? 94 : 82, recommendedStrategy: android ? "Capacitor sync then Gradle build" : "Add Android platform, sync, then Gradle build", evidence: ["Capacitor configuration", ...(android ? ["Existing Android platform"] : [])] };
+  },
+  (s) => {
+    if (!has(s.files, "pubspec.yaml") || !has(s.files, "lib/main.dart")) return null;
+    const android = has(s.files, "android");
+    return { framework: "Flutter", buildTool: "Flutter", language: "Dart", projectType: "Flutter application", confidence: android ? 99 : 94, compatibilityScore: android ? 95 : 84, recommendedStrategy: android ? "flutter pub get then flutter build apk --debug" : "Generate the Android platform with flutter create . then build the APK", evidence: ["pubspec.yaml", "lib/main.dart", ...(android ? ["Flutter Android platform"] : [])], warnings: android ? [] : ["Android platform is missing; flutter create . is required before APK build"] };
   },
   (s) => {
     const pkg = s.packageJson ?? {};
@@ -31,7 +45,7 @@ const detectors: Detector[] = [
 export function analyzeProject(snapshot: ProjectSnapshot): ProjectAnalysis {
   const result = detectors.map((detector) => detector(snapshot)).find(Boolean) ?? {};
   const framework = (result.framework ?? "Unsupported") as Framework;
-  const blockers = framework === "Unsupported" ? ["No supported Android, React, Vite, Capacitor, or plain web structure was detected."] : [];
-  const warnings = framework === "Plain Web" ? ["No framework build metadata was found; verify the web root is index.html."] : [];
+  const blockers = framework === "Unsupported" ? ["No supported Android, React, Vite, Capacitor, Flutter, or plain web structure was detected."] : [];
+  const warnings = result.warnings ?? (framework === "Plain Web" ? ["No framework build metadata was found; verify the web root is index.html."] : []);
   return { framework, version: null, buildTool: result.buildTool ?? "Unknown", language: result.language ?? "Unknown", packageManager: snapshot.files.some((f) => f.endsWith("pnpm-lock.yaml")) ? "pnpm" : snapshot.files.some((f) => f.endsWith("yarn.lock")) ? "yarn" : "npm", projectType: result.projectType ?? "Unknown", confidence: result.confidence ?? 12, compatibilityScore: result.compatibilityScore ?? 0, warnings, blockers, recommendedStrategy: result.recommendedStrategy ?? "No build strategy available", evidence: result.evidence ?? [] };
 }
