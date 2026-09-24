@@ -7,14 +7,15 @@ import com.facebook.react.ReactNativeHost;
 import com.facebook.react.ReactPackage;
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
 import com.facebook.react.defaults.DefaultReactNativeHost;
+import com.facebook.react.soloader.OpenSourceMergedSoMapping;
+import com.facebook.soloader.SoLoader;
 import java.util.List;
 
 public final class MainApplication extends Application implements ReactApplication {
     private final ReactNativeHost reactNativeHost = new DefaultReactNativeHost(this) {
         @Override
         public boolean getUseDeveloperSupport() {
-            // This fixture bundles JavaScript into the debug APK, so it must
-            // launch offline on a phone without a Metro development server.
+            // The fixture is built for offline APK validation; Metro must not be required.
             return false;
         }
 
@@ -42,5 +43,14 @@ public final class MainApplication extends Application implements ReactApplicati
     @Override
     public ReactNativeHost getReactNativeHost() {
         return reactNativeHost;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        SoLoader.init(this, OpenSourceMergedSoMapping);
+        if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
+            DefaultNewArchitectureEntryPoint.load();
+        }
     }
 }
