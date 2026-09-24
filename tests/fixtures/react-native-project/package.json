@@ -12,6 +12,7 @@
     "@react-native/gradle-plugin": "0.76.9"
   },
   "devDependencies": {
-    "@react-native-community/cli": "15.0.1"
+    "@react-native-community/cli": "15.0.1",
+    "@react-native-community/cli-platform-android": "15.0.1"
   }
 }
