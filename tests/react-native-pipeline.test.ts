@@ -15,13 +15,19 @@ test(
       path.join(fixtureDir, 'android/app/src/main/java/com/builder/m6reactnative/MainApplication.java'),
       'utf8',
     );
+    const settingsSource = fs.readFileSync(
+      path.join(fixtureDir, 'android/settings.gradle'),
+      'utf8',
+    );
+
     assert.match(applicationSource, /getUseDeveloperSupport\(\)[\s\S]*?return false;/);
     assert.match(applicationSource, /SoLoader\.init\(this, OpenSourceMergedSoMapping\)/);
     assert.match(applicationSource, /DefaultNewArchitectureEntryPoint\.load\(\)/);
-    assert.match(
-      fs.readFileSync(path.join(fixtureDir, 'android/settings.gradle'), 'utf8'),
-      /includeBuild\('\.\.\/node_modules\/@react-native\/gradle-plugin'\)/,
-    );
+    assert.match(settingsSource, /includeBuild\('\.\.\/node_modules\/@react-native\/gradle-plugin'\)/);
+    assert.match(settingsSource, /includeBuild\('\.\.\/node_modules\/react-native'\)/);
+    assert.match(settingsSource, /com\.facebook\.react:react-android/);
+    assert.match(settingsSource, /com\.facebook\.react:hermes-android/);
+    assert.match(settingsSource, /:packages:react-native:ReactAndroid:hermes-engine/);
     assert.match(
       fs.readFileSync(path.join(fixtureDir, 'android/app/build.gradle'), 'utf8'),
       /id 'com\.facebook\.react'/,
@@ -34,6 +40,7 @@ test(
       fs.readFileSync(path.join(fixtureDir, 'android/gradle.properties'), 'utf8'),
       /^newArchEnabled=true$/m,
     );
+
     const fixtureFiles = [
       'package.json',
       'index.js',
