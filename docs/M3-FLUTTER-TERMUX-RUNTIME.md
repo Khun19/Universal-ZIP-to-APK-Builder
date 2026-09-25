@@ -46,6 +46,7 @@ Defaults:
 FLUTTER_PROOT_DISTRO=ubuntu
 FLUTTER_PROOT_PATH=/opt/flutter/bin/flutter
 FLUTTER_PROOT_ANDROID_HOME=/opt/android-sdk
+FLUTTER_PROOT_AAPT2_PATH=<optional PRoot-visible ARM64 aapt2>
 ```
 
 A different PRoot distro, Flutter SDK path, or guest Android SDK can be provided through these environment variables.
