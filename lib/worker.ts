@@ -647,7 +647,20 @@ export async function executeBuildJob(
       }
 
       if (flutterExecutor.mode === 'ubuntu-proot') {
-        logs.push('Using the Ubuntu PRoot Android toolchain; leaving AAPT2 resolution to the guest SDK.');
+        const previousAapt2Path = process.env.AAPT2_PATH;
+        const prootAapt2Path = process.env.FLUTTER_PROOT_AAPT2_PATH;
+        if (prootAapt2Path) process.env.AAPT2_PATH = prootAapt2Path;
+        const prootAapt2Overridden = ensureAapt2Override(flutterAndroidProjectPath);
+        if (previousAapt2Path === undefined) delete process.env.AAPT2_PATH;
+        else process.env.AAPT2_PATH = previousAapt2Path;
+
+        if (prootAapt2Overridden) {
+          logs.push(
+            `Using PRoot-visible AAPT2 override: ${prootAapt2Path || previousAapt2Path || '/data/data/com.termux/files/usr/bin/aapt2'}`,
+          );
+        } else {
+          logs.push('No PRoot AAPT2 override was applied; the guest Android SDK must provide a runnable AAPT2.');
+        }
       } else if (ensureAapt2Override(flutterAndroidProjectPath)) {
         logs.push(
           `Using AAPT2 override: ${process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2'}`,
