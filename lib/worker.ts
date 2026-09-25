@@ -8,6 +8,7 @@ import { injectAndroidWrapper } from './template.ts';
 import { buildWebProject, findWebProjectRoot } from './web-builder.ts';
 import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
+import { prepareReactNativeSourceBuild } from './react-native-build-backend.ts';
 
 const execAsync = promisify(exec);
 const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
@@ -643,6 +644,18 @@ export async function executeBuildJob(
           logs.push('Using the React Native Gradle plugin wrapper for a compatible Gradle toolchain.');
         }
       }
+      if (!usesExpo && reactNativeAndroidProject) {
+        try {
+          const sourceBuild = prepareReactNativeSourceBuild(projectPath, reactNativeAndroidProject);
+          logs.push(sourceBuild.reason);
+          logs.push('React Native backend mode: official source build (ReactAndroid + Hermes).');
+        } catch (sourceBuildError: any) {
+          const message = `React Native official source-build preparation failed: ${sourceBuildError.message}`;
+          logs.push(`Error: ${message}`);
+          return { success: false, logs, error: message };
+        }
+      }
+
       logs.push('React Native project dependencies are ready for the Android Gradle build.');
     }
 
