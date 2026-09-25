@@ -348,7 +348,7 @@ async function regenerateFlutterAndroidPlatform(
     await execAsync(
       flutterCommand(
         flutterExecutor,
-        'create -t app --project-name builder_android_scaffold --platforms=android ' + shellQuote(scaffoldPath),
+        ['create', '-t', 'app', '--project-name', 'builder_android_scaffold', '--platforms=android', scaffoldPath],
       ),
       { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
     );
@@ -505,9 +505,8 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
   };
 }
 
-function flutterCommand(executor: FlutterExecutor, command: string): string {
-  if (executor.mode === 'native') return executor.commandPrefix + ' ' + command;
-  return executor.commandPrefix + ' ' + command.split(' ').map(shellQuote).join(' ');
+function flutterCommand(executor: FlutterExecutor, args: string[]): string {
+  return executor.commandPrefix + ' ' + args.map(shellQuote).join(' ');
 }
 
 
@@ -658,8 +657,8 @@ export async function executeBuildJob(
       const flutterEnvironment = getGradleEnvironment(flutterAndroidProjectPath);
       logs.push(`Flutter Android build environment: JAVA_HOME=${flutterEnvironment.JAVA_HOME || 'default'}`);
 
-      const flutterPubGetCommand = flutterCommand(flutterExecutor, 'pub get');
-      const flutterBuildCommand = flutterCommand(flutterExecutor, 'build apk --debug');
+      const flutterPubGetCommand = flutterCommand(flutterExecutor, ['pub', 'get']);
+      const flutterBuildCommand = flutterCommand(flutterExecutor, ['build', 'apk', '--debug']);
       logs.push(`Executing Flutter command: ${flutterExecutor.displayCommand} pub get && ${flutterExecutor.displayCommand} build apk --debug`);
 
       try {
