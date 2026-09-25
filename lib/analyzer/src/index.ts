@@ -9,7 +9,10 @@ const detectors: Detector[] = [
   (s) => {
     const flutter = has(s.files, "pubspec.yaml") && has(s.files, "lib/main.dart");
     if (!flutter) return null;
-    const android = has(s.files, "android/settings.gradle") || has(s.files, "android/settings.gradle.kts") || has(s.files, "android/app");
+    const android =
+      has(s.files, "android/settings.gradle") ||
+      has(s.files, "android/settings.gradle.kts") ||
+      s.files.some((file) => /(^|\/)android\/app(?:\/|$)/.test(file));
     return {
       framework: "Flutter",
       buildTool: "Flutter CLI",
