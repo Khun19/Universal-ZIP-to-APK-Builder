@@ -21,10 +21,23 @@ type PackageJson = {
   scripts?: Record<string, string>;
 };
 
+export interface PwaBuildOutputInspection {
+  success: boolean;
+  logs: string[];
+  manifestPath?: string;
+  registerScriptPath?: string;
+  serviceWorkerPath?: string;
+  error?: string;
+}
+
 const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org';
 const PWA_WORKBOX_PACKAGE = 'workbox-window';
+const WORKBOX_BUILD_PACKAGE = 'workbox-build';
 const VITE_PWA_PACKAGE = 'vite-plugin-pwa';
 const MINIMUM_RELEASE_AGE_ERROR = 'ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION';
+const WORKBOX_TERSER_MAX_WORKERS = 'maxWorkers: 1';
+const COMPILED_TERSER_PATTERN = /plugin_terser_1\.default\)\(\{(?:\s*maxWorkers:\s*1,)?\s*mangle:\s*\{/;
+const LEGACY_TERSER_PATTERN = /terser\(\{(?:\s*maxWorkers:\s*1,)?\s*mangle:\s*\{/;
 
 /**
  * Replit-generated package-lock files can contain resolved tarball URLs that
@@ -186,6 +199,52 @@ export function hasInstalledPackage(projectPath: string, packageName: string): b
   return fs.existsSync(path.join(projectPath, 'node_modules', ...packageName.split('/')));
 }
 
+/** Locate the Workbox bundle inside the generated workspace, never the repository root. */
+export function findGeneratedWorkboxBundle(projectPath: string): string | null {
+  const bundlePath = path.join(projectPath, 'node_modules', WORKBOX_BUILD_PACKAGE, 'build', 'lib', 'bundle.js');
+  return fs.existsSync(bundlePath) ? bundlePath : null;
+}
+
+/**
+ * Patch the generated Workbox bundle for Android ARM64 by limiting the internal
+ * @rollup/plugin-terser worker pool to one worker. The patch is idempotent and
+ * supports both the current compiled invocation and the older terser() form.
+ */
+export function patchGeneratedWorkboxTerser(projectPath: string): { path: string; changed: boolean } {
+  const bundlePath = findGeneratedWorkboxBundle(projectPath);
+  if (!bundlePath) {
+    throw new Error(`Generated Workbox bundle not found: ${path.join(projectPath, 'node_modules', WORKBOX_BUILD_PACKAGE, 'build', 'lib', 'bundle.js')}`);
+  }
+
+  const original = fs.readFileSync(bundlePath, 'utf8');
+  if (original.includes(WORKBOX_TERSER_MAX_WORKERS) && (COMPILED_TERSER_PATTERN.test(original) || LEGACY_TERSER_PATTERN.test(original))) {
+    return { path: bundlePath, changed: false };
+  }
+
+  let patched = original.replace(COMPILED_TERSER_PATTERN, (match) => match.replace('mangle:', `${WORKBOX_TERSER_MAX_WORKERS},\n  mangle:`));
+  if (patched === original) {
+    patched = original.replace(LEGACY_TERSER_PATTERN, (match) => match.replace('mangle:', `${WORKBOX_TERSER_MAX_WORKERS},\n  mangle:`));
+  }
+
+  if (patched === original) {
+    throw new Error(`Unsupported Workbox Terser bundle pattern in ${bundlePath}`);
+  }
+
+  fs.writeFileSync(bundlePath, patched);
+  return { path: bundlePath, changed: true };
+}
+
+/** Verify the generated Workbox bundle contains the required one-worker setting. */
+export function verifyGeneratedWorkboxTerserPatch(projectPath: string): string {
+  const bundlePath = findGeneratedWorkboxBundle(projectPath);
+  if (!bundlePath) throw new Error(`Generated Workbox bundle not found: ${path.join(projectPath, 'node_modules', WORKBOX_BUILD_PACKAGE, 'build', 'lib', 'bundle.js')}`);
+  const content = fs.readFileSync(bundlePath, 'utf8');
+  if (!content.includes(WORKBOX_TERSER_MAX_WORKERS)) {
+    throw new Error(`Generated Workbox bundle is not patched with maxWorkers: 1: ${bundlePath}`);
+  }
+  return bundlePath;
+}
+
 export function getPwaWorkboxInstallArgs(): string[] {
   return ['add', PWA_WORKBOX_PACKAGE, '--ignore-workspace', '--dangerously-allow-all-builds'];
 }
@@ -219,6 +278,197 @@ async function runCommand(command: string, args: string[], cwd: string, env?: No
   });
 
   return { stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
+}
+
+async function patchWorkboxBeforePwaBuild(projectPath: string, logs: string[]): Promise<void> {
+  const patch = patchGeneratedWorkboxTerser(projectPath);
+  logs.push(`${patch.changed ? 'Patched' : 'Verified'} generated Workbox Terser maxWorkers: 1 at ${patch.path}`);
+  const verifiedPath = verifyGeneratedWorkboxTerserPatch(projectPath);
+  logs.push(`Verified generated Workbox contains maxWorkers: 1: ${verifiedPath}`);
+}
+
+export function findWebBuildOutputDir(projectPath: string): string | undefined {
+  const candidates = ['dist', 'build', 'out', 'www']
+    .map((directory) => path.join(projectPath, directory))
+    .filter((directory) => fs.existsSync(directory) && fs.statSync(directory).isDirectory());
+
+  for (const directory of candidates) {
+    if (fs.existsSync(path.join(directory, 'index.html'))) return directory;
+  }
+
+  return undefined;
+}
+
+function stripUrlSuffix(value: string): string {
+  return value.split('#')[0].split('?')[0];
+}
+
+function resolveOutputFile(outputDir: string, href: string): string | undefined {
+  const cleanHref = stripUrlSuffix(href).replace(/^\/+/, '');
+  if (
+    !cleanHref ||
+    cleanHref.startsWith('http://') ||
+    cleanHref.startsWith('https://') ||
+    cleanHref.startsWith('//')
+  ) {
+    return undefined;
+  }
+
+  const resolved = path.resolve(outputDir, cleanHref);
+  const relative = path.relative(outputDir, resolved);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
+  return resolved;
+}
+
+function findLinkedManifestHref(indexHtml: string): string | undefined {
+  const linkPattern = /<link\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkPattern.exec(indexHtml)) !== null) {
+    const tag = match[0];
+    if (!/\brel\s*=\s*["'][^"']*\bmanifest\b[^"']*["']/i.test(tag)) continue;
+
+    const hrefMatch = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+    if (hrefMatch?.[1]) return hrefMatch[1];
+  }
+
+  return undefined;
+}
+
+function findScriptSrcs(indexHtml: string): string[] {
+  const scriptPattern = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  const scripts: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptPattern.exec(indexHtml)) !== null) {
+    scripts.push(match[1]);
+  }
+
+  return scripts;
+}
+
+function findServiceWorkerRegistrationTarget(source: string): string | undefined {
+  const registerMatch = source.match(/navigator\.serviceWorker\.register\(\s*["']([^"']+)["']/);
+  return registerMatch?.[1];
+}
+
+function looksLikeServiceWorker(source: string): boolean {
+  return /(?:self\.)?(?:addEventListener|skipWaiting|clientsClaim|precacheAndRoute|importScripts)\s*\(/.test(source);
+}
+
+export function inspectPwaBuildOutput(outputDir: string): PwaBuildOutputInspection {
+  const logs: string[] = [];
+  const indexPath = path.join(outputDir, 'index.html');
+
+  if (!fs.existsSync(indexPath)) {
+    return {
+      success: false,
+      logs,
+      error: 'PWA build output is missing index.html.',
+    };
+  }
+
+  const indexHtml = fs.readFileSync(indexPath, 'utf8');
+  const manifestHref = findLinkedManifestHref(indexHtml);
+  if (!manifestHref) {
+    return {
+      success: false,
+      logs,
+      error: 'PWA build output is missing a manifest link in index.html.',
+    };
+  }
+
+  const manifestPath = resolveOutputFile(outputDir, manifestHref);
+  if (!manifestPath || !fs.existsSync(manifestPath)) {
+    return {
+      success: false,
+      logs,
+      error: `PWA manifest link points to a missing or unsafe file: ${manifestHref}.`,
+    };
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    if (typeof manifest.name !== 'string' && typeof manifest.short_name !== 'string') {
+      return {
+        success: false,
+        logs,
+        manifestPath,
+        error: 'PWA manifest is missing both name and short_name.',
+      };
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      error: `PWA manifest is not valid JSON: ${error.message}`,
+    };
+  }
+
+  let registerScriptPath: string | undefined;
+  let serviceWorkerHref: string | undefined;
+
+  for (const scriptSrc of findScriptSrcs(indexHtml)) {
+    const scriptPath = resolveOutputFile(outputDir, scriptSrc);
+    if (!scriptPath || !fs.existsSync(scriptPath)) continue;
+
+    const scriptSource = fs.readFileSync(scriptPath, 'utf8');
+    const target = findServiceWorkerRegistrationTarget(scriptSource);
+    if (target) {
+      registerScriptPath = scriptPath;
+      serviceWorkerHref = target;
+      break;
+    }
+  }
+
+  if (!serviceWorkerHref) {
+    serviceWorkerHref = findServiceWorkerRegistrationTarget(indexHtml);
+  }
+
+  if (!serviceWorkerHref) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      error: 'PWA build output is missing a service worker registration target.',
+    };
+  }
+
+  const serviceWorkerPath = resolveOutputFile(outputDir, serviceWorkerHref);
+  if (!serviceWorkerPath || !fs.existsSync(serviceWorkerPath)) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      registerScriptPath,
+      error: `PWA service worker registration target is missing or unsafe: ${serviceWorkerHref}.`,
+    };
+  }
+
+  const serviceWorkerSource = fs.readFileSync(serviceWorkerPath, 'utf8');
+  if (!looksLikeServiceWorker(serviceWorkerSource)) {
+    return {
+      success: false,
+      logs,
+      manifestPath,
+      registerScriptPath,
+      serviceWorkerPath,
+      error: `PWA service worker does not contain recognizable service-worker code: ${serviceWorkerHref}.`,
+    };
+  }
+
+  logs.push(`PWA manifest verified: ${manifestPath}`);
+  if (registerScriptPath) logs.push(`PWA service worker registration verified: ${registerScriptPath}`);
+  logs.push(`PWA service worker verified: ${serviceWorkerPath}`);
+
+  return {
+    success: true,
+    logs,
+    manifestPath,
+    registerScriptPath,
+    serviceWorkerPath,
+  };
 }
 
 export async function buildWebProject(projectPath: string): Promise<WebBuildResult> {
@@ -289,6 +539,8 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       logs.push('Generated PWA workspace lockfile stabilized successfully.');
     }
 
+    if (usesVitePwa) await patchWorkboxBeforePwaBuild(projectPath, logs);
+
     logs.push(`Running: ${manager} run build`);
     try {
       const buildResult = await runCommand(manager, ['run', 'build'], projectPath, installEnv);
@@ -315,15 +567,28 @@ export async function buildWebProject(projectPath: string): Promise<WebBuildResu
       logs.push('PWA build policy retry completed successfully.');
     }
 
-    for (const directory of ['dist', 'build', 'out', 'www']) {
-      const fullPath = path.join(projectPath, directory);
-      if (fs.existsSync(fullPath)) {
-        logs.push(`Build output found: ${fullPath}`);
-        return { success: true, outputDir: fullPath, logs };
+    const outputDir = findWebBuildOutputDir(projectPath);
+    if (outputDir) {
+      logs.push(`Build output found: ${outputDir}`);
+      if (usesVitePwa) {
+        const pwaOutput = inspectPwaBuildOutput(outputDir);
+        logs.push(...pwaOutput.logs);
+        if (!pwaOutput.success) {
+          return {
+            success: false,
+            logs,
+            error: pwaOutput.error || 'PWA build output validation failed',
+          };
+        }
       }
+      return { success: true, outputDir, logs };
     }
 
-    return { success: false, logs, error: 'Web build completed but no dist, build, out, or www directory was found' };
+    return {
+      success: false,
+      logs,
+      error: 'Web build completed but no usable output directory containing index.html was found (checked dist, build, out, www)',
+    };
   } catch (error: any) {
     logs.push(`Web build failed: ${error.message}`);
     if (error.stdout) logs.push(`[Command stdout]: ${String(error.stdout)}`);
