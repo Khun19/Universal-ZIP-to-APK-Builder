@@ -19,8 +19,30 @@ export function determineBuildStrategy(analysis: AnalysisResult): BuildStrategy 
     case 'Flutter':
       return { strategyName: 'flutter', buildSteps: ['Verify Flutter SDK and Android toolchain', 'Run flutter pub get', 'Run flutter build apk --debug', 'Locate APK in build/app/outputs/flutter-apk/'], outputArtifact: 'app-debug.apk' };
     case 'React Native':
+      return {
+        strategyName: 'react-native',
+        buildSteps: [
+          'Install React Native project dependencies with the detected package manager',
+          'Require an Android project for pure React Native; do not synthesize a mock native project',
+          'Prepare the official React Native build-from-source composite in the disposable workspace',
+          'Use the project React Native Gradle Plugin and ReactAndroid/Hermes source modules',
+          'Run the project Gradle build and let React Native own Metro, Hermes, Codegen, and native compilation',
+          'Locate, validate, hash, install, and runtime-test the generated APK',
+        ],
+        outputArtifact: 'app-debug.apk',
+      };
     case 'Expo':
-      return { strategyName: 'react-native', buildSteps: ['Install project dependencies with the detected package manager', 'Run local Expo prebuild when Android is missing', 'Run the Android Gradle build', 'Locate and validate the generated APK'], outputArtifact: 'app-debug.apk' };
+      return {
+        strategyName: 'react-native',
+        buildSteps: [
+          'Install Expo/React Native project dependencies with the detected package manager',
+          'Run Expo prebuild only when the project is genuinely Expo-managed and android/ is absent',
+          'Hand the resulting Android project to the official React Native/Expo native build flow',
+          'Run the Android Gradle build',
+          'Locate, validate, hash, install, and runtime-test the generated APK',
+        ],
+        outputArtifact: 'app-debug.apk',
+      };
     default:
       return { strategyName: 'unknown', buildSteps: [], outputArtifact: '' };
   }
