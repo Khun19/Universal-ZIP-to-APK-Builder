@@ -18,6 +18,9 @@ on:
       - "docs/M3-FLUTTER-TERMUX-RUNTIME.md"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   regression:
     runs-on: ubuntu-latest
