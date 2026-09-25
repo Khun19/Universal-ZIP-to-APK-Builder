@@ -326,6 +326,7 @@ function isFlutterAndroidProjectCompatible(androidProjectPath: string): boolean 
 async function regenerateFlutterAndroidPlatform(
   projectPath: string,
   logs: string[],
+  flutterExecutor: FlutterExecutor,
 ): Promise<void> {
   const existingAndroidPath = path.join(projectPath, 'android');
   const parentDir = path.dirname(projectPath);
@@ -338,9 +339,7 @@ async function regenerateFlutterAndroidPlatform(
 
   fs.rmSync(scaffoldPath, { recursive: true, force: true });
   fs.mkdirSync(backupRoot, { recursive: true });
-  if (fs.existsSync(backupPath)) {
-    fs.rmSync(backupPath, { recursive: true, force: true });
-  }
+  if (fs.existsSync(backupPath)) fs.rmSync(backupPath, { recursive: true, force: true });
 
   if (fs.existsSync(existingAndroidPath)) {
     fs.renameSync(existingAndroidPath, backupPath);
@@ -350,21 +349,19 @@ async function regenerateFlutterAndroidPlatform(
   try {
     logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
     await execAsync(
-      'flutter create -t app --project-name builder_android_scaffold --platforms=android "' + scaffoldPath + '"',
+      flutterCommand(
+        flutterExecutor,
+        'create -t app --project-name builder_android_scaffold --platforms=android ' + scaffoldPath,
+      ),
       { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
     );
 
     const generatedAndroidPath = path.join(scaffoldPath, 'android');
     if (!fs.existsSync(path.join(generatedAndroidPath, 'app'))) {
-      throw new Error(
-        'Flutter generated an Android scaffold without an android/app module.',
-      );
+      throw new Error('Flutter generated an Android scaffold without an android/app module.');
     }
 
-    fs.cpSync(generatedAndroidPath, existingAndroidPath, {
-      recursive: true,
-      force: true,
-    });
+    fs.cpSync(generatedAndroidPath, existingAndroidPath, { recursive: true, force: true });
     logs.push('Replaced unsupported android/ with the Flutter SDK-generated Android platform.');
   } catch (error) {
     fs.rmSync(existingAndroidPath, { recursive: true, force: true });
@@ -410,40 +407,72 @@ interface FlutterExecutor {
   displayCommand: string;
 }
 
-/**
- * Resolve a Flutter executable that can actually run in the current Termux
- * environment. A Flutter checkout can exist on the Termux filesystem while
- * its bundled Dart ELF cannot execute there. In that case use the working
- * Ubuntu PRoot Flutter SDK instead of repeatedly invoking the broken host
- * SDK.
- */
+async function resolveNativeFlutterPath(projectPath: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execAsync('command -v flutter', {
+      cwd: projectPath,
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+    });
+    const resolved = String(stdout).trim();
+    return resolved ? fs.realpathSync(resolved) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function flutterRootFromExecutable(flutterExecutable: string): string {
+  return path.dirname(path.dirname(flutterExecutable));
+}
+
+function flutterDartPath(flutterExecutable: string): string {
+  return path.join(flutterRootFromExecutable(flutterExecutable), 'bin', 'cache', 'dart-sdk', 'bin', 'dart');
+}
+
+export async function isFlutterDartRuntimeUsable(dartPath: string): Promise<boolean> {
+  try {
+    await execAsync('timeout 12s ' + shellQuote(dartPath) + ' --version', {
+      timeout: 15_000,
+      maxBuffer: 128 * 1024,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecutor> {
   const prootDistro = process.env.FLUTTER_PROOT_DISTRO || 'ubuntu';
   const prootFlutter = process.env.FLUTTER_PROOT_PATH || '/opt/flutter/bin/flutter';
+  const nativeFlutter = await resolveNativeFlutterPath(projectPath);
 
-  try {
-    await execAsync('command -v flutter', { cwd: projectPath, timeout: 5_000, maxBuffer: 64 * 1024 });
-    const dartPath = path.join(process.env.HOME || '', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart');
+  if (nativeFlutter) {
+    const dartPath = flutterDartPath(nativeFlutter);
 
-    // Termux Flutter commonly leaves a script on PATH even when the bundled
-    // Dart ELF is not executable. Prefer the known-good Ubuntu PRoot SDK when
-    // that broken-Dart signature is present.
-    if (dartPath && fs.existsSync(dartPath)) {
-      try {
-        await execAsync('timeout 12s flutter --version', {
-          cwd: projectPath,
-          timeout: 15_000,
-          maxBuffer: 128 * 1024,
-        });
-        return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
-      } catch {
-        // Fall through to the Ubuntu PRoot Flutter SDK.
+    if (fs.existsSync(dartPath)) {
+      if (await isFlutterDartRuntimeUsable(dartPath)) {
+        return {
+          mode: 'native',
+          commandPrefix: shellQuote(nativeFlutter),
+          displayCommand: nativeFlutter,
+        };
       }
     } else {
-      return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
+      try {
+        await execAsync(shellQuote(nativeFlutter) + ' --version', {
+          cwd: projectPath,
+          timeout: 20_000,
+          maxBuffer: 128 * 1024,
+        });
+        return {
+          mode: 'native',
+          commandPrefix: shellQuote(nativeFlutter),
+          displayCommand: nativeFlutter,
+        };
+      } catch {
+        // Fall through to the PRoot SDK.
+      }
     }
-  } catch {
-    // No native Flutter command; try the configured Ubuntu PRoot SDK.
   }
 
   try {
@@ -452,15 +481,21 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
       { cwd: projectPath, timeout: 30_000, maxBuffer: 128 * 1024 },
     );
   } catch (error) {
+    const nativeDetail = nativeFlutter
+      ? ' Native Flutter was found at ' + nativeFlutter + ' but its bundled Dart runtime is not executable.'
+      : ' No native Flutter executable was found.';
     throw new Error(
-      'No runnable Flutter SDK found. Native Termux Flutter is unavailable/broken and ' +
-      prootDistro + ':' + prootFlutter + ' could not be executed: ' + commandErrorText(error),
+      'No runnable Flutter SDK found.' +
+      nativeDetail +
+      ' Ubuntu PRoot fallback ' + prootDistro + ':' + prootFlutter +
+      ' also failed: ' + commandErrorText(error),
     );
   }
 
+  const androidHome = process.env.FLUTTER_PROOT_ANDROID_HOME || '/opt/android-sdk';
   const inner = [
-    'export ANDROID_HOME=/opt/android-sdk',
-    'export ANDROID_SDK_ROOT=/opt/android-sdk',
+    'export ANDROID_HOME=' + shellQuote(androidHome),
+    'export ANDROID_SDK_ROOT=' + shellQuote(androidHome),
     'if command -v java >/dev/null 2>&1; then export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"; fi',
     'cd ' + shellQuote(projectPath),
     shellQuote(prootFlutter) + ' "$@"',
@@ -561,6 +596,20 @@ export async function executeBuildJob(
     // Android project configuration, plugin resolution, and the Gradle invocation.
     // Do not route Flutter through the generic Gradle strategy.
     if (strategy.strategyName === 'flutter') {
+      let flutterExecutor: FlutterExecutor;
+      try {
+        flutterExecutor = await resolveFlutterExecutor(projectPath);
+        logs.push('Resolved Flutter executor: ' + flutterExecutor.displayCommand);
+        if (flutterExecutor.mode === 'ubuntu-proot') {
+          logs.push('Native Termux Flutter Dart runtime is unusable; using Ubuntu PRoot Flutter SDK.');
+          logs.push('Flutter PRoot Android SDK: ' + (process.env.FLUTTER_PROOT_ANDROID_HOME || '/opt/android-sdk'));
+        }
+      } catch (resolveErr: any) {
+        const error = resolveErr.message || 'Flutter SDK could not be resolved.';
+        logs.push('Error: ' + error);
+        return { success: false, logs, error };
+      }
+
       const flutterAndroidPath = path.join(projectPath, 'android');
 
       try {
@@ -568,12 +617,12 @@ export async function executeBuildJob(
           logs.push(
             'Flutter Android platform missing; generating it with flutter create --platforms=android.',
           );
-          await regenerateFlutterAndroidPlatform(projectPath, logs);
+          await regenerateFlutterAndroidPlatform(projectPath, logs, flutterExecutor);
         } else if (!isFlutterAndroidProjectCompatible(flutterAndroidPath)) {
           logs.push(
             'Existing Flutter Android platform is unsupported by the installed Flutter SDK.',
           );
-          await regenerateFlutterAndroidPlatform(projectPath, logs);
+          await regenerateFlutterAndroidPlatform(projectPath, logs, flutterExecutor);
         } else {
           logs.push('Existing Flutter Android platform is Flutter-compatible.');
         }
@@ -605,21 +654,6 @@ export async function executeBuildJob(
 
       const flutterEnvironment = getGradleEnvironment(flutterAndroidProjectPath);
       logs.push(`Flutter Android build environment: JAVA_HOME=${flutterEnvironment.JAVA_HOME || 'default'}`);
-
-      let flutterExecutor: FlutterExecutor;
-      try {
-        flutterExecutor = await resolveFlutterExecutor(projectPath);
-      } catch (resolveErr: any) {
-        const error = resolveErr.message || 'Flutter SDK could not be resolved.';
-        logs.push(`Error: ${error}`);
-        return { success: false, logs, error };
-      }
-
-      if (flutterExecutor.mode === 'ubuntu-proot') {
-        logs.push('Native Termux Flutter is not runnable; using Ubuntu PRoot Flutter SDK.');
-        logs.push('Flutter PRoot SDK: /opt/flutter/bin/flutter');
-        logs.push('Flutter Android SDK: /opt/android-sdk');
-      }
 
       const flutterPubGetCommand = flutterCommand(flutterExecutor, 'pub get');
       const flutterBuildCommand = flutterCommand(flutterExecutor, 'build apk --debug');
