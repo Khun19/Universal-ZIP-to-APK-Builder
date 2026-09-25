@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,6 +10,7 @@ import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
 
 export interface BuildJobResult {
@@ -351,7 +352,7 @@ async function regenerateFlutterAndroidPlatform(
     await execAsync(
       flutterCommand(
         flutterExecutor,
-        'create -t app --project-name builder_android_scaffold --platforms=android ' + scaffoldPath,
+        'create -t app --project-name builder_android_scaffold --platforms=android ' + shellQuote(scaffoldPath),
       ),
       { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
     );
@@ -431,8 +432,8 @@ function flutterDartPath(flutterExecutable: string): string {
 
 export async function isFlutterDartRuntimeUsable(dartPath: string): Promise<boolean> {
   try {
-    await execAsync('timeout 12s ' + shellQuote(dartPath) + ' --version', {
-      timeout: 15_000,
+    await execFileAsync(dartPath, ['--version'], {
+      timeout: 12_000,
       maxBuffer: 128 * 1024,
     });
     return true;
