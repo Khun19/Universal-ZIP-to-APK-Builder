@@ -6,8 +6,13 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
 plugins { id 'com.facebook.react.settings' }
-extensions.configure(com.facebook.react.ReactSettingsExtension) { ex -> ex.autolinkLibrariesFromCommand() }
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand()
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
@@ -15,5 +20,22 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
+
 rootProject.name = 'M6ReactNativeFixture'
 include ':app'
+
+// Official React Native build-from-source integration.
+// This lets the app consume ReactAndroid and Hermes from the checked-out
+// react-native package instead of resolving published Maven artifacts.
+includeBuild('../node_modules/react-native') {
+    dependencySubstitution {
+        substitute(module('com.facebook.react:react-android'))
+            .using(project(':packages:react-native:ReactAndroid'))
+        substitute(module('com.facebook.react:react-native'))
+            .using(project(':packages:react-native:ReactAndroid'))
+        substitute(module('com.facebook.react:hermes-android'))
+            .using(project(':packages:react-native:ReactAndroid:hermes-engine'))
+        substitute(module('com.facebook.react:hermes-engine'))
+            .using(project(':packages:react-native:ReactAndroid:hermes-engine'))
+    }
+}
