@@ -5,6 +5,7 @@ import {
   ensureReferencedDebugKeystore,
   executeBuildJob,
   isGradleWrapperBootstrapFailure,
+  isFlutterDartRuntimeUsable,
 } from '../lib/worker.ts';
 import { BuildStrategy } from '../lib/strategy.ts';
 import * as fs from 'fs';
@@ -127,6 +128,26 @@ test('Fails gracefully on unknown strategy', async () => {
   }
 });
 
+
+test('Detects an unusable bundled Dart runtime before invoking Flutter', async () => {
+  const projectPath = path.resolve('./.tmp-flutter-dart-probe');
+  fs.mkdirSync(projectPath, { recursive: true });
+
+  const brokenDart = path.join(projectPath, 'broken-dart');
+  const workingDart = path.join(projectPath, 'working-dart');
+
+  fs.writeFileSync(brokenDart, '#!/bin/sh\necho "cannot execute: required file not found" >&2\nexit 127\n');
+  fs.writeFileSync(workingDart, '#!/bin/sh\necho "Dart SDK version: test"\nexit 0\n');
+  fs.chmodSync(brokenDart, 0o755);
+  fs.chmodSync(workingDart, 0o755);
+
+  try {
+    assert.strictEqual(await isFlutterDartRuntimeUsable(brokenDart), false);
+    assert.strictEqual(await isFlutterDartRuntimeUsable(workingDart), true);
+  } finally {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});
 
 test('Builds a runnable Flutter command through Ubuntu PRoot when native Flutter is broken', async () => {
   const projectPath = path.resolve('./.tmp-flutter-command-test');
