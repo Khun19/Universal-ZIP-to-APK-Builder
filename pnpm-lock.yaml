@@ -738,6 +738,9 @@ importers:
 
   tests/fixtures/react-native-project:
     dependencies:
+      '@babel/runtime':
+        specifier: ^7.26.10
+        version: 7.29.7
       '@react-native/gradle-plugin':
         specifier: 0.76.9
         version: 0.76.9
@@ -754,6 +757,12 @@ importers:
       '@react-native-community/cli':
         specifier: 15.0.1
         version: 15.0.1(supports-color@8.1.1)(typescript@5.9.3)
+      '@react-native-community/cli-platform-android':
+        specifier: 15.0.1
+        version: 15.0.1
+      '@react-native-community/cli-platform-ios':
+        specifier: 15.0.1
+        version: 15.0.1
 
   worker:
     dependencies:
