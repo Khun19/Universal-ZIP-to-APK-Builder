@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,6 +10,7 @@ import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
 
 export interface BuildJobResult {
@@ -287,6 +288,90 @@ function detectProjectJavaVersion(androidProjectPath: string): 17 | 21 {
   return highestRequired;
 }
 
+function isFlutterAndroidProjectCompatible(androidProjectPath: string): boolean {
+  const settingsCandidates = [
+    path.join(androidProjectPath, 'settings.gradle'),
+    path.join(androidProjectPath, 'settings.gradle.kts'),
+  ];
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+
+  const settings = settingsCandidates.find((filePath) => fs.existsSync(filePath));
+  const appBuild = appBuildCandidates.find((filePath) => fs.existsSync(filePath));
+  if (!settings || !appBuild) return false;
+
+  let settingsText = '';
+  let appBuildText = '';
+  try {
+    settingsText = fs.readFileSync(settings, 'utf8');
+    appBuildText = fs.readFileSync(appBuild, 'utf8');
+  } catch {
+    return false;
+  }
+
+  return /dev\.flutter\.flutter-plugin-loader/.test(settingsText) &&
+    /dev\.flutter\.flutter-gradle-plugin/.test(appBuildText);
+}
+
+/**
+ * Regenerate only android/ using a temporary Flutter scaffold.
+ * The original pubspec.yaml, lib/, assets and other project files are not
+ * passed through flutter create and therefore cannot be overwritten by it.
+ */
+async function regenerateFlutterAndroidPlatform(
+  projectPath: string,
+  logs: string[],
+  flutterExecutor: FlutterExecutor,
+): Promise<void> {
+  const existingAndroidPath = path.join(projectPath, 'android');
+  const parentDir = path.dirname(projectPath);
+  const scaffoldPath = path.join(
+    parentDir,
+    '.flutter-android-scaffold-' + path.basename(projectPath),
+  );
+  const backupRoot = path.join(projectPath, '.builder');
+  const backupPath = path.join(backupRoot, 'flutter-android-backup');
+
+  fs.rmSync(scaffoldPath, { recursive: true, force: true });
+  fs.mkdirSync(backupRoot, { recursive: true });
+  if (fs.existsSync(backupPath)) fs.rmSync(backupPath, { recursive: true, force: true });
+
+  if (fs.existsSync(existingAndroidPath)) {
+    fs.renameSync(existingAndroidPath, backupPath);
+    logs.push('Backed up unsupported Flutter Android platform to ' + backupPath + '.');
+  }
+
+  try {
+    logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
+    await execAsync(
+      flutterCommand(
+        flutterExecutor,
+        'create -t app --project-name builder_android_scaffold --platforms=android ' + shellQuote(scaffoldPath),
+      ),
+      { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
+    );
+
+    const generatedAndroidPath = path.join(scaffoldPath, 'android');
+    if (!fs.existsSync(path.join(generatedAndroidPath, 'app'))) {
+      throw new Error('Flutter generated an Android scaffold without an android/app module.');
+    }
+
+    fs.cpSync(generatedAndroidPath, existingAndroidPath, { recursive: true, force: true });
+    logs.push('Replaced unsupported android/ with the Flutter SDK-generated Android platform.');
+  } catch (error) {
+    fs.rmSync(existingAndroidPath, { recursive: true, force: true });
+    if (fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, existingAndroidPath);
+      logs.push('Restored the original android/ platform after regeneration failure.');
+    }
+    throw error;
+  } finally {
+    fs.rmSync(scaffoldPath, { recursive: true, force: true });
+  }
+}
+
 function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   const requiredVersion = detectProjectJavaVersion(androidProjectPath);
 
@@ -309,6 +394,123 @@ export function isGradleJavaCompatibilityFailure(error: unknown): boolean {
   const text = commandErrorText(error);
   return /Unsupported class file major version|requires Java .* to run|Could not determine java version/i.test(text);
 }
+function shellQuote(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+interface FlutterExecutor {
+  mode: 'native' | 'ubuntu-proot';
+  commandPrefix: string;
+  displayCommand: string;
+}
+
+async function resolveNativeFlutterPath(projectPath: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execAsync('command -v flutter', {
+      cwd: projectPath,
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+    });
+    const resolved = String(stdout).trim();
+    return resolved ? fs.realpathSync(resolved) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function flutterRootFromExecutable(flutterExecutable: string): string {
+  return path.dirname(path.dirname(flutterExecutable));
+}
+
+function flutterDartPath(flutterExecutable: string): string {
+  return path.join(flutterRootFromExecutable(flutterExecutable), 'bin', 'cache', 'dart-sdk', 'bin', 'dart');
+}
+
+export async function isFlutterDartRuntimeUsable(dartPath: string): Promise<boolean> {
+  try {
+    await execFileAsync(dartPath, ['--version'], {
+      timeout: 12_000,
+      maxBuffer: 128 * 1024,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecutor> {
+  const prootDistro = process.env.FLUTTER_PROOT_DISTRO || 'ubuntu';
+  const prootFlutter = process.env.FLUTTER_PROOT_PATH || '/opt/flutter/bin/flutter';
+  const nativeFlutter = await resolveNativeFlutterPath(projectPath);
+
+  if (nativeFlutter) {
+    const dartPath = flutterDartPath(nativeFlutter);
+
+    if (fs.existsSync(dartPath)) {
+      if (await isFlutterDartRuntimeUsable(dartPath)) {
+        return {
+          mode: 'native',
+          commandPrefix: shellQuote(nativeFlutter),
+          displayCommand: nativeFlutter,
+        };
+      }
+    } else {
+      try {
+        await execAsync(shellQuote(nativeFlutter) + ' --version', {
+          cwd: projectPath,
+          timeout: 20_000,
+          maxBuffer: 128 * 1024,
+        });
+        return {
+          mode: 'native',
+          commandPrefix: shellQuote(nativeFlutter),
+          displayCommand: nativeFlutter,
+        };
+      } catch {
+        // Fall through to the PRoot SDK.
+      }
+    }
+  }
+
+  try {
+    await execAsync(
+      'proot-distro login ' + shellQuote(prootDistro) + ' -- ' + shellQuote(prootFlutter) + ' --version',
+      { cwd: projectPath, timeout: 30_000, maxBuffer: 128 * 1024 },
+    );
+  } catch (error) {
+    const nativeDetail = nativeFlutter
+      ? ' Native Flutter was found at ' + nativeFlutter + ' but its bundled Dart runtime is not executable.'
+      : ' No native Flutter executable was found.';
+    throw new Error(
+      'No runnable Flutter SDK found.' +
+      nativeDetail +
+      ' Ubuntu PRoot fallback ' + prootDistro + ':' + prootFlutter +
+      ' also failed: ' + commandErrorText(error),
+    );
+  }
+
+  const androidHome = process.env.FLUTTER_PROOT_ANDROID_HOME || '/opt/android-sdk';
+  const inner = [
+    'export ANDROID_HOME=' + shellQuote(androidHome),
+    'export ANDROID_SDK_ROOT=' + shellQuote(androidHome),
+    'if command -v java >/dev/null 2>&1; then export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"; fi',
+    'cd ' + shellQuote(projectPath),
+    shellQuote(prootFlutter) + ' "$@"',
+  ].join('; ');
+
+  return {
+    mode: 'ubuntu-proot',
+    commandPrefix: 'proot-distro login ' + shellQuote(prootDistro) + ' -- sh -lc ' + shellQuote(inner) + ' --',
+    displayCommand: 'proot-distro login ' + prootDistro + ' -- ' + prootFlutter,
+  };
+}
+
+function flutterCommand(executor: FlutterExecutor, command: string): string {
+  if (executor.mode === 'native') return executor.commandPrefix + ' ' + command;
+  return executor.commandPrefix + ' ' + command.split(' ').map(shellQuote).join(' ');
+}
+
+
 export async function executeBuildJob(
   projectPath: string,
   strategy: BuildStrategy,
@@ -386,6 +588,127 @@ export async function executeBuildJob(
         logs.push(`Error: ${error}`);
         return { success: false, logs, error };
       }
+    }
+
+    if (strategy.strategyName === 'flutter') {
+      let flutterExecutor: FlutterExecutor;
+      try {
+        flutterExecutor = await resolveFlutterExecutor(projectPath);
+        logs.push('Resolved Flutter executor: ' + flutterExecutor.displayCommand);
+        if (flutterExecutor.mode === 'ubuntu-proot') {
+          logs.push('Native Termux Flutter Dart runtime is unusable; using Ubuntu PRoot Flutter SDK.');
+          logs.push('Flutter PRoot Android SDK: ' + (process.env.FLUTTER_PROOT_ANDROID_HOME || '/opt/android-sdk'));
+        }
+      } catch (resolveErr: any) {
+        const error = resolveErr.message || 'Flutter SDK could not be resolved.';
+        logs.push('Error: ' + error);
+        return { success: false, logs, error };
+      }
+
+      const flutterAndroidPath = path.join(projectPath, 'android');
+
+      try {
+        if (!fs.existsSync(flutterAndroidPath)) {
+          logs.push(
+            'Flutter Android platform missing; generating it with flutter create --platforms=android.',
+          );
+          await regenerateFlutterAndroidPlatform(projectPath, logs, flutterExecutor);
+        } else if (!isFlutterAndroidProjectCompatible(flutterAndroidPath)) {
+          logs.push(
+            'Existing Flutter Android platform is unsupported by the installed Flutter SDK.',
+          );
+          await regenerateFlutterAndroidPlatform(projectPath, logs, flutterExecutor);
+        } else {
+          logs.push('Existing Flutter Android platform is Flutter-compatible.');
+        }
+      } catch (flutterCreateErr: any) {
+        const error = 'Flutter Android platform generation/recovery failed: ' + flutterCreateErr.message;
+        logs.push('Error: ' + error);
+        return { success: false, logs, error };
+      }
+
+      if (!fs.existsSync(path.join(projectPath, 'android', 'app'))) {
+        const error = 'Flutter Android platform is not available after compatibility recovery: android/app is missing.';
+        logs.push('Error: ' + error);
+        return { success: false, logs, error };
+      }
+      const flutterAndroidProjectPath = path.join(projectPath, 'android');
+      const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+      const localPropertiesPath = path.join(flutterAndroidProjectPath, 'local.properties');
+      const flutterAndroidSdk =
+        flutterExecutor.mode === 'ubuntu-proot'
+          ? (process.env.FLUTTER_PROOT_ANDROID_HOME || '/opt/android-sdk')
+          : sdkPath;
+
+      if (flutterAndroidSdk) {
+        fs.writeFileSync(localPropertiesPath, `sdk.dir=${flutterAndroidSdk}\n`);
+        logs.push(
+          `Generated local.properties with ${flutterExecutor.mode === 'ubuntu-proot' ? 'PRoot guest' : 'native Termux'} Android SDK: ${flutterAndroidSdk}.`,
+        );
+      }
+
+      if (flutterExecutor.mode === 'ubuntu-proot') {
+        logs.push('Using the Ubuntu PRoot Android toolchain; leaving AAPT2 resolution to the guest SDK.');
+      } else if (ensureAapt2Override(flutterAndroidProjectPath)) {
+        logs.push(
+          `Using AAPT2 override: ${process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2'}`,
+        );
+      }
+
+      const flutterEnvironment = getGradleEnvironment(flutterAndroidProjectPath);
+      logs.push(`Flutter Android build environment: JAVA_HOME=${flutterEnvironment.JAVA_HOME || 'default'}`);
+
+      const flutterPubGetCommand = flutterCommand(flutterExecutor, 'pub get');
+      const flutterBuildCommand = flutterCommand(flutterExecutor, 'build apk --debug');
+      logs.push(`Executing Flutter command: ${flutterExecutor.displayCommand} pub get && ${flutterExecutor.displayCommand} build apk --debug`);
+
+      try {
+        const { stdout, stderr } = await execAsync(flutterPubGetCommand + ' && ' + flutterBuildCommand, {
+          cwd: projectPath,
+          timeout: BUILD_TIMEOUT_MS,
+          env: flutterEnvironment,
+        });
+        if (stdout) logs.push(`[Flutter Output]: ${stdout.slice(-4000)}`);
+        if (stderr) logs.push(`[Flutter Stderr]: ${stderr.slice(-2000)}`);
+      } catch (flutterErr: any) {
+        const stdout = flutterErr.stdout ? String(flutterErr.stdout).slice(-4000) : '';
+        const stderr = flutterErr.stderr ? String(flutterErr.stderr).slice(-4000) : '';
+        logs.push(`[Flutter Failure]: ${flutterErr.message}`);
+        if (stdout) logs.push(`[Flutter Output]: ${stdout}`);
+        if (stderr) logs.push(`[Flutter Stderr]: ${stderr}`);
+        return {
+          success: false,
+          logs,
+          error: `Flutter APK build failed: ${flutterErr.message}`,
+        };
+      }
+
+      const flutterApks = findApks(path.join(projectPath, 'build', 'app', 'outputs', 'flutter-apk'));
+      if (!flutterApks.length) {
+        const error = 'Flutter completed without errors but no APK was found in build/app/outputs/flutter-apk/.';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      const apkPath = flutterApks.find(p => p.endsWith('app-debug.apk')) ?? flutterApks.find(p => p.includes('debug')) ?? flutterApks[0];
+
+      let validated: { size: number; sha256: string };
+      try {
+        validated = await assertRealApk(apkPath);
+      } catch (validationErr: any) {
+        logs.push(`Error: ${validationErr.message}`);
+        return { success: false, logs, error: validationErr.message };
+      }
+
+      logs.push(
+        `Build finished. Verified real Flutter APK at ${apkPath} (${validated.size} bytes, SHA-256 ${validated.sha256}).`,
+      );
+
+      return {
+        success: true,
+        logs,
+        outputPath: apkPath,
+      };
     }
 
     const androidProjectPath =
