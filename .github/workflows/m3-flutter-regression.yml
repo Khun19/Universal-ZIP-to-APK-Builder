@@ -1,0 +1,46 @@
+name: M3 Flutter Regression
+
+on:
+  push:
+    branches:
+      - fix/m3-flutter-termux-runtime-main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "lib/analyzer.ts"
+      - "lib/analyzer/**"
+      - "lib/shared/**"
+      - "lib/strategy.ts"
+      - "lib/worker.ts"
+      - "lib/build-engine/**"
+      - "tests/**"
+      - "docs/M3-FLUTTER-TERMUX-RUNTIME.md"
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.23.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit/regression tests
+        run: pnpm test
