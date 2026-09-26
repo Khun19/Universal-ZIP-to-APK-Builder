@@ -3,8 +3,8 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ProjectAnalysis } from "@workspace/shared";
-import { resolveAndroidToolchain } from "./toolchain.ts";
-import { createIsolatedWorkspace, cleanupIsolatedWorkspace } from "./workspace.ts";
+import { resolveAndroidToolchain } from "./toolchain";
+import { createIsolatedWorkspace, cleanupIsolatedWorkspace } from "./workspace";
 
 export interface BuildRequest {
   workspace: string;
