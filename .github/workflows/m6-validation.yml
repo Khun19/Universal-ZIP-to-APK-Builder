@@ -71,18 +71,14 @@ jobs:
         run: |
           set -euxo pipefail
           pnpm install --frozen-lockfile --config.node-linker=hoisted
-          test -d "$GITHUB_WORKSPACE/node_modules/@react-native/gradle-plugin"
-          mkdir -p node_modules/@react-native
-          if [ ! -e node_modules/@react-native/gradle-plugin ]; then
-            ln -s "$GITHUB_WORKSPACE/node_modules/@react-native/gradle-plugin" node_modules/@react-native/gradle-plugin
-          fi
-          test -d node_modules/@react-native/gradle-plugin
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
           const rn = require('./node_modules/react-native/package.json');
           const rootNodeModules = path.join(process.env.GITHUB_WORKSPACE, 'node_modules');
-          for (const dep of Object.keys(rn.dependencies || {})) {
+          const deps = new Set(Object.keys(rn.dependencies || {}));
+          deps.add('@react-native/gradle-plugin');
+          for (const dep of deps) {
             const local = path.join('node_modules', dep);
             if (fs.existsSync(local)) continue;
             const target = path.join(rootNodeModules, dep);
@@ -90,7 +86,7 @@ jobs:
               throw new Error('React Native dependency missing from hoisted workspace install: ' + dep);
             }
             fs.mkdirSync(path.dirname(local), { recursive: true });
-            fs.symlinkSync(target, local, 'junction');
+            fs.cpSync(target, local, { recursive: true, dereference: true });
             console.log('Materialized RN dependency:', dep);
           }
           NODE
