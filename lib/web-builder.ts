@@ -27,9 +27,9 @@ const VITE_PWA_PACKAGE = 'vite-plugin-pwa';
 const MINIMUM_RELEASE_AGE_ERROR = 'ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION';
 
 /**
- * Replit-generated package-lock files can contain resolved tarball URLs that
- * point at Replit's private package firewall. Those URLs are not portable to
- * Termux, CI, Docker, or other local environments. Remove only those
+ * Generated package-lock files can contain resolved tarball URLs that
+ * point at an environment-specific private package firewall. Those URLs are not portable to
+ * Termux or other local environments. Remove only those
  * environment-specific `resolved` fields and preserve the lockfile's
  * integrity hashes so npm can resolve the package from the public registry.
  */

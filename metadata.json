@@ -1,6 +1,5 @@
 {
   "name": "Universal ZIP-to-APK Builder",
-  "description": "Developer platform for uploading ZIP archives, inspecting project structure, analyzing strategies, and tracking Android APK builds with topographic console visualization.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "description": "Phone-first local Android Builder for ZIP analysis, official framework flows, real Termux builds, APK validation, and runtime evidence.",
+  "requestFramePermissions": []
 }

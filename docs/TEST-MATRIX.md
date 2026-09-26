@@ -115,8 +115,7 @@ Where practical, validate across:
 |---|---|
 | Local development | Fast engineering feedback |
 | Termux | Phone/local Android build workflow |
-| Docker Android builder | Reproducibility/isolation |
-| GitHub Actions | CI verification |
+| GitHub Actions | Source/unit/regression verification |
 | Real Android device | Runtime truth |
 
 ## Regression Policy
@@ -148,6 +147,14 @@ For each important real test, record at least:
 - SHA-256 when applicable
 - Device/emulator information when applicable
 - Failure logs when failed
+
+## Architecture Gate
+
+- Layer 1 UI does not embed the build toolchain.
+- Layer 2 owns environment installation/detection, including AAPT2.
+- Layer 3 owns build semantics and APK validation.
+- Retired Docker/DB/Redis/API paths are not required for a phone-first PASS.
+- Native frameworks never silently fall back to generic WebView packaging.
 
 ## Current Acceptance Rule
 

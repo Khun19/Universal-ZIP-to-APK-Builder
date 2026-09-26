@@ -1,18 +1,30 @@
-# Local setup
+# Termux setup
 
-1. Install Node 20+, pnpm, Docker, PostgreSQL, and Redis.
-3. Build the Android worker:
+The primary local build environment is Android + Termux.
 
-```bash
-```
-
-4. Install and check the workspace:
+Run:
 
 ```bash
-pnpm install
-pnpm run typecheck
-pnpm --filter @workspace/api-server run dev
-pnpm --filter @workspace/zip-to-apk-builder run dev
+pnpm run setup:termux
 ```
 
-The API currently accepts a multipart `file` field and writes ZIP bytes to the configured local storage directory. For production, replace the local storage implementation with the planned S3-compatible adapter without changing project metadata or build contracts.
+The setup prepares the local toolchain and runs the Environment Doctor. Tool paths are discovered at runtime.
+
+Expected tool families:
+- Node.js + pnpm
+- Java/JDK
+- Gradle
+- Android SDK command-line tools
+- Android platform/build tools
+- AAPT2
+- zipalign
+- apksigner
+- framework-specific native toolchains when required
+
+No Docker, PostgreSQL, Redis, or remote API service is required for the phone-first build path.
+
+Manual diagnostics:
+
+```bash
+bash scripts/environment-doctor.sh
+```

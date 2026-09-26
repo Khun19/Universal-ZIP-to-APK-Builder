@@ -10,6 +10,17 @@ import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
 
 const execAsync = promisify(exec);
+
+function resolveAapt2Path(): string | undefined {
+  if (process.env.AAPT2_PATH) return process.env.AAPT2_PATH;
+  const prefix = process.env.PREFIX;
+  const candidates = [
+    prefix ? path.join(prefix, 'bin', 'aapt2') : undefined,
+    '/usr/bin/aapt2',
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
 const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
 
 export interface BuildJobResult {
@@ -91,10 +102,9 @@ function findAndroidProjectRoot(projectPath: string): string | undefined {
  * projects as the generated WebView template uses.
  */
 export function ensureAapt2Override(androidProjectPath: string): boolean {
-  const configuredAapt2 =
-    process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2';
+  const configuredAapt2 = resolveAapt2Path();
 
-  if (!fs.existsSync(configuredAapt2)) return false;
+  if (!configuredAapt2 || !fs.existsSync(configuredAapt2)) return false;
 
   const propertiesPath = path.join(androidProjectPath, 'gradle.properties');
   const current = fs.existsSync(propertiesPath)
@@ -421,7 +431,7 @@ export async function executeBuildJob(
 
     if (ensureAapt2Override(androidProjectPath)) {
       logs.push(
-        `Using AAPT2 override: ${process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2'}`,
+        `Using AAPT2 override: ${resolveAapt2Path()}`,
       );
     } else {
       logs.push(

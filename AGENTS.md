@@ -101,13 +101,13 @@ Before adding a feature ask:
 - Will another strategy need this?
 - Should this be an interface or reusable library?
 - Can it be configured instead of hard-coded?
-- Will it work in Termux and CI/Docker?
+- Does it preserve the Layer 1/2/3 architecture?
 - Does it introduce global state or security risk?
 - Will it make future testing harder?
 
 Prefer extensibility without premature implementation of every future feature.
 
-Keep clean boundaries between project analysis, build strategy selection, build execution, environment detection, security, APK discovery/validation, artifact management, API, UI, and workers/queues.
+Keep clean boundaries between project analysis, build strategy selection, build execution, environment detection, security, APK discovery/validation, artifact management, Layer 1 UI, Layer 2 Termux, and Layer 3 Core. Retired server/container infrastructure is not part of the main path.
 
 ## Termux Command Guidance
 

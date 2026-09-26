@@ -204,6 +204,8 @@ main() {
   persist_environment
   install_dependencies
   verify_toolchain
+  log "Running Termux Environment Doctor"
+  bash "$SCRIPT_DIR/environment-doctor.sh" || fail "Termux environment doctor reported missing or invalid requirements."
   log "Setup complete. Run: pnpm test"
   log "Then build with: pnpm run start:cli"
   log "ARM64 native package overrides were not changed or force-installed."

@@ -103,23 +103,18 @@ The roadmap covers:
 
 ```text
 .
-├── lib/
+├── app/                    # Layer 1 — native Android Builder UI
+├── bridge/                 # Layer 1 ↔ Layer 2 — Termux bridge
+├── lib/                    # Layer 3 — Builder Core
 │   ├── analyzer/          # project detection and evidence
 │   ├── build-engine/      # shared build execution/orchestration
 │   ├── security/          # ZIP and APK security/integrity
-│   ├── build-queue/       # optional job/queue infrastructure
-│   ├── api-spec/          # API contract
-│   ├── api-zod/           # generated validation
-│   ├── api-client-react/  # generated client/hooks
-│   ├── db/                # persistence layer
 │   └── shared/            # shared types/utilities
 ├── artifacts/
-│   ├── api-server/        # API application
-│   └── zip-to-apk-builder/# React/Vite UI
+│   ├── zip-to-apk-builder/ # UI prototype migrating to Layer 1
+│   └── mockup-sandbox/     # UI/design sandbox
 ├── tests/                 # tests and real compatibility fixtures
 ├── scripts/               # setup/diagnostic tooling
-├── worker/                # secondary worker infrastructure
-├── docker/                # reproducible secondary build environment
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── TEST-MATRIX.md
@@ -140,7 +135,7 @@ Typical prerequisites include:
 - Gradle
 - Node.js/package manager
 - framework-specific native toolchains where required
-- AAPT2 and related Android tools
+- AAPT2, zipalign, apksigner, and related Android tools
 
 Tool paths must be detected from the environment rather than hard-coded.
 
@@ -151,7 +146,7 @@ export ANDROID_HOME="$HOME/android-sdk"
 export ANDROID_SDK_ROOT="$HOME/android-sdk"
 ```
 
-Use the repository's current setup/diagnostic scripts rather than assuming a specific SDK installation.
+Use `pnpm run setup:termux` and `bash scripts/environment-doctor.sh` rather than assuming a specific SDK installation.
 
 ## Development
 
@@ -249,3 +244,7 @@ Do not recreate competing roadmap or architecture documents.
 ## License
 
 MIT. See `LICENSE`.
+
+## Retired architecture
+
+Docker, PostgreSQL, Redis, the server worker/API path, and Replit configuration are legacy/secondary and are not prerequisites for the phone-first Builder.
