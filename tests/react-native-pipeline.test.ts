@@ -79,11 +79,12 @@ test(
 
     const apkPath = result.outputPath as string;
     const stats = fs.statSync(apkPath);
+    const aaptCommand = process.env.AAPT_BIN || 'aapt';
     assert.ok(stats.isFile());
     assert.ok(stats.size > 0);
     assert.match(execFileSync('unzip', ['-Z1', apkPath], { encoding: 'utf8' }), /^AndroidManifest\.xml$/m);
     assert.match(
-      execFileSync('aapt', ['dump', 'badging', apkPath], { encoding: 'utf8' }),
+      execFileSync(aaptCommand, ['dump', 'badging', apkPath], { encoding: 'utf8' }),
       /package: name='com\.builder\.m6reactnative'/,
     );
     const apkEntries = execFileSync('unzip', ['-Z1', apkPath], { encoding: 'utf8' });
