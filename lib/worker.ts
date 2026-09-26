@@ -504,7 +504,9 @@ export function buildFlutterInvocation(
     'if command -v java >/dev/null 2>&1; then export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"; fi',
     'cd -- "$1"',
     'shift',
-    'exec "$1" "$@"',
+    'flutter="$1"',
+    'shift',
+    'exec "$flutter" "$@"',
   ].join('; ');
 
   return {
