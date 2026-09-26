@@ -77,6 +77,23 @@ jobs:
             ln -s "$GITHUB_WORKSPACE/node_modules/@react-native/gradle-plugin" node_modules/@react-native/gradle-plugin
           fi
           test -d node_modules/@react-native/gradle-plugin
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const rn = require('./node_modules/react-native/package.json');
+          const rootNodeModules = path.join(process.env.GITHUB_WORKSPACE, 'node_modules');
+          for (const dep of Object.keys(rn.dependencies || {})) {
+            const local = path.join('node_modules', dep);
+            if (fs.existsSync(local)) continue;
+            const target = path.join(rootNodeModules, dep);
+            if (!fs.existsSync(target)) {
+              throw new Error('React Native dependency missing from hoisted workspace install: ' + dep);
+            }
+            fs.mkdirSync(path.dirname(local), { recursive: true });
+            fs.symlinkSync(target, local, 'junction');
+            console.log('Materialized RN dependency:', dep);
+          }
+          NODE
 
       - name: Verify React Native fixture toolchain
         working-directory: tests/fixtures/react-native-project
