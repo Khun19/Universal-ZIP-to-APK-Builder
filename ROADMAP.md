@@ -37,6 +37,24 @@ Every supported strategy follows the same contract:
 
 Shared infrastructure must remain separate from strategy-specific behavior.
 
+## Repository Architecture Cleanup Gate — Phone-First Three Layers
+
+**Status: IN PROGRESS on `refactor/repository-architecture-cleanup`**
+
+The canonical repository architecture is now:
+
+`Layer 1 Android Builder App → Layer 2 Termux Environment/Bridge → Layer 3 GitHub Builder Core`
+
+Cleanup requirements:
+- keep `lib/`, `tests/`, `docs/`, `ROADMAP.md`, and core setup/diagnostic scripts;
+- remove retired Docker, PostgreSQL, Redis, server-worker/API, and Replit infrastructure from the main tree;
+- keep the existing `artifacts/zip-to-apk-builder` UI as a prototype while preparing migration into Layer 1;
+- establish `app/` and `bridge/` boundaries;
+- make AAPT2/toolchain discovery a Layer 2 responsibility;
+- never reintroduce a generic server/container build path as a prerequisite for phone-first validation.
+
+This cleanup is gated by Termux validation. It does not advance M6. M6 React Native runtime validation remains blocked/active until its own required evidence passes.
+
 ## Approved Architecture Decision — Official Framework Flow Adapters
 
 **Approved: 2026-09-23**
