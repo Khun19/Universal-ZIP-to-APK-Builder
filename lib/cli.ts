@@ -7,7 +7,7 @@ import { listTemplates } from './template-registry';
 import { generateFromTemplate } from './template-generator';
 
 async function main() {
-  const argv = process.argv.slice(2);
+  const argv = process.argv.slice(2).filter((arg, index) => !(index === 0 && arg === '--'));
   if (argv.length === 0) {
     console.error('Usage: pnpm tsx lib/cli.ts <command> [args]');
     console.error('Commands:');

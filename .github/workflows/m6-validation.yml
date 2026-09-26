@@ -1,0 +1,150 @@
+name: M6 Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'lib/**'
+      - 'tests/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - '.github/workflows/m6-validation.yml'
+  push:
+    branches:
+      - feat/m6-react-native-canonical
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
+
+  react-native-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDK packages
+        run: |
+          set -euxo pipefail
+          sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      # React Native's Metro/Gradle toolchain must see the fixture dependencies
+      # as a normal flat node_modules tree. The fixture is a real workspace
+      # package, so install it explicitly from its own directory after the
+      # workspace install; this materializes its direct dependencies where the
+      # official RN/Metro resolution expects them.
+      - name: Install workspace dependencies for React Native build
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Install React Native fixture dependencies
+        working-directory: tests/fixtures/react-native-project
+        run: |
+          set -euxo pipefail
+          pnpm install --frozen-lockfile --config.node-linker=hoisted
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const rn = require('./node_modules/react-native/package.json');
+          const rootNodeModules = path.join(process.env.GITHUB_WORKSPACE, 'node_modules');
+          const deps = new Set(Object.keys(rn.dependencies || {}));
+          deps.add('@react-native/gradle-plugin');
+          for (const dep of deps) {
+            const local = path.join('node_modules', dep);
+            if (fs.existsSync(local)) continue;
+            const target = path.join(rootNodeModules, dep);
+            if (!fs.existsSync(target)) {
+              throw new Error('React Native dependency missing from hoisted workspace install: ' + dep);
+            }
+            fs.mkdirSync(path.dirname(local), { recursive: true });
+            fs.cpSync(target, local, { recursive: true, dereference: true });
+            console.log('Materialized RN dependency:', dep);
+          }
+          NODE
+
+      - name: Verify React Native fixture toolchain
+        working-directory: tests/fixtures/react-native-project
+        run: |
+          set -euxo pipefail
+          node --version
+          java -version
+          test -d node_modules/react-native
+          test -f node_modules/@babel/runtime/helpers/interopRequireDefault.js
+          node -e "const p=require('./node_modules/@babel/runtime/package.json'); if (p.version !== '7.26.10') { throw new Error('Expected @babel/runtime 7.26.10, got ' + p.version); } console.log('@babel/runtime version:', p.version)"
+          node -e "const p=require.resolve('@babel/runtime/helpers/interopRequireDefault'); console.log('@babel/runtime helper:', p)"
+          test -d node_modules/@react-native/gradle-plugin
+          test -f android/settings.gradle
+          test -f android/app/build.gradle
+          test -f android/gradle.properties
+          test "$(grep -c "reactNativeArchitectures=arm64-v8a" android/gradle.properties)" -eq 1
+          test "$(grep -c "newArchEnabled=true" android/gradle.properties)" -eq 1
+          test "$(grep -c "hermesEnabled=true" android/gradle.properties)" -eq 1
+
+      - name: Restore official RN Gradle wrapper
+        working-directory: tests/fixtures/react-native-project
+        run: |
+          set -euxo pipefail
+          rm -rf android/gradle
+          mkdir -p android/gradle/wrapper
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradlew" -o android/gradlew
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradlew.bat" -o android/gradlew.bat
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradle/wrapper/gradle-wrapper.properties" -o android/gradle/wrapper/gradle-wrapper.properties
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradle/wrapper/gradle-wrapper.jar" -o android/gradle/wrapper/gradle-wrapper.jar
+          chmod +x android/gradlew
+          test -x android/gradlew
+          test -s android/gradle/wrapper/gradle-wrapper.jar
+          grep -F "gradle-8.10.2-all.zip" android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Build real React Native APK
+        working-directory: tests/fixtures/react-native-project/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Validate APK artifact
+        working-directory: tests/fixtures/react-native-project
+        run: |
+          set -euxo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -Z1 "$APK" | grep -Fx "AndroidManifest.xml"
+          unzip -Z1 "$APK" | grep -E "lib/arm64-v8a/(libhermes.so|libreactnativejni.so)$"
+          sha256sum "$APK"
+          stat -c "%s bytes" "$APK"
+
+      - name: Validate builder React Native pipeline end-to-end
+        working-directory: .
+        env:
+          AAPT_BIN: ${{ env.ANDROID_HOME }}/build-tools/35.0.0/aapt
+        run: |
+          set -euxo pipefail
+          test -x "$AAPT_BIN"
+          "$AAPT_BIN" version
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts

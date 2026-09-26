@@ -1,6 +1,8 @@
 import { analyzeProjectFiles, validateZipEntry } from './analyzer.ts';
 import { determineBuildStrategy } from './strategy.ts';
 import { executeBuildJob } from './worker.ts';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface BuildRequestPayload {
   projectPath: string;
@@ -35,7 +37,20 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
   }
 
   // 2. Project Analysis & Framework Detection
-  const analysis = analyzeProjectFiles(filePaths);
+  let packageJson: Record<string, unknown> = {};
+  const packageJsonPath = path.join(projectPath, 'package.json');
+  if (fs.existsSync(packageJsonPath)) {
+    try {
+      packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
+    } catch {
+      return {
+        success: false,
+        logs: ['Unable to parse package.json for project analysis'],
+        error: 'Invalid package.json',
+      };
+    }
+  }
+  const analysis = analyzeProjectFiles(filePaths, packageJson);
   if (analysis.projectType === 'Unknown') {
     return {
       success: false,

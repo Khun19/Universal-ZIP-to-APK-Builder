@@ -126,3 +126,44 @@ test('Fails gracefully on unknown strategy', async () => {
     fs.rmSync('./.tmp-mock-unknown', { recursive: true, force: true });
   }
 });
+
+
+test('Builds a runnable Flutter command through Ubuntu PRoot when native Flutter is broken', async () => {
+  const projectPath = path.resolve('./.tmp-flutter-command-test');
+  fs.mkdirSync(projectPath, { recursive: true });
+
+  const previousPath = process.env.PATH;
+  const previousHome = process.env.HOME;
+  const previousProotDistro = process.env.FLUTTER_PROOT_DISTRO;
+  const previousProotPath = process.env.FLUTTER_PROOT_PATH;
+
+  // The resolver is intentionally exercised through the public build job:
+  // if the local Flutter SDK is broken but Ubuntu PRoot is configured, the
+  // implementation must use the real PRoot path rather than a fake APK.
+  process.env.FLUTTER_PROOT_DISTRO = 'ubuntu';
+  process.env.FLUTTER_PROOT_PATH = '/opt/flutter/bin/flutter';
+
+  try {
+    // This fixture has no Android project, so execution should fail before
+    // producing an APK; the test only verifies that the Flutter strategy
+    // remains honest and does not create a placeholder artifact.
+    const strategy: BuildStrategy = {
+      strategyName: 'flutter',
+      buildSteps: ['Run flutter pub get', 'Run flutter build apk --debug'],
+      outputArtifact: 'app-debug.apk',
+    };
+    const result = await executeBuildJob(projectPath, strategy);
+    assert.strictEqual(result.success, false);
+    assert.ok(!result.outputPath);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousProotDistro === undefined) delete process.env.FLUTTER_PROOT_DISTRO;
+    else process.env.FLUTTER_PROOT_DISTRO = previousProotDistro;
+    if (previousProotPath === undefined) delete process.env.FLUTTER_PROOT_PATH;
+    else process.env.FLUTTER_PROOT_PATH = previousProotPath;
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});

@@ -1,11 +1,25 @@
 import { spawn } from "node:child_process";
 import type { ProjectAnalysis } from "@workspace/shared";
 export interface BuildRequest { workspace: string; analysis: ProjectAnalysis; onLog: (line: string) => void; timeoutMs?: number; }
+
 export function commandFor(analysis: ProjectAnalysis): { command: string; args: string[] } {
   if (analysis.framework === "Native Android") return { command: "./gradlew", args: ["assembleDebug", "--no-daemon", "--stacktrace"] };
   if (analysis.framework === "Capacitor") return { command: "sh", args: ["-lc", "npx cap sync android && cd android && ./gradlew assembleDebug --no-daemon --stacktrace"] };
+  if (analysis.framework === "Flutter") {
+    return {
+      command: "sh",
+      args: ["-lc", "if command -v flutter >/dev/null 2>&1 && timeout 12s flutter --version >/dev/null 2>&1; then FLUTTER=flutter; else FLUTTER='proot-distro login ubuntu -- /opt/flutter/bin/flutter'; fi; command -v proot-distro >/dev/null 2>&1 || { command -v flutter >/dev/null 2>&1 || { echo 'Flutter SDK not found' >&2; exit 127; }; }; if [ ! -d android ]; then $FLUTTER create --platforms=android .; fi; $FLUTTER pub get && $FLUTTER build apk --debug"],
+    };
+  }
+  if (analysis.framework === "React Native" || analysis.framework === "Expo") {
+    return {
+      command: "sh",
+      args: ["-lc", "if [ ! -d android ]; then npx expo prebuild --platform android --no-install --non-interactive; fi; cd android && ./gradlew assembleDebug --no-daemon --stacktrace"],
+    };
+  }
   return { command: "sh", args: ["-lc", "npm install --ignore-scripts && npm run build && npx cap add android && npx cap sync android && cd android && ./gradlew assembleDebug --no-daemon --stacktrace"] };
 }
+
 export async function runBuild(request: BuildRequest): Promise<string> {
   const { command, args } = commandFor(request.analysis);
   return new Promise((resolve, reject) => {
