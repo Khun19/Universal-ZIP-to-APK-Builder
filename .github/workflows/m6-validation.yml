@@ -36,11 +36,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
         with:
           version: 11.23.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
@@ -59,9 +59,15 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       # React Native's Metro/Gradle toolchain must see the fixture dependencies
-      # as a normal flat node_modules tree in this pnpm monorepo. Keep the
-      # repository-wide install policy unchanged; hoist only this CI build.
+      # as a normal flat node_modules tree. The fixture is a real workspace
+      # package, so install it explicitly from its own directory after the
+      # workspace install; this materializes its direct dependencies where the
+      # official RN/Metro resolution expects them.
       - name: Install workspace dependencies for React Native build
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Install React Native fixture dependencies
+        working-directory: tests/fixtures/react-native-project
         run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
       - name: Verify React Native fixture toolchain
@@ -73,6 +79,7 @@ jobs:
           test -d node_modules/react-native
           test -f node_modules/@babel/runtime/helpers/interopRequireDefault.js
           node -e "console.log(require.resolve('@babel/runtime/helpers/interopRequireDefault'))"
+          test -f node_modules/@react-native/gradle-plugin/gradlew
           test -f android/settings.gradle
           test -f android/app/build.gradle
           test -f android/gradle.properties
