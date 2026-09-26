@@ -49,13 +49,13 @@ public final class MainApplication extends Application implements ReactApplicati
     @Override
     public void onCreate() {
         super.onCreate();
-        SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
+        try {
+            SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to initialize SoLoader", e);
+        }
         if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
-            try {
-                DefaultNewArchitectureEntryPoint.load();
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to load React Native New Architecture entry point", e);
-            }
+            DefaultNewArchitectureEntryPoint.load();
         }
     }
 }
