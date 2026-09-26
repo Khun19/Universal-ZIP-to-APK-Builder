@@ -58,7 +58,11 @@ jobs:
           sdkmanager --licenses >/dev/null
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - run: pnpm install --frozen-lockfile
+      # React Native's Metro/Gradle toolchain must see the fixture dependencies
+      # as a normal flat node_modules tree in this pnpm monorepo. Keep the
+      # repository-wide install policy unchanged; hoist only this CI build.
+      - name: Install workspace dependencies for React Native build
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
       - name: Verify React Native fixture toolchain
         working-directory: tests/fixtures/react-native-project
@@ -67,6 +71,8 @@ jobs:
           node --version
           java -version
           test -d node_modules/react-native
+          test -f node_modules/@babel/runtime/helpers/interopRequireDefault.js
+          node -e "console.log(require.resolve('@babel/runtime/helpers/interopRequireDefault'))"
           test -f android/settings.gradle
           test -f android/app/build.gradle
           test -f android/gradle.properties
