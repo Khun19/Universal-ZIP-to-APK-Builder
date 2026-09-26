@@ -142,4 +142,4 @@ jobs:
       - name: Validate builder React Native pipeline end-to-end
         env:
           RUN_ANDROID_INTEGRATION: '1'
-        run: pnpm test -- tests/react-native-pipeline.test.ts
+        run: pnpm exec tsx --test tests/react-native-pipeline.test.ts
