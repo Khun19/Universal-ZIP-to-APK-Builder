@@ -140,7 +140,11 @@ jobs:
           stat -c "%s bytes" "$APK"
 
       - name: Validate builder React Native pipeline end-to-end
+        working-directory: .
         env:
-          RUN_ANDROID_INTEGRATION: '1'
-          AAPT_BIN: /usr/local/lib/android/sdk/build-tools/35.0.0/aapt2
-        run: pnpm exec tsx --test tests/react-native-pipeline.test.ts
+          AAPT_BIN: ${{ env.ANDROID_HOME }}/build-tools/35.0.0/aapt
+        run: |
+          set -euxo pipefail
+          test -x "$AAPT_BIN"
+          "$AAPT_BIN" version
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
