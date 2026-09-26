@@ -44,7 +44,11 @@ test(
     assert.strictEqual(packageJson.dependencies?.['react-native'], '0.76.9');
     assert.strictEqual(packageJson.dependencies?.['@react-native/gradle-plugin'], '0.76.9');
     assert.strictEqual(packageJson.dependencies?.expo, undefined);
-    assert.strictEqual(packageJson.devDependencies?.['@react-native-community/cli-platform-android'], undefined);
+    assert.strictEqual(packageJson.dependencies?.['@babel/runtime'], '^7.26.10');
+    assert.strictEqual(packageJson.dependencies?.['@react-native/gradle-plugin'], '0.76.9');
+    assert.strictEqual(packageJson.dependencies?.['@react-native/metro-config'], '0.76.9');
+    assert.strictEqual(packageJson.devDependencies?.['@react-native-community/cli-platform-android'], '15.0.1');
+    assert.strictEqual(packageJson.devDependencies?.['@react-native-community/cli'], '15.0.1');
     const fixtureFiles = [
       'package.json',
       'index.js',
