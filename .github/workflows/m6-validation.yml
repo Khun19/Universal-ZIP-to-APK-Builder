@@ -68,7 +68,7 @@ jobs:
 
       - name: Install React Native fixture dependencies
         working-directory: tests/fixtures/react-native-project
-        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-workspace
 
       - name: Verify React Native fixture toolchain
         working-directory: tests/fixtures/react-native-project
@@ -123,4 +123,3 @@ jobs:
         env:
           RUN_ANDROID_INTEGRATION: '1'
         run: pnpm test -- tests/react-native-pipeline.test.ts
-          pnpm install --frozen-lockfile --config.node-linker=hoistedundefinedpnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-workspace
