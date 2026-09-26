@@ -80,7 +80,7 @@ jobs:
           test -f node_modules/@babel/runtime/helpers/interopRequireDefault.js
           node -e "const p=require('./node_modules/@babel/runtime/package.json'); if (p.version !== '7.26.10') { throw new Error('Expected @babel/runtime 7.26.10, got ' + p.version); } console.log('@babel/runtime version:', p.version)"
           node -e "const p=require.resolve('@babel/runtime/helpers/interopRequireDefault'); console.log('@babel/runtime helper:', p)"
-          test -f node_modules/@react-native/gradle-plugin/gradlew
+          test -f node_modules/@react-native/gradle-plugin/package.json
           test -f android/settings.gradle
           test -f android/app/build.gradle
           test -f android/gradle.properties
@@ -92,11 +92,16 @@ jobs:
         working-directory: tests/fixtures/react-native-project
         run: |
           set -euxo pipefail
-          cp node_modules/@react-native/gradle-plugin/gradlew android/gradlew
           rm -rf android/gradle
-          cp -R node_modules/@react-native/gradle-plugin/gradle android/gradle
+          mkdir -p android/gradle/wrapper
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradlew" -o android/gradlew
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradlew.bat" -o android/gradlew.bat
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradle/wrapper/gradle-wrapper.properties" -o android/gradle/wrapper/gradle-wrapper.properties
+          curl -fsSL "https://raw.githubusercontent.com/react-native-community/template/0.76.9/template/android/gradle/wrapper/gradle-wrapper.jar" -o android/gradle/wrapper/gradle-wrapper.jar
           chmod +x android/gradlew
           test -x android/gradlew
+          test -s android/gradle/wrapper/gradle-wrapper.jar
+          grep -F "gradle-8.10.2-all.zip" android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Build real React Native APK
         working-directory: tests/fixtures/react-native-project/android
