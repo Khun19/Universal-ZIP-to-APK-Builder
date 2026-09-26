@@ -5856,10 +5856,9 @@ snapshots:
 
   '@babel/runtime@7.29.7': {}
 
-  '@babel/runtime@7.26.10': {
+  '@babel/runtime@7.26.10':
     dependencies:
       regenerator-runtime: 0.14.0
-  }
 
   '@babel/template@7.29.7':
     dependencies:
