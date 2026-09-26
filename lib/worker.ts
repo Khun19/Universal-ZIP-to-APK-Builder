@@ -469,7 +469,9 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
       ['login', prootDistro, '--', prootFlutter, '--version'],
       { cwd: projectPath, timeout: 30_000, maxBuffer: 128 * 1024 },
     );
-  } catch (error)
+  } catch (error) {
+    throw new Error(`Configured Flutter PRoot SDK could not be executed: ${commandErrorText(error)}`);
+  }
 
   return {
     mode: 'ubuntu-proot',
