@@ -34,3 +34,68 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm test
+
+  react-native-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify React Native fixture toolchain
+        working-directory: tests/fixtures/react-native-project
+        run: |
+          set -euxo pipefail
+          node --version
+          java -version
+          test -d node_modules/react-native
+          test -f android/settings.gradle
+          test -f android/app/build.gradle
+          test -f android/gradle.properties
+          test "$(grep -c "reactNativeArchitectures=arm64-v8a" android/gradle.properties)" -eq 1
+          test "$(grep -c "newArchEnabled=true" android/gradle.properties)" -eq 1
+          test "$(grep -c "hermesEnabled=true" android/gradle.properties)" -eq 1
+
+      - name: Restore official RN Gradle wrapper
+        working-directory: tests/fixtures/react-native-project
+        run: |
+          set -euxo pipefail
+          cp node_modules/@react-native/gradle-plugin/gradlew android/gradlew
+          rm -rf android/gradle
+          cp -R node_modules/@react-native/gradle-plugin/gradle android/gradle
+          chmod +x android/gradlew
+          test -x android/gradlew
+
+      - name: Build real React Native APK
+        working-directory: tests/fixtures/react-native-project/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Validate APK artifact
+        working-directory: tests/fixtures/react-native-project
+        run: |
+          set -euxo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -Z1 "$APK" | grep -Fx "AndroidManifest.xml"
+          unzip -Z1 "$APK" | grep -E "lib/arm64-v8a/(libhermes.so|libreactnativejni.so)$"
+          sha256sum "$APK"
+          stat -c "%s bytes" "$APK"
