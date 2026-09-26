@@ -68,7 +68,15 @@ jobs:
 
       - name: Install React Native fixture dependencies
         working-directory: tests/fixtures/react-native-project
-        run: pnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-workspace
+        run: |
+          set -euxo pipefail
+          pnpm install --frozen-lockfile --config.node-linker=hoisted
+          test -d "$GITHUB_WORKSPACE/node_modules/@react-native/gradle-plugin"
+          mkdir -p node_modules/@react-native
+          if [ ! -e node_modules/@react-native/gradle-plugin ]; then
+            ln -s "$GITHUB_WORKSPACE/node_modules/@react-native/gradle-plugin" node_modules/@react-native/gradle-plugin
+          fi
+          test -d node_modules/@react-native/gradle-plugin
 
       - name: Verify React Native fixture toolchain
         working-directory: tests/fixtures/react-native-project
