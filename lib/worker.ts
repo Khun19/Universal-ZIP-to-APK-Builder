@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,6 +10,7 @@ import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
 
 export interface BuildJobResult {
@@ -361,11 +362,10 @@ async function regenerateFlutterAndroidPlatform(
 
   try {
     logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
-    await execAsync(
-      flutterCommand(
-        flutterExecutor,
-        'create -t app --project-name builder_android_scaffold --platforms=android ' + scaffoldPath,
-      ),
+    await runFlutterCommand(
+      flutterExecutor,
+      projectPath,
+      ['create', '-t', 'app', '--project-name', 'builder_android_scaffold', '--platforms=android', scaffoldPath],
       { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
     );
 
@@ -419,10 +419,12 @@ function shellQuote(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 
-interface FlutterExecutor {
+export interface FlutterExecutor {
   mode: 'native' | 'ubuntu-proot';
   commandPrefix: string;
   displayCommand: string;
+  prootDistro?: string;
+  prootFlutter?: string;
 }
 
 /**
@@ -483,14 +485,61 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
 
   return {
     mode: 'ubuntu-proot',
-    commandPrefix: 'proot-distro login ' + shellQuote(prootDistro) + ' -- sh -lc ' + shellQuote(inner) + ' --',
+    commandPrefix: 'proot-distro',
     displayCommand: 'proot-distro login ' + prootDistro + ' -- ' + prootFlutter,
+    prootDistro,
+    prootFlutter,
   };
 }
 
-function flutterCommand(executor: FlutterExecutor, command: string): string {
-  if (executor.mode === 'native') return executor.commandPrefix + ' ' + command;
-  return executor.commandPrefix + ' ' + command.split(' ').map(shellQuote).join(' ');
+export interface FlutterInvocation {
+  file: string;
+  args: string[];
+}
+
+export function buildFlutterInvocation(
+  executor: FlutterExecutor,
+  projectPath: string,
+  args: string[],
+): FlutterInvocation {
+  if (executor.mode === 'native') {
+    return { file: executor.commandPrefix, args: [...args] };
+  }
+
+  const script = [
+    'export ANDROID_HOME=/opt/android-sdk',
+    'export ANDROID_SDK_ROOT=/opt/android-sdk',
+    'if command -v java >/dev/null 2>&1; then export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"; fi',
+    'cd -- "$1"',
+    'shift',
+    'exec "$1" "$@"',
+  ].join('; ');
+
+  return {
+    file: executor.commandPrefix,
+    args: [
+      'login',
+      executor.prootDistro || 'ubuntu',
+      '--',
+      'sh',
+      '-lc',
+      script,
+      '--',
+      projectPath,
+      executor.prootFlutter || '/opt/flutter/bin/flutter',
+      ...args,
+    ],
+  };
+}
+
+async function runFlutterCommand(
+  executor: FlutterExecutor,
+  projectPath: string,
+  args: string[],
+  options: Parameters<typeof execFileAsync>[1],
+) {
+  const invocation = buildFlutterInvocation(executor, projectPath, args);
+  return execFileAsync(invocation.file, invocation.args, options);
 }
 
 export async function executeBuildJob(
@@ -712,18 +761,26 @@ export async function executeBuildJob(
       const flutterEnvironment = getGradleEnvironment(flutterAndroidProjectPath);
       logs.push(`Flutter Android build environment: JAVA_HOME=${flutterEnvironment.JAVA_HOME || 'default'}`);
 
-      const flutterPubGetCommand = flutterCommand(flutterExecutor, 'pub get');
-      const flutterBuildCommand = flutterCommand(flutterExecutor, 'build apk --debug');
-      logs.push(`Executing Flutter command: ${flutterExecutor.displayCommand} pub get && ${flutterExecutor.displayCommand} build apk --debug`);
+      logs.push(`Executing Flutter commands: ${flutterExecutor.displayCommand} pub get; ${flutterExecutor.displayCommand} build apk --debug`);
 
       try {
-        const { stdout, stderr } = await execAsync(flutterPubGetCommand + ' && ' + flutterBuildCommand, {
-          cwd: projectPath,
-          timeout: BUILD_TIMEOUT_MS,
-          env: flutterEnvironment,
-        });
-        if (stdout) logs.push(`[Flutter Output]: ${stdout.slice(-4000)}`);
-        if (stderr) logs.push(`[Flutter Stderr]: ${stderr.slice(-2000)}`);
+        const pubGet = await runFlutterCommand(
+          flutterExecutor,
+          projectPath,
+          ['pub', 'get'],
+          { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: flutterEnvironment },
+        );
+        if (pubGet.stdout) logs.push(`[Flutter pub get]: ${pubGet.stdout.slice(-4000)}`);
+        if (pubGet.stderr) logs.push(`[Flutter pub get stderr]: ${pubGet.stderr.slice(-2000)}`);
+
+        const build = await runFlutterCommand(
+          flutterExecutor,
+          projectPath,
+          ['build', 'apk', '--debug'],
+          { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: flutterEnvironment },
+        );
+        if (build.stdout) logs.push(`[Flutter Output]: ${build.stdout.slice(-4000)}`);
+        if (build.stderr) logs.push(`[Flutter Stderr]: ${build.stderr.slice(-2000)}`);
       } catch (flutterErr: any) {
         const stdout = flutterErr.stdout ? String(flutterErr.stdout).slice(-4000) : '';
         const stderr = flutterErr.stderr ? String(flutterErr.stderr).slice(-4000) : '';
