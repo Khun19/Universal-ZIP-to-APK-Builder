@@ -26,6 +26,7 @@ const analysis: ProjectAnalysis = {
 test("M0 resolves Android Build Tools from SDK when tools are not on PATH", () => {
   const previousPath = process.env.PATH;
   const previousSdk = process.env.ANDROID_HOME;
+  const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
   const sdk = fs.mkdtempSync(path.join(os.tmpdir(), "m0-sdk-"));
   const tools = path.join(sdk, "build-tools", "36.0.0");
   fs.mkdirSync(tools, { recursive: true });
@@ -37,6 +38,7 @@ test("M0 resolves Android Build Tools from SDK when tools are not on PATH", () =
   }
 
   process.env.ANDROID_HOME = sdk;
+  delete process.env.ANDROID_SDK_ROOT;
   process.env.PATH = "";
 
   const resolved = resolveAndroidToolchain();
@@ -47,6 +49,8 @@ test("M0 resolves Android Build Tools from SDK when tools are not on PATH", () =
   process.env.PATH = previousPath;
   if (previousSdk === undefined) delete process.env.ANDROID_HOME;
   else process.env.ANDROID_HOME = previousSdk;
+  if (previousSdkRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+  else process.env.ANDROID_SDK_ROOT = previousSdkRoot;
   fs.rmSync(sdk, { recursive: true, force: true });
 });
 
