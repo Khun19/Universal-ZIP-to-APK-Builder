@@ -1,0 +1,36 @@
+name: M6 Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'lib/**'
+      - 'tests/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - '.github/workflows/m6-validation.yml'
+  push:
+    branches:
+      - feat/m6-react-native-canonical
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
