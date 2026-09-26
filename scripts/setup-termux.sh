@@ -119,7 +119,7 @@ install_android_sdk() {
 
   export ANDROID_HOME="$ANDROID_SDK_DIR"
   export ANDROID_SDK_ROOT="$ANDROID_SDK_DIR"
-  export PATH="$ANDROID_SDK_DIR/cmdline-tools/latest/bin:$ANDROID_SDK_DIR/platform-tools:$PATH"
+  export PATH="$ANDROID_SDK_DIR/cmdline-tools/latest/bin:$ANDROID_SDK_DIR/platform-tools:$ANDROID_SDK_DIR/build-tools/${ANDROID_BUILD_TOOLS_VERSION}:$PATH"
 
   log "Accepting Android SDK licenses"
   yes | "$sdkmanager" --sdk_root="$ANDROID_SDK_DIR" --licenses >/dev/null || true
@@ -168,7 +168,7 @@ EOF
 
   export JAVA_HOME="$java_home_path"
   export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
-  export PATH="$ANDROID_SDK_DIR/cmdline-tools/latest/bin:$ANDROID_SDK_DIR/platform-tools:$ANDROID_SDK_DIR/emulator:$PATH"
+  export PATH="$ANDROID_SDK_DIR/cmdline-tools/latest/bin:$ANDROID_SDK_DIR/platform-tools:$ANDROID_SDK_DIR/emulator:$ANDROID_SDK_DIR/build-tools/${ANDROID_BUILD_TOOLS_VERSION}:$PATH"
 }
 
 install_dependencies() {
