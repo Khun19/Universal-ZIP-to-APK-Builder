@@ -142,4 +142,5 @@ jobs:
       - name: Validate builder React Native pipeline end-to-end
         env:
           RUN_ANDROID_INTEGRATION: '1'
+          AAPT_BIN: /usr/local/lib/android/sdk/build-tools/35.0.0/aapt2
         run: pnpm exec tsx --test tests/react-native-pipeline.test.ts
