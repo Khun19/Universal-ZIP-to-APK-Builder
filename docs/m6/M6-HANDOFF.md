@@ -29,9 +29,9 @@ Make the real React Native Android flow work end-to-end through the Builder.
 
 ## Current step
 
-**STEP 1 — Canonical baseline audit**
+**STEP 1 — Canonical baseline audit / security fix**
 
-Status: READY
+Status: FIX IMPLEMENTED — VERIFY TESTS
 
 ## Acceptance gates
 
@@ -61,7 +61,7 @@ These are consolidated in this branch for audit/fix continuity.
 
 ## Known blockers
 
-- CodeQL shell/path construction finding in candidate worker flow.
+- CodeQL shell/path construction vulnerability confirmed and fixed in `lib/worker.ts`; regression test added, validation pending.
 - Real-device launch/runtime not yet accepted.
 
 ## Checkpoint format
