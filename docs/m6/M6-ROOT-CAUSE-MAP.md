@@ -34,11 +34,13 @@ The previous M6 path did not establish successful real-device runtime launch.
 
 ## RC-05 — CodeQL shell/path issue
 
-**Classification:** CONFIRMED SECURITY FINDING
+**Classification:** CONFIRMED VULNERABILITY → FIX IMPLEMENTED; VERIFY
 
-Candidate M6 work has a CodeQL finding around `lib/worker.ts` involving shell command construction with a path.
+`flutterCommand()` concatenated `scaffoldPath` into a shell command string and `exec()` executed that string through a shell. This was a genuine command-injection risk when a path containing shell metacharacters reached the Flutter scaffold command.
 
-**Required fix:** safe argument-based process execution or equivalent validated safe execution. Do not suppress the finding.
+**Fix implemented:** Flutter execution now uses `execFile()` with discrete arguments. The Ubuntu PRoot path passes the project path and Flutter executable as positional shell arguments and the wrapper uses `cd -- "$1"` / `exec "$flutter" "$@"` rather than interpolating the project path into the shell script.
+
+**Required evidence:** targeted regression test, typecheck/test suite, and CodeQL/CI verification.
 
 ## Rules
 
