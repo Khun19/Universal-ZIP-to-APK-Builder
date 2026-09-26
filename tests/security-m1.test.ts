@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { DEFAULT_ZIP_SECURITY_LIMITS, validateZipEntries, validateZipEntryPath } from '../lib/security.ts';
 
 test('blocks traversal, absolute, Windows, and NUL ZIP paths', () => {
-  for (const value of ['../secret', '../../etc/passwd', '/etc/passwd', 'C:/secret', 'C:\\secret', 'src/ok.txt\\0']) {
+  for (const value of ['../secret', '../../etc/passwd', '/etc/passwd', 'C:/secret', 'C:\\secret', 'src/ok.txt\0']) {
     assert.strictEqual(validateZipEntryPath(value), false, value);
   }
   assert.strictEqual(validateZipEntryPath('app/src/MainActivity.java'), true);
