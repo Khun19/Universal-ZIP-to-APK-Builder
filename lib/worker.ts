@@ -475,14 +475,6 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
     );
   }
 
-  const inner = [
-    'export ANDROID_HOME=/opt/android-sdk',
-    'export ANDROID_SDK_ROOT=/opt/android-sdk',
-    'if command -v java >/dev/null 2>&1; then export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"; fi',
-    'cd ' + shellQuote(projectPath),
-    shellQuote(prootFlutter) + ' "$@"',
-  ].join('; ');
-
   return {
     mode: 'ubuntu-proot',
     commandPrefix: 'proot-distro',
