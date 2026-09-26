@@ -40,7 +40,7 @@ The canonical branch starts from PR #14 so those candidate fixes remain availabl
 
 ## Known blocker
 
-CodeQL has reported shell command construction from uncontrolled absolute paths around `lib/worker.ts` in the M6 candidate line. This must be fixed and regression-tested.
+The CodeQL finding in `lib/worker.ts` was confirmed: `flutterCommand()` produced a shell command string containing `scaffoldPath`, and that string was passed to `exec()` (shell execution). The implementation now uses `execFile()` with discrete argv, including a positional-argument PRoot wrapper. Regression coverage was added. Tests/build validation are still required before this security checkpoint can be marked PASS.
 
 ## Runtime blocker
 
