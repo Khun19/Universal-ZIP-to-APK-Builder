@@ -174,7 +174,7 @@ async function assertRealApk(filePath: string): Promise<{ size: number; sha256: 
     throw new Error(`APK artifact at ${filePath} is missing or empty`);
   }
 
-  const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, { maxBuffer: 2 * 1024 * 1024 });
+  const { stdout } = await execFileAsync('unzip', ['-Z1', filePath], { maxBuffer: 2 * 1024 * 1024 });
   if (!stdout.split(/\r?\n/).includes('AndroidManifest.xml')) {
     throw new Error(`File at ${filePath} is not a valid APK (no AndroidManifest.xml found)`);
   }
@@ -415,10 +415,6 @@ export function isGradleJavaCompatibilityFailure(error: unknown): boolean {
   return /Unsupported class file major version|requires Java .* to run|Could not determine java version/i.test(text);
 }
 
-function shellQuote(value: string): string {
-  return "'" + value.replace(/'/g, "'\\''") + "'";
-}
-
 export interface FlutterExecutor {
   mode: 'native' | 'ubuntu-proot';
   commandPrefix: string;
@@ -439,7 +435,6 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
   const prootFlutter = process.env.FLUTTER_PROOT_PATH || '/opt/flutter/bin/flutter';
 
   try {
-    await execAsync('command -v flutter', { cwd: projectPath, timeout: 5_000, maxBuffer: 64 * 1024 });
     const dartPath = path.join(process.env.HOME || '', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart');
 
     // Termux Flutter commonly leaves a script on PATH even when the bundled
@@ -447,7 +442,7 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
     // that broken-Dart signature is present.
     if (dartPath && fs.existsSync(dartPath)) {
       try {
-        await execAsync('timeout 12s flutter --version', {
+        await execFileAsync('flutter', ['--version'], {
           cwd: projectPath,
           timeout: 15_000,
           maxBuffer: 128 * 1024,
@@ -457,6 +452,11 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
         // Fall through to the Ubuntu PRoot Flutter SDK.
       }
     } else {
+      await execFileAsync('flutter', ['--version'], {
+        cwd: projectPath,
+        timeout: 15_000,
+        maxBuffer: 128 * 1024,
+      });
       return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
     }
   } catch {
@@ -464,16 +464,12 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
   }
 
   try {
-    await execAsync(
-      'proot-distro login ' + shellQuote(prootDistro) + ' -- ' + shellQuote(prootFlutter) + ' --version',
+    await execFileAsync(
+      'proot-distro',
+      ['login', prootDistro, '--', prootFlutter, '--version'],
       { cwd: projectPath, timeout: 30_000, maxBuffer: 128 * 1024 },
     );
-  } catch (error) {
-    throw new Error(
-      'No runnable Flutter SDK found. Native Termux Flutter is unavailable/broken and ' +
-      prootDistro + ':' + prootFlutter + ' could not be executed: ' + commandErrorText(error),
-    );
-  }
+  } catch (error)
 
   return {
     mode: 'ubuntu-proot',
