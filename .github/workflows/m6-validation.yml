@@ -80,7 +80,8 @@ jobs:
           test -f node_modules/@babel/runtime/helpers/interopRequireDefault.js
           node -e "const p=require('./node_modules/@babel/runtime/package.json'); if (p.version !== '7.26.10') { throw new Error('Expected @babel/runtime 7.26.10, got ' + p.version); } console.log('@babel/runtime version:', p.version)"
           node -e "const p=require.resolve('@babel/runtime/helpers/interopRequireDefault'); console.log('@babel/runtime helper:', p)"
-          test -f node_modules/@react-native/gradle-plugin/package.json
+          test -d node_modules/@react-native/gradle-plugin
+          node -e "console.log('@react-native/gradle-plugin:', require.resolve('@react-native/gradle-plugin'))"
           test -f android/settings.gradle
           test -f android/app/build.gradle
           test -f android/gradle.properties
