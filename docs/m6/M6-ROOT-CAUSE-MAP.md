@@ -40,6 +40,8 @@ The previous M6 path did not establish successful real-device runtime launch.
 
 **Fix implemented:** Flutter execution now uses `execFile()` with discrete arguments. The Ubuntu PRoot path passes the project path and Flutter executable as positional shell arguments and the wrapper uses `cd -- "$1"` / `exec "$flutter" "$@"` rather than interpolating the project path into the shell script.
 
+**Additional hardening:** APK inspection and Flutter SDK validation were also converted from shell strings to `execFile()` argument execution.
+
 **Required evidence:** targeted regression test, typecheck/test suite, and CodeQL/CI verification.
 
 ## Rules
