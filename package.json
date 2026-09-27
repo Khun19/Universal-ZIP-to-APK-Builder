@@ -18,7 +18,8 @@
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1",
     "adm-zip": "^0.6.1",
-    "formidable": "^3.5.4"
+    "formidable": "^3.5.4",
+    "@workspace/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",

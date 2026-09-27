@@ -159,6 +159,9 @@ importers:
       '@replit/connectors-sdk':
         specifier: ^0.4.1
         version: 0.4.3
+      '@workspace/shared':
+        specifier: workspace:*
+        version: link:lib/shared
       adm-zip:
         specifier: ^0.6.1
         version: 0.6.1

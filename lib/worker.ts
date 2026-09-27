@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { BuildStrategy } from './strategy.ts';
+import type { BuildStrategy } from './strategy.ts';
 import { injectAndroidWrapper } from './template.ts';
 import { buildWebProject, findWebProjectRoot } from './web-builder.ts';
 import { syncCapacitorAndroid } from './capacitor-builder.ts';

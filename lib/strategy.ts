@@ -1,4 +1,4 @@
-import { AnalysisResult } from './analyzer.ts';
+import type { AnalysisResult } from './analyzer.ts';
 
 export interface BuildStrategy {
   strategyName: 'native-gradle' | 'capacitor' | 'web-wrapper' | 'flutter' | 'unknown';

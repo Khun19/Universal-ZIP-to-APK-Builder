@@ -1,7 +1,8 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { processAndExtractFiles } from './extractor.ts';
-import { handleBuildRequest, BuildResponse } from './server.ts';
+import { handleBuildRequest } from './server.ts';
+import type { BuildResponse } from './server.ts';
 
 export interface PipelineInput {
   buildId: string;
