@@ -128,7 +128,7 @@ function validate() {
   } else {
     const start = run("am", ["start", "-W", "-n", activity]);
     const launchText = (start.stdout + "\n" + start.stderr).trim();
-    const launchFailedByOutput = /Error type \\d+|Exception|does not exist|Unable to resolve/i.test(launchText);
+    const launchFailedByOutput = /Error type \d+|Exception|does not exist|Unable to resolve/i.test(launchText);
     if (!start.ok || launchFailedByOutput) {
       checks.RUNTIME = {
         status: "FAIL",
