@@ -12,7 +12,8 @@
     "test:unit": "tsx --test tests/**/*.test.ts",
     "start:cli": "tsx lib/cli.ts",
     "test": "tsx --test tests/**/*.test.ts",
-    "setup:termux": "bash ./scripts/setup-termux.sh"
+    "setup:termux": "bash ./scripts/setup-termux.sh",
+    "validate:framework": "tsx scripts/framework-validation.ts"
   },
   "private": true,
   "dependencies": {
