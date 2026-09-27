@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Framework Validation Evidence",
+  "type": "object",
+  "required": ["framework", "checks"],
+  "properties": {
+    "framework": {"type":"string","minLength":1},
+    "strategy": {"type":"string"},
+    "environment": {"type":"object"},
+    "apk": {"type":"object"},
+    "checks": {
+      "type":"object",
+      "additionalProperties": {
+        "type":"object",
+        "required":["status"],
+        "properties":{
+          "status":{"enum":["PASS","FAIL","NOT_VERIFIED","BLOCKED"]},
+          "detail":{"type":"string"},
+          "evidence":{"type":"array","items":{"type":"string"}}
+        },
+        "additionalProperties":false
+      }
+    },
+    "overall_status":{"enum":["PASS","FAIL","INCOMPLETE"]},
+    "generated_at":{"type":"string"}
+  },
+  "additionalProperties":true
+}
