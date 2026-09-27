@@ -127,13 +127,19 @@ function validate() {
     checks.RUNTIME = { status: "NOT_VERIFIED", detail: "Could not resolve launcher activity" };
   } else {
     const start = run("am", ["start", "-W", "-n", activity]);
-    if (!start.ok) {
-      checks.RUNTIME = { status: "FAIL", detail: start.stderr || start.stdout || "Activity launch failed", evidence: [activity] };
+    const launchText = (start.stdout + "\n" + start.stderr).trim();
+    const launchFailedByOutput = /Error type \\d+|Exception|does not exist|Unable to resolve/i.test(launchText);
+    if (!start.ok || launchFailedByOutput) {
+      checks.RUNTIME = {
+        status: "FAIL",
+        detail: launchText || "Activity launch failed",
+        evidence: [activity]
+      };
     } else {
       const pid = run("pidof", [pkg]);
       checks.RUNTIME = pid.ok
-        ? { status: "PASS", detail: "Activity launch completed and process is observable", evidence: [activity, pid.stdout, start.stdout] }
-        : { status: "PASS", detail: "Activity launch completed; process observation unavailable", evidence: [activity, start.stdout] };
+        ? { status: "PASS", detail: "Activity launch completed and process is observable", evidence: [activity, pid.stdout, launchText] }
+        : { status: "PASS", detail: "Activity launch completed; process observation unavailable", evidence: [activity, launchText] };
     }
   }
 
@@ -147,7 +153,12 @@ function validate() {
   const result = {
     command: "validate",
     framework,
-    strategy: framework === "react-native" ? "official-react-native-android" : undefined,
+    strategy:
+      framework === "react-native"
+        ? "official-react-native-android"
+        : framework === "flutter"
+          ? "official-flutter-android"
+          : undefined,
     environment: {
       os: platform(),
       arch: arch(),
