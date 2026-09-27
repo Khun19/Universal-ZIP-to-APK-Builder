@@ -182,7 +182,7 @@ export async function validateReactNativeApkNativeRuntime(
   const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, {
     maxBuffer: 2 * 1024 * 1024,
   });
-  const entries = stdout.split(/\\r?\\n/).filter(Boolean);
+  const entries = stdout.split(/\r?\n/).filter(Boolean);
   const arm64 = (name: string) => entries.includes(`lib/arm64-v8a/${name}`);
 
   const required = hermesEnabled
