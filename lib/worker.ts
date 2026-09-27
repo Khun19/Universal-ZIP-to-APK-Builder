@@ -427,24 +427,19 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
 
   try {
     await execAsync('command -v flutter', { cwd: projectPath, timeout: 5_000, maxBuffer: 64 * 1024 });
-    const dartPath = path.join(process.env.HOME || '', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart');
-
-    // Termux Flutter commonly leaves a script on PATH even when the bundled
-    // Dart ELF is not executable. Prefer the known-good Ubuntu PRoot SDK when
-    // that broken-Dart signature is present.
-    if (dartPath && fs.existsSync(dartPath)) {
-      try {
-        await execAsync('timeout 12s flutter --version', {
-          cwd: projectPath,
-          timeout: 15_000,
-          maxBuffer: 128 * 1024,
-        });
-        return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
-      } catch {
-        // Fall through to the Ubuntu PRoot Flutter SDK.
-      }
-    } else {
+    // A Flutter launcher on PATH is not enough evidence that its bundled
+    // Dart runtime can execute on Android/Termux. Always probe the actual
+    // Flutter command before selecting native mode; otherwise a broken host
+    // SDK can be selected and the real Ubuntu PRoot fallback is never reached.
+    try {
+      await execAsync('flutter --version', {
+        cwd: projectPath,
+        timeout: 15_000,
+        maxBuffer: 128 * 1024,
+      });
       return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
+    } catch {
+      // Fall through to the Ubuntu PRoot Flutter SDK.
     }
   } catch {
     // No native Flutter command; try the configured Ubuntu PRoot SDK.
