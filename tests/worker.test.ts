@@ -4,11 +4,50 @@ import {
   ensureAapt2Override,
   ensureReferencedDebugKeystore,
   executeBuildJob,
+  validateReactNativeApkNativeRuntime,
   isGradleWrapperBootstrapFailure,
 } from '../lib/worker.ts';
 import { BuildStrategy } from '../lib/strategy.ts';
 import * as fs from 'fs';
 import * as path from 'path';
+
+
+test('Validates the React Native 0.76 merged native runtime layout for Hermes', async () => {
+  const projectPath = path.resolve('./.tmp-rn-apk-runtime-test');
+  fs.mkdirSync(projectPath, { recursive: true });
+
+  const apkPath = path.join(projectPath, 'app-debug.apk');
+  const entries = [
+    'AndroidManifest.xml',
+    'lib/arm64-v8a/libreactnative.so',
+    'lib/arm64-v8a/libjsi.so',
+    'lib/arm64-v8a/libhermes.so',
+  ];
+
+  // Minimal ZIP fixture; the validator only inspects the APK entry table.
+  const zipScript = `printf '%s\\n' ${entries.map((entry) => JSON.stringify(entry)).join(' ')} | zip -q -@`;
+  await new Promise<void>((resolve, reject) => {
+    const child = require('node:child_process').exec(
+      `cd ${JSON.stringify(projectPath)} && mkdir -p lib/arm64-v8a && touch lib/arm64-v8a/libreactnative.so lib/arm64-v8a/libjsi.so lib/arm64-v8a/libhermes.so AndroidManifest.xml && zip -q app-debug.apk AndroidManifest.xml lib/arm64-v8a/libreactnative.so lib/arm64-v8a/libjsi.so lib/arm64-v8a/libhermes.so`,
+      (error: Error | null) => error ? reject(error) : resolve(),
+    );
+    child.on('error', reject);
+  });
+
+  const libraries = await validateReactNativeApkNativeRuntime(apkPath, true);
+  assert.deepStrictEqual(libraries, [
+    'libreactnative.so',
+    'libjsi.so',
+    'libhermes.so',
+  ]);
+
+  await assert.rejects(
+    () => validateReactNativeApkNativeRuntime(apkPath, false),
+    /missing .*libjsc\.so.*libjsctooling\.so/,
+  );
+
+  fs.rmSync(projectPath, { recursive: true, force: true });
+});
 
 test('Adds the Termux AAPT2 override without discarding Gradle properties', () => {
   const projectPath = path.resolve('./.tmp-aapt2-properties');
