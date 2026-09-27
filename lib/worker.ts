@@ -167,6 +167,38 @@ export function ensureReferencedDebugKeystore(
  * (a real zip archive containing AndroidManifest.xml) rather than a
  * placeholder. Throws if validation fails.
  */
+/**
+ * React Native 0.76+ uses native-library merging. A Hermes APK must ship
+ * the merged RN runtime libraries rather than the legacy libjscexecutor.so
+ * layout used by older React Native releases.
+ *
+ * This is an artifact-level guard only; device launch/runtime still requires
+ * the real Termux/device validation gate.
+ */
+export async function validateReactNativeApkNativeRuntime(
+  filePath: string,
+  hermesEnabled: boolean,
+): Promise<string[]> {
+  const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, {
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  const entries = stdout.split(/\\r?\\n/).filter(Boolean);
+  const arm64 = (name: string) => entries.includes(`lib/arm64-v8a/${name}`);
+
+  const required = hermesEnabled
+    ? ['libreactnative.so', 'libjsi.so', 'libhermes.so']
+    : ['libreactnative.so', 'libjsi.so', 'libjsc.so', 'libjsctooling.so'];
+
+  const missing = required.filter((name) => !arm64(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `React Native Android native runtime libraries are incomplete for ${hermesEnabled ? 'Hermes' : 'JSC'}: missing ${missing.join(', ')} in arm64-v8a.`,
+    );
+  }
+
+  return required;
+}
+
 async function assertRealApk(filePath: string): Promise<{ size: number; sha256: string }> {
   const info = fs.statSync(filePath);
   if (!info.isFile() || info.size <= 0) {
@@ -954,6 +986,28 @@ export async function executeBuildJob(
     } catch (validationErr: any) {
       logs.push(`Error: ${validationErr.message}`);
       return { success: false, logs, error: validationErr.message };
+    }
+
+    if (strategy.strategyName === 'react-native') {
+      const propertiesPath = path.join(androidProjectPath, 'gradle.properties');
+      const properties = fs.existsSync(propertiesPath)
+        ? fs.readFileSync(propertiesPath, 'utf8')
+        : '';
+      const hermesEnabled = /^hermesEnabled\\s*=\\s*true\\s*$/im.test(properties);
+
+      try {
+        const nativeLibraries = await validateReactNativeApkNativeRuntime(
+          apkPath,
+          hermesEnabled,
+        );
+        logs.push(
+          `React Native native runtime artifact check passed: ${nativeLibraries.join(', ')} (arm64-v8a).`,
+        );
+      } catch (runtimeArtifactError: any) {
+        const error = runtimeArtifactError.message || String(runtimeArtifactError);
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
     }
 
     logs.push(
