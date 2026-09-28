@@ -4,6 +4,30 @@
 
 The Builder is a phone-first ZIP-to-APK orchestration system. It accepts an untrusted project ZIP, determines what kind of Android-buildable project it contains, invokes the correct real build flow, validates the resulting APK, and reports truthful evidence.
 
+### Canonical three-layer product architecture
+
+The product has exactly three canonical development layers:
+
+1. **Layer 1 — Android Builder UI**
+2. **Layer 2 — Termux Environment Setup**
+3. **Layer 3 — GitHub Builder Code**
+
+These layers define the current product architecture. They must not be expanded by treating legacy server, database, queue, worker, Docker/container, hosted-backend, or Replit infrastructure as additional product layers.
+
+### Secondary / Legacy boundary
+
+The following may exist for compatibility, history, CI, or cleanup, but are **not part of the canonical product architecture**:
+
+- `artifacts/api-server/`
+- `lib/db/`
+- `lib/build-queue/`
+- `worker/`
+- `docker/` and container-specific Android builder infrastructure
+- Replit-specific files/infrastructure
+- other explicitly retired or legacy deployment components
+
+New development must not depend on these components as required product architecture unless a new ADR explicitly changes this decision.
+
 Canonical lifecycle:
 
 `Secure Input → Detect → Evidence/Confidence → Strategy → Environment → Build → APK Discovery → APK Validation → Hash → Delivery → Runtime Validation when required`
@@ -30,21 +54,33 @@ A framework is not considered supported merely because a detector recognizes it.
 
 ## 3. Repository Boundaries
 
-### `lib/security`
+### Layer 1 — Android Builder UI
+
+`artifacts/zip-to-apk-builder` is the primary user-facing React/Vite UI source/prototype. UI state must come from real Builder state; demo fixtures must never establish build evidence.
+
+### Layer 2 — Termux Environment Setup
+
+Termux setup and diagnostic tooling prepares/detects the phone-local Android build environment. It must not become a second implementation of the Builder pipeline.
+
+### Layer 3 — GitHub Builder Code
+
+Canonical implementation and development code lives in the repository's Builder code, tests, scripts, and documentation. Within this layer:
+
+#### `lib/security`
 
 Untrusted ZIP handling, safe extraction, path/symlink checks, limits, hashing, and APK validation.
 
-### `lib/analyzer`
+#### `lib/analyzer`
 
 Evidence-based project detection, confidence/ambiguity handling, nested-root detection, and strategy selection inputs.
 
-### `lib/build-engine`
+#### `lib/build-engine`
 
 Shared process execution, workspace isolation, time/resource limits, environment handling, artifact discovery, and common build lifecycle.
 
-### Official Flow Adapter layer
+#### Official Flow Adapter layer
 
-Framework-specific orchestration belongs here or in the strategy registry. An adapter should invoke the framework's real tooling rather than reimplementing it.
+Framework-specific orchestration belongs here or in the strategy registry. An adapter invokes the framework's real tooling rather than reimplementing it.
 
 Conceptually:
 
@@ -59,33 +95,26 @@ Strategy Registry
       +--> Web           → approved Web-to-APK strategy
 ```
 
-### `lib/build-queue`
-
-Optional job/queue infrastructure. It must not change the meaning of build success or bypass the shared validation contract.
-
-### `lib/api-spec`, `lib/api-zod`, `lib/api-client-react`
-
-API contract, validation schemas, and generated client code.
-
-### `lib/db`
-
-Persistence/repository layer where the selected product deployment uses a database.
-
-### `artifacts/api-server`
-
-API application layer.
-
-### `artifacts/zip-to-apk-builder`
-
-User-facing React/Vite interface. UI state must come from real build state; demo/local fixture data must never be treated as build evidence.
-
-### `worker` and `docker/android-builder`
-
-Secondary/CI/container execution environments. They are not a substitute for the phone-first Termux target.
-
-### `tests`
+#### `tests`
 
 Unit, integration, fixture, compatibility, security, and acceptance tests.
+
+#### `scripts` and `docs`
+
+Repository-supported setup/diagnostic tooling and the project documentation source of truth.
+
+### Secondary / Legacy components
+
+These are deliberately outside the three-layer architecture:
+
+- `artifacts/api-server`
+- `lib/db`
+- `lib/build-queue`
+- `worker`
+- `docker/android-builder` and related container infrastructure
+- Replit-specific infrastructure
+
+They must not be introduced into new product flows merely because they already exist. If a future requirement genuinely needs one, record an ADR and explicitly update the canonical architecture before treating it as a product dependency.
 
 ## 4. Build Contract
 
