@@ -6,6 +6,7 @@ export interface AnalysisResult {
     | 'Capacitor'
     | 'React/Vite Web App'
     | 'Plain HTML/JS'
+    | 'Flutter'
     | 'Unknown';
   confidence: number;
   evidence: string[];
@@ -58,6 +59,23 @@ export function analyzeProjectFiles(filePaths: string[]): AnalysisResult {
     return {
       projectType: 'Capacitor',
       confidence: hasAndroidDirectory ? 98 : 90,
+      evidence,
+      warnings,
+    };
+  }
+
+  const hasFlutterMarkers = normalizedPaths.some((filePath) => filePath === 'pubspec.yaml' || filePath.endsWith('/pubspec.yaml'));
+  const hasFlutterDirectory = normalizedPaths.some((filePath) => filePath === 'lib/main.dart' || filePath.endsWith('/lib/main.dart'));
+  const hasFlutterAndroid = normalizedPaths.some((filePath) => /^android\/(app\/|settings\.gradle|settings\.gradle\.kts)/.test(filePath));
+
+  if (hasFlutterMarkers && hasFlutterDirectory) {
+    evidence.push('Flutter pubspec.yaml detected');
+    evidence.push('Flutter lib/main.dart detected');
+    if (hasFlutterAndroid) evidence.push('Flutter Android platform detected');
+    else warnings.push('Flutter Android platform is missing; the build will generate it with the resolved Flutter SDK');
+    return {
+      projectType: 'Flutter',
+      confidence: hasFlutterAndroid ? 99 : 94,
       evidence,
       warnings,
     };

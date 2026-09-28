@@ -1,7 +1,7 @@
 import { AnalysisResult } from './analyzer.ts';
 
 export interface BuildStrategy {
-  strategyName: 'native-gradle' | 'capacitor' | 'web-wrapper' | 'unknown';
+  strategyName: 'native-gradle' | 'capacitor' | 'web-wrapper' | 'flutter' | 'unknown';
   buildSteps: string[];
   outputArtifact: string;
 }
@@ -56,6 +56,19 @@ export function determineBuildStrategy(analysis: AnalysisResult): BuildStrategy 
           'Run Gradle build to package APK'
         ],
         outputArtifact: 'app-html-debug.apk'
+      };
+
+    case 'Flutter':
+      return {
+        strategyName: 'flutter',
+        buildSteps: [
+          'Verify Flutter SDK and Android toolchain',
+          'Resolve a runnable Flutter executor for the current OS',
+          'Run flutter pub get',
+          'Run flutter build apk --debug',
+          'Locate and validate the APK'
+        ],
+        outputArtifact: 'app-debug.apk'
       };
 
     default:
