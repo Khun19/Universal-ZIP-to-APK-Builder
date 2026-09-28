@@ -34,7 +34,22 @@ Canonical lifecycle:
 
 The master milestone contract is defined only in `/ROADMAP.md`.
 
-## 2. Approved Official Flow Adapter Principle
+## 2. Goal Alignment & Deviation Boundary
+
+Architecture changes must pass a Goal Alignment & Deviation Audit before they are treated as part of the canonical design.
+
+The audit must verify:
+
+- the change supports the current Product Goal and milestone scope;
+- the change remains inside the three canonical layers;
+- a technically correct implementation does not introduce a wrong architectural direction;
+- missing requirements, dependencies, constraints, or acceptance criteria are identified;
+- false progress and scope drift are not mistaken for product progress;
+- Secondary/Legacy infrastructure is not silently promoted into the main architecture.
+
+An architecture change that creates material deviation requires correction or an explicit ADR before it can become canonical.
+
+## 3. Approved Official Flow Adapter Principle
 
 Frameworks with an established official/native Android build flow use an **Official Flow Adapter**.
 
@@ -52,7 +67,7 @@ Initial priority:
 
 A framework is not considered supported merely because a detector recognizes it. Support requires a deterministic strategy, real fixture, real build, APK validation, and the runtime evidence required by its milestone.
 
-## 3. Repository Boundaries
+## 4. Repository Boundaries
 
 ### Layer 1 — Android Builder UI
 
@@ -116,7 +131,7 @@ These are deliberately outside the three-layer architecture:
 
 They must not be introduced into new product flows merely because they already exist. If a future requirement genuinely needs one, record an ADR and explicitly update the canonical architecture before treating it as a product dependency.
 
-## 4. Build Contract
+## 5. Build Contract
 
 Every strategy must expose the same high-level contract:
 
@@ -133,7 +148,7 @@ Every strategy must expose the same high-level contract:
 
 A successful process exit code alone is never enough to claim runtime success.
 
-## 5. Status Semantics
+## 6. Status Semantics
 
 `PASS` — every mandatory criterion has evidence and passed.
 
@@ -147,7 +162,7 @@ A successful process exit code alone is never enough to claim runtime success.
 
 CI success, source inspection, APK creation, or compile-only success must not be promoted to a runtime PASS.
 
-## 6. Build Isolation
+## 7. Build Isolation
 
 Every build must have:
 
@@ -161,7 +176,7 @@ Every build must have:
 
 One build must not modify another build's workspace.
 
-## 7. Environment Boundary
+## 8. Environment Boundary
 
 Do not hard-code SDK, Java, Node, package-manager, NDK, or build-tool paths.
 
@@ -175,7 +190,7 @@ The same orchestration model can run in:
 
 Environment-specific adaptations belong at the environment boundary.
 
-## 8. Web and Hybrid Strategies
+## 9. Web and Hybrid Strategies
 
 Web/PWA projects may use the approved Web-to-APK strategy when their output is suitable for offline Android packaging.
 
@@ -183,7 +198,7 @@ Capacitor/Ionic/Cordova projects retain their native Android semantics and use t
 
 A generic WebView wrapper must not silently replace a detected native framework strategy.
 
-## 9. Security Boundary
+## 10. Security Boundary
 
 ZIP content is untrusted.
 
@@ -202,7 +217,7 @@ Required protections include:
 
 User-controlled filenames must never become shell syntax.
 
-## 10. Artifact Boundary
+## 11. Artifact Boundary
 
 An APK is successful only after the required validation stage.
 
@@ -219,7 +234,7 @@ Artifact evidence should include where available:
 
 Invalid or missing APKs must never be reported as SUCCESS.
 
-## 11. Frontend Boundary
+## 12. Frontend Boundary
 
 The UI should display:
 
@@ -235,7 +250,7 @@ Do not fabricate percentage progress.
 
 Demo fixtures or local UI mock data, if retained for development, must remain clearly separated from real build state and must never establish build evidence.
 
-## 12. Testing Model
+## 13. Testing Model
 
 Testing has multiple levels:
 
@@ -248,7 +263,7 @@ Testing has multiple levels:
 
 The test matrix and validation workflow define the evidence required for milestone gates.
 
-## 13. Extension Rules
+## 14. Extension Rules
 
 Adding a framework requires:
 
@@ -262,7 +277,7 @@ Adding a framework requires:
 
 Do not claim universal support from a detector alone.
 
-## 14. Anti-Patterns
+## 15. Anti-Patterns
 
 Avoid:
 
@@ -277,7 +292,7 @@ Avoid:
 - modifying user source unnecessarily;
 - duplicate parallel pipelines without an explicit ADR.
 
-## 15. Source of Truth
+## 16. Source of Truth
 
 - `/ROADMAP.md` — milestone scope and gates.
 - `docs/ARCHITECTURE.md` — this architecture.
