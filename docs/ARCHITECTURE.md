@@ -4,13 +4,52 @@
 
 The Builder is a phone-first ZIP-to-APK orchestration system. It accepts an untrusted project ZIP, determines what kind of Android-buildable project it contains, invokes the correct real build flow, validates the resulting APK, and reports truthful evidence.
 
+### Canonical three-layer product architecture
+
+The product has exactly three canonical development layers:
+
+1. **Layer 1 — Android Builder UI**
+2. **Layer 2 — Termux Environment Setup**
+3. **Layer 3 — GitHub Builder Code**
+
+These layers define the current product architecture. They must not be expanded by treating legacy server, database, queue, worker, Docker/container, hosted-backend, or Replit infrastructure as additional product layers.
+
+### Secondary / Legacy boundary
+
+The following may exist for compatibility, history, CI, or cleanup, but are **not part of the canonical product architecture**:
+
+- `artifacts/api-server/`
+- `lib/db/`
+- `lib/build-queue/`
+- `worker/`
+- `docker/` and container-specific Android builder infrastructure
+- Replit-specific files/infrastructure
+- other explicitly retired or legacy deployment components
+
+New development must not depend on these components as required product architecture unless a new ADR explicitly changes this decision.
+
 Canonical lifecycle:
 
 `Secure Input → Detect → Evidence/Confidence → Strategy → Environment → Build → APK Discovery → APK Validation → Hash → Delivery → Runtime Validation when required`
 
 The master milestone contract is defined only in `/ROADMAP.md`.
 
-## 2. Approved Official Flow Adapter Principle
+## 2. Goal Alignment & Deviation Boundary
+
+Architecture changes must pass a Goal Alignment & Deviation Audit before they are treated as part of the canonical design.
+
+The audit must verify:
+
+- the change supports the current Product Goal and milestone scope;
+- the change remains inside the three canonical layers;
+- a technically correct implementation does not introduce a wrong architectural direction;
+- missing requirements, dependencies, constraints, or acceptance criteria are identified;
+- false progress and scope drift are not mistaken for product progress;
+- Secondary/Legacy infrastructure is not silently promoted into the main architecture.
+
+An architecture change that creates material deviation requires correction or an explicit ADR before it can become canonical.
+
+## 3. Approved Official Flow Adapter Principle
 
 Frameworks with an established official/native Android build flow use an **Official Flow Adapter**.
 
@@ -28,23 +67,35 @@ Initial priority:
 
 A framework is not considered supported merely because a detector recognizes it. Support requires a deterministic strategy, real fixture, real build, APK validation, and the runtime evidence required by its milestone.
 
-## 3. Repository Boundaries
+## 4. Repository Boundaries
 
-### `lib/security`
+### Layer 1 — Android Builder UI
+
+`artifacts/zip-to-apk-builder` is the primary user-facing React/Vite UI source/prototype. UI state must come from real Builder state; demo fixtures must never establish build evidence.
+
+### Layer 2 — Termux Environment Setup
+
+Termux setup and diagnostic tooling prepares/detects the phone-local Android build environment. It must not become a second implementation of the Builder pipeline.
+
+### Layer 3 — GitHub Builder Code
+
+Canonical implementation and development code lives in the repository's Builder code, tests, scripts, and documentation. Within this layer:
+
+#### `lib/security`
 
 Untrusted ZIP handling, safe extraction, path/symlink checks, limits, hashing, and APK validation.
 
-### `lib/analyzer`
+#### `lib/analyzer`
 
 Evidence-based project detection, confidence/ambiguity handling, nested-root detection, and strategy selection inputs.
 
-### `lib/build-engine`
+#### `lib/build-engine`
 
 Shared process execution, workspace isolation, time/resource limits, environment handling, artifact discovery, and common build lifecycle.
 
-### Official Flow Adapter layer
+#### Official Flow Adapter layer
 
-Framework-specific orchestration belongs here or in the strategy registry. An adapter should invoke the framework's real tooling rather than reimplementing it.
+Framework-specific orchestration belongs here or in the strategy registry. An adapter invokes the framework's real tooling rather than reimplementing it.
 
 Conceptually:
 
@@ -59,35 +110,28 @@ Strategy Registry
       +--> Web           → approved Web-to-APK strategy
 ```
 
-### `lib/build-queue`
-
-Optional job/queue infrastructure. It must not change the meaning of build success or bypass the shared validation contract.
-
-### `lib/api-spec`, `lib/api-zod`, `lib/api-client-react`
-
-API contract, validation schemas, and generated client code.
-
-### `lib/db`
-
-Persistence/repository layer where the selected product deployment uses a database.
-
-### `artifacts/api-server`
-
-API application layer.
-
-### `artifacts/zip-to-apk-builder`
-
-User-facing React/Vite interface. UI state must come from real build state; demo/local fixture data must never be treated as build evidence.
-
-### `worker` and `docker/android-builder`
-
-Secondary/CI/container execution environments. They are not a substitute for the phone-first Termux target.
-
-### `tests`
+#### `tests`
 
 Unit, integration, fixture, compatibility, security, and acceptance tests.
 
-## 4. Build Contract
+#### `scripts` and `docs`
+
+Repository-supported setup/diagnostic tooling and the project documentation source of truth.
+
+### Secondary / Legacy components
+
+These are deliberately outside the three-layer architecture:
+
+- `artifacts/api-server`
+- `lib/db`
+- `lib/build-queue`
+- `worker`
+- `docker/android-builder` and related container infrastructure
+- Replit-specific infrastructure
+
+They must not be introduced into new product flows merely because they already exist. If a future requirement genuinely needs one, record an ADR and explicitly update the canonical architecture before treating it as a product dependency.
+
+## 5. Build Contract
 
 Every strategy must expose the same high-level contract:
 
@@ -104,7 +148,7 @@ Every strategy must expose the same high-level contract:
 
 A successful process exit code alone is never enough to claim runtime success.
 
-## 5. Status Semantics
+## 6. Status Semantics
 
 `PASS` — every mandatory criterion has evidence and passed.
 
@@ -118,7 +162,7 @@ A successful process exit code alone is never enough to claim runtime success.
 
 CI success, source inspection, APK creation, or compile-only success must not be promoted to a runtime PASS.
 
-## 6. Build Isolation
+## 7. Build Isolation
 
 Every build must have:
 
@@ -132,7 +176,7 @@ Every build must have:
 
 One build must not modify another build's workspace.
 
-## 7. Environment Boundary
+## 8. Environment Boundary
 
 Do not hard-code SDK, Java, Node, package-manager, NDK, or build-tool paths.
 
@@ -146,7 +190,7 @@ The same orchestration model can run in:
 
 Environment-specific adaptations belong at the environment boundary.
 
-## 8. Web and Hybrid Strategies
+## 9. Web and Hybrid Strategies
 
 Web/PWA projects may use the approved Web-to-APK strategy when their output is suitable for offline Android packaging.
 
@@ -154,7 +198,7 @@ Capacitor/Ionic/Cordova projects retain their native Android semantics and use t
 
 A generic WebView wrapper must not silently replace a detected native framework strategy.
 
-## 9. Security Boundary
+## 10. Security Boundary
 
 ZIP content is untrusted.
 
@@ -173,7 +217,7 @@ Required protections include:
 
 User-controlled filenames must never become shell syntax.
 
-## 10. Artifact Boundary
+## 11. Artifact Boundary
 
 An APK is successful only after the required validation stage.
 
@@ -190,7 +234,7 @@ Artifact evidence should include where available:
 
 Invalid or missing APKs must never be reported as SUCCESS.
 
-## 11. Frontend Boundary
+## 12. Frontend Boundary
 
 The UI should display:
 
@@ -206,7 +250,7 @@ Do not fabricate percentage progress.
 
 Demo fixtures or local UI mock data, if retained for development, must remain clearly separated from real build state and must never establish build evidence.
 
-## 12. Testing Model
+## 13. Testing Model
 
 Testing has multiple levels:
 
@@ -219,7 +263,7 @@ Testing has multiple levels:
 
 The test matrix and validation workflow define the evidence required for milestone gates.
 
-## 13. Extension Rules
+## 14. Extension Rules
 
 Adding a framework requires:
 
@@ -233,7 +277,7 @@ Adding a framework requires:
 
 Do not claim universal support from a detector alone.
 
-## 14. Anti-Patterns
+## 15. Anti-Patterns
 
 Avoid:
 
@@ -248,7 +292,7 @@ Avoid:
 - modifying user source unnecessarily;
 - duplicate parallel pipelines without an explicit ADR.
 
-## 15. Source of Truth
+## 16. Source of Truth
 
 - `/ROADMAP.md` — milestone scope and gates.
 - `docs/ARCHITECTURE.md` — this architecture.
