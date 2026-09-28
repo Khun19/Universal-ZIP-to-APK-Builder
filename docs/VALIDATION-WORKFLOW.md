@@ -4,7 +4,9 @@ This document defines the project-wide verification loop for the Universal ZIP-t
 
 ## Source-of-Truth Loop
 
-`GitHub change → CI verification → Termux execution → real APK/device verification → evidence → milestone gate`
+`Repository guidance/specs → Goal Alignment Audit → GitHub change → CI verification → Termux execution → real APK/device verification → evidence → milestone gate`
+
+Repository documentation is part of the development contract. When guidance conflicts, use the current explicit project requirements and the most specific applicable repository rule, and document unresolved conflicts rather than silently choosing a legacy path.
 
 GitHub is the source of truth for source, tests, workflow definitions, and recorded engineering decisions. Termux is the primary local execution environment for phone-first builds. Real Android behavior is verified separately from CI.
 
@@ -12,18 +14,42 @@ GitHub is the source of truth for source, tests, workflow definitions, and recor
 
 Work is gated one milestone at a time:
 
-1. Inspect the current `main` state and milestone acceptance criteria.
-2. Implement only the current milestone on a focused branch.
-3. Run applicable automated checks.
-4. Push the focused branch and open a pull request against `main`.
-5. Review CI results and the changed files.
-6. Merge only the milestone currently under validation.
-7. Pull the resulting `main` commit in Termux.
-8. Run the milestone's required local build/tests.
-9. When runtime behavior matters, install and verify the generated APK on a real Android device.
-10. Record evidence in the test matrix or an associated test record.
-11. A milestone is complete only when its applicable acceptance criteria have evidence.
-12. Stop at the gate and do not start the next milestone until the current milestone is explicitly accepted.
+1. Inspect the current `main` state and the applicable repository instructions/specifications.
+2. Run a **Goal Alignment & Deviation Audit** against the target goal, current architecture, milestone scope, and acceptance criteria.
+3. Implement only the current milestone on a focused branch.
+4. Run applicable automated checks.
+5. Run the Goal Alignment & Deviation Audit again after implementation.
+6. Push the focused branch and open a pull request against `main`.
+7. Review CI results and the changed files.
+8. Merge only the milestone currently under validation.
+9. Pull the resulting `main` commit in Termux.
+10. Run the milestone's required local build/tests.
+11. When runtime behavior matters, install and verify the generated APK on a real Android device.
+12. Record evidence in the test matrix or an associated test record.
+13. A milestone is complete only when its applicable acceptance criteria have evidence **and the goal-alignment audit is ALIGNED**.
+14. Stop at the gate and do not start the next milestone until the current milestone is explicitly accepted.
+
+### Goal Alignment & Deviation Audit
+
+The audit is a development/governance gate, not a substitute for technical validation.
+
+Check:
+
+- target goal and current requirements;
+- canonical three-layer architecture;
+- technically correct changes that could still cause goal deviation;
+- missing requirements, dependencies, constraints, or acceptance criteria;
+- false progress where tests/builds pass without proving the intended outcome;
+- scope drift;
+- Secondary/Legacy infrastructure being mistaken for canonical product architecture.
+
+Audit outcomes:
+
+- **ALIGNED** — no material goal deviation found.
+- **DEVIATION FOUND** — correction/re-plan is required before progression.
+- **BLOCKED** — required information or prerequisite is unavailable.
+
+A DEVIATION FOUND or BLOCKED result keeps the work at the current milestone.
 
 ## CI Responsibilities
 
