@@ -17,25 +17,36 @@ The Builder must prefer truthful diagnostics over false success. “Universal”
 One milestone at a time.
 
 1. Start from the latest validated `main` commit.
-2. Implement only the current milestone.
-3. Run applicable automated tests and real build tests.
-4. Push a focused branch/commit to GitHub.
-5. Pull the exact commit in Termux.
-6. Run the prescribed fixture(s).
-7. For runtime-sensitive criteria, install and test on a real Android device.
-8. Record evidence: branch, commit SHA, fixture SHA-256, environment, commands, result, APK path/size/SHA-256, runtime result, and limitations.
-9. **PASS** only when every mandatory criterion passes.
-10. **FAIL** stays on the same milestone and requires a root-cause fix and re-test.
-11. **BLOCKED** stays on the same milestone and records the missing environment/device prerequisite.
-12. Never convert build success, CI success, or source inspection into a runtime PASS.
+2. Inspect the applicable repository instructions and specifications before modifying code.
+3. Run the **Goal Alignment & Deviation Audit** against the current product goal, architecture, milestone scope, and acceptance criteria.
+4. Implement only the current milestone.
+5. Run applicable automated tests and real build tests.
+6. Run the Goal Alignment & Deviation Audit again after implementation to detect technically correct but goal-divergent changes, missing requirements, false progress, or scope drift.
+7. Push a focused branch/commit to GitHub.
+8. Pull the exact commit in Termux.
+9. Run the prescribed fixture(s).
+10. For runtime-sensitive criteria, install and test on a real Android device.
+11. Record evidence: branch, commit SHA, fixture SHA-256, environment, commands, result, APK path/size/SHA-256, runtime result, and limitations.
+12. **PASS** only when every mandatory criterion passes and the goal-alignment audit is **ALIGNED**.
+13. **FAIL** stays on the same milestone and requires a root-cause fix and re-test.
+14. **BLOCKED** stays on the same milestone and records the missing environment/device prerequisite.
+15. Never convert build success, CI success, source inspection, or technical correctness into a runtime PASS or a goal-alignment PASS.
 
-## Architecture Order
+## Canonical Architecture Order
 
-Every supported strategy follows the same contract:
+The product architecture has exactly three canonical layers:
+
+1. **Layer 1 — Android Builder UI**
+2. **Layer 2 — Termux Environment Setup**
+3. **Layer 3 — GitHub Builder Code**
+
+The three layers are the product architecture. API-server, database, queue, worker, Docker/container, hosted-backend, and Replit-specific infrastructure are **Secondary/Legacy** unless a future ADR explicitly promotes a component.
+
+Inside Layer 3, every supported strategy follows the same build contract:
 
 `Secure Input → Detect → Evidence/Confidence → Strategy → Environment → Build → APK Discovery → APK Validation → Hash → Delivery`
 
-Shared infrastructure must remain separate from strategy-specific behavior.
+Shared infrastructure must remain separate from strategy-specific behavior. Secondary/Legacy infrastructure must not become an implicit fourth layer or pull development back toward the retired architecture.
 
 ## Approved Architecture Decision — Official Framework Flow Adapters
 
