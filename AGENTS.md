@@ -18,6 +18,8 @@ GitHub is the source of truth for code, history, issues, pull requests, CI resul
 
 Before important changes, inspect the current repository state, recent commits, related files, tests, issues/PRs, and GitHub Actions. Never rely on stale chat history when the repository can answer the question.
 
+Before implementation, also inspect the applicable repository guidance and specification files, including `AGENTS.md`, `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/VALIDATION-WORKFLOW.md`, `docs/TEST-MATRIX.md`, relevant `docs/ADR/` records, and any scoped agent/instruction or milestone documentation. Reconcile them with the current project goal. If an instruction is stale, legacy, or conflicts with a newer explicit project requirement, identify the conflict rather than blindly following it.
+
 ## Roles
 
 ### ChatGPT / Lead Agent
@@ -51,6 +53,7 @@ Before important changes, inspect the current repository state, recent commits, 
 1. Inspect before modifying.
 2. Reproduce bugs before fixing them.
 3. Prefer the smallest safe change.
+4. Run the **Goal Alignment & Deviation Audit** before implementation and again after the change.
 4. Do not hide build errors.
 5. Do not invent test results, CI results, paths, APIs, or environment state.
 6. Do not break existing successful tests while fixing another case.
@@ -107,7 +110,13 @@ Before adding a feature ask:
 
 Prefer extensibility without premature implementation of every future feature.
 
-Keep clean boundaries between project analysis, build strategy selection, build execution, environment detection, security, APK discovery/validation, artifact management, API, UI, and workers/queues.
+Keep clean boundaries between the three canonical product layers:
+
+- **Layer 1 — Android Builder UI**
+- **Layer 2 — Termux Environment Setup**
+- **Layer 3 — GitHub Builder Code**
+
+Secondary/Legacy infrastructure such as API-server, database, queue, worker, Docker/container, hosted-backend, or Replit-specific components must not be treated as a fourth product layer. Keep clean internal boundaries inside Layer 3 between project analysis, build strategy selection, build execution, environment detection, security, APK discovery/validation, artifact management, UI integration, and test/evidence code.
 
 ## Termux Command Guidance
 
@@ -123,6 +132,26 @@ Avoid destructive commands unless the impact is explicit and confirmation is obt
 ## Documentation
 
 Record important architectural decisions, compatibility workarounds, known failures, and test requirements in repository documentation. Explain why a decision exists, not only what changed.
+
+## Goal Alignment & Deviation Audit
+
+This audit is a mandatory development gate and is separate from technical build validation.
+
+Before a milestone/major change proceeds, record:
+
+- **Target goal:** What exact project outcome is being protected?
+- **Current state:** What is actually true in the repository?
+- **Technical correctness:** Is the implementation itself correct?
+- **Goal alignment:** Does the change directly support the target goal?
+- **Deviation risks:** Could a technically correct change still move the project toward a wrong architecture, workaround, or scope?
+- **Missing requirements:** What acceptance criteria, dependencies, constraints, or evidence are still absent?
+- **False progress:** Are tests/builds passing without proving the intended product outcome?
+- **Legacy drift:** Is Secondary/Legacy infrastructure being mistaken for the canonical three-layer architecture?
+- **Correction:** What must change before the work can proceed?
+
+Audit result must be one of: **ALIGNED**, **DEVIATION FOUND**, or **BLOCKED**.
+
+A milestone may proceed only when it is **ALIGNED** and its normal validation gates are also satisfied. This audit never replaces tests, CI, Termux execution, APK validation, or real-device runtime validation.
 
 ## Definition of Done
 

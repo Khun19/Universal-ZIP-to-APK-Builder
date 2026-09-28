@@ -8,6 +8,8 @@ This document is the acceptance contract for build compatibility. A test is only
 - **FAIL** — reproduced failure
 - **BLOCKED** — cannot run because a required environment/device/tool is unavailable
 - **NOT RUN** — not executed yet
+- **ALIGNED** — Goal Alignment & Deviation Audit found no material goal deviation
+- **DEVIATION FOUND** — audit found a goal/architecture/requirement deviation that must be corrected
 
 ## Test A — Static Web
 
@@ -54,6 +56,26 @@ This document is the acceptance contract for build compatibility. A test is only
 | Runtime | QR | QR scanner detects a valid test QR |
 | Runtime | Navigation | Back/navigation behaves correctly |
 | APK | Validation | APK is valid and installable |
+
+## Goal Alignment & Deviation Audit
+
+This is a development acceptance gate, separate from build/runtime tests.
+
+| Check | Acceptance |
+|---|---|
+| Target goal | Current target goal is explicitly identified |
+| Architecture alignment | Change remains within the canonical three layers |
+| Technical correctness | Implementation is technically correct for its intended scope |
+| Deviation risk | Technically correct but goal-divergent paths are identified |
+| Requirements | Missing requirements/dependencies/constraints are identified |
+| False progress | Passing tests do not mask an unmet product goal |
+| Scope drift | Unnecessary expansion or legacy-driven work is identified |
+| Secondary/Legacy boundary | Legacy/API/DB/queue/worker/Docker/Replit components are not treated as canonical product layers |
+| Correction | Required corrective action is recorded before progression |
+
+**Audit status:** `ALIGNED` / `DEVIATION FOUND` / `BLOCKED`.
+
+`DEVIATION FOUND` or `BLOCKED` prevents milestone progression until resolved and re-audited.
 
 ## Core Unit/Integration Coverage
 
