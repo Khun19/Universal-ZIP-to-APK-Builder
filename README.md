@@ -8,17 +8,35 @@ Universal ZIP-to-APK Builder is a developer-focused build orchestrator for turni
 
 ## Canonical project rules
 
+The canonical development contract is defined by these repository documents:
+
 - **Master roadmap:** `/ROADMAP.md`
 - **Architecture:** `docs/ARCHITECTURE.md`
-- **Test/evidence matrix:** `docs/TEST-MATRIX.md`
+- **Engineering / agent rules:** `AGENTS.md`
 - **Validation workflow:** `docs/VALIDATION-WORKFLOW.md`
-- **Engineering rules:** `AGENTS.md`
+- **Test/evidence matrix:** `docs/TEST-MATRIX.md`
+- **Architectural decisions:** `docs/ADR/`
 
-The project uses the **GitHub-Gated Milestone Development & Termux Validation Loop**:
+### Goal Alignment & Deviation Audit
 
-`Implement one milestone → GitHub → pull exact commit in Termux → build/test → record evidence → PASS/FAIL/BLOCKED`
+Before and after every milestone or major implementation, the development agent must verify that the work still serves the project's target goal.
 
-Do not advance a failed or blocked milestone.
+The audit asks:
+
+1. Is the implementation correct technically?
+2. Is it still aligned with the target goal and current architecture?
+3. Can a technically correct change create goal deviation?
+4. What requirements, dependencies, constraints, or acceptance criteria are missing?
+5. Is there false progress, scope drift, or a legacy architecture pulling the implementation off course?
+6. What must be corrected before the milestone can proceed?
+
+This is a **development/governance gate**, not a replacement for build or runtime validation.
+
+### GitHub-Gated Milestone Development & Termux Validation Loop
+
+`Goal Alignment Audit → implement one milestone → GitHub → pull exact commit in Termux → build/test → record evidence → PASS/FAIL/BLOCKED`
+
+Do not advance a failed, blocked, or goal-misaligned milestone.
 
 ## Core pipeline
 
@@ -99,34 +117,55 @@ The roadmap covers:
 
 **Roadmap targets are not automatically supported/PASS.** Each framework needs a real fixture, deterministic strategy, real APK, and the runtime evidence required by its milestone.
 
-## Repository layout
+## Canonical repository architecture
+
+The project has exactly **three canonical development layers**:
 
 ```text
-.
-├── lib/
-│   ├── analyzer/          # project detection and evidence
-│   ├── build-engine/      # shared build execution/orchestration
-│   ├── security/          # ZIP and APK security/integrity
-│   ├── build-queue/       # optional job/queue infrastructure
-│   ├── api-spec/          # API contract
-│   ├── api-zod/           # generated validation
-│   ├── api-client-react/  # generated client/hooks
-│   ├── db/                # persistence layer
-│   └── shared/            # shared types/utilities
-├── artifacts/
-│   ├── api-server/        # API application
-│   └── zip-to-apk-builder/# React/Vite UI
-├── tests/                 # tests and real compatibility fixtures
-├── scripts/               # setup/diagnostic tooling
-├── worker/                # secondary worker infrastructure
-├── docker/                # reproducible secondary build environment
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── TEST-MATRIX.md
-│   ├── VALIDATION-WORKFLOW.md
-│   └── ADR/
-└── ROADMAP.md             # single milestone source of truth
+Layer 1 — Android Builder UI
+Layer 2 — Termux Environment Setup
+Layer 3 — GitHub Builder Code
 ```
+
+### Layer 1 — Android Builder UI
+
+The phone-first user interface and presentation layer.
+
+Primary source/prototype location:
+
+`artifacts/zip-to-apk-builder/`
+
+UI state must come from real Builder state. Demo/mock data must never be presented as build evidence.
+
+### Layer 2 — Termux Environment Setup
+
+The phone-local environment and setup/diagnostic tooling required to execute the Builder on Android/Termux.
+
+This layer is responsible for preparing and detecting the local toolchain; it is not a second Builder implementation.
+
+### Layer 3 — GitHub Builder Code
+
+The canonical Builder implementation and its shared development/test code:
+
+- `lib/` — analyzer, security, build engine, strategy/adapter logic, shared types/utilities, and other canonical Builder code
+- `tests/` — unit, integration, fixture, security, compatibility, and acceptance tests
+- `scripts/` — repository-supported setup and diagnostic tooling
+- `docs/` — architecture, roadmap, validation, test matrix, and ADRs
+
+### Explicit architecture boundary
+
+The following are **not canonical architecture layers**:
+
+- `artifacts/api-server/`
+- `lib/db/`
+- `lib/build-queue/`
+- `worker/`
+- `docker/` or other container-specific builder infrastructure
+- legacy/replit-specific files or infrastructure
+
+If such files remain in the repository for compatibility, history, CI, or cleanup purposes, they are **Secondary/Legacy**, not part of the three-layer product architecture. New development must not treat them as required product layers unless an explicit ADR changes the architecture.
+
+Do not create a competing backend, database, queue, Docker, or hosted architecture and present it as the phone-first Builder architecture.
 
 ## Phone / Termux
 
