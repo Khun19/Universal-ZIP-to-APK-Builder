@@ -1022,6 +1022,7 @@ export async function executeBuildJob(
           cwd: androidProjectPath,
           timeout: 30_000,
           maxBuffer: 256 * 1024,
+          env: gradleEnvironment,
         });
         const versionLine = versionOutput
           .split(/\r?\n/)
@@ -1035,6 +1036,7 @@ export async function executeBuildJob(
         const fallbackResult = await execAsync(fallbackCommand, {
           cwd: androidProjectPath,
           timeout: BUILD_TIMEOUT_MS,
+          env: gradleEnvironment,
         });
         if (fallbackResult.stdout) {
           logs.push(`[Fallback Gradle Output]: ${String(fallbackResult.stdout).slice(-2000)}`);
@@ -1043,6 +1045,8 @@ export async function executeBuildJob(
           logs.push(`[Fallback Gradle Stderr]: ${String(fallbackResult.stderr).slice(-1000)}`);
         }
         logs.push('Installed Gradle fallback completed successfully.');
+        finishM6Stage('native-compile', 'PASS');
+        if (m6Evidence) m6Evidence.gates.G7 = 'PASS';
       } catch (fallbackErr: any) {
         const fallbackStdout = fallbackErr.stdout
           ? String(fallbackErr.stdout).slice(-2000)
