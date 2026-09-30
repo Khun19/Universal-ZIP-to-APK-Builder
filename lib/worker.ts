@@ -554,7 +554,7 @@ export async function executeBuildJob(
   let syncedAndroidProjectPath: string | undefined;
   const stageStarts = new Map<string, number>();
   const startM6Stage = (stage: string) => stageStarts.set(stage, Date.now());
-  const finishM6Stage = (stage: Parameters<typeof createM6Evidence>[0] extends never ? never : string, status: 'PASS' | 'FAIL', errorClass?: string) => {
+  const finishM6Stage = (stage: string, status: 'PASS' | 'FAIL', errorClass?: string) => {
     if (!m6Evidence) return;
     const started = stageStarts.get(stage);
     if (started === undefined) return;
