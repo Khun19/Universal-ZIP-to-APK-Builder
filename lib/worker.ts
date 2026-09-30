@@ -8,6 +8,15 @@ import { injectAndroidWrapper } from './template.ts';
 import { buildWebProject, findWebProjectRoot } from './web-builder.ts';
 import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
+import {
+  classifyBuildFailure,
+  createM6Evidence,
+  M6BuildEvidence,
+} from './m6-evidence.ts';
+import {
+  assertReactNativeToolchainPreflight,
+  collectReactNativeToolchainPreflight,
+} from './m6-preflight.ts';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -18,6 +27,7 @@ export interface BuildJobResult {
   logs: string[];
   outputPath?: string;
   error?: string;
+  evidence?: M6BuildEvidence;
 }
 
 /**
@@ -540,7 +550,23 @@ export async function executeBuildJob(
   appName?: string,
 ): Promise<BuildJobResult> {
   const logs: string[] = [];
+  const m6Evidence = strategy.strategyName === 'react-native' ? createM6Evidence() : undefined;
   let syncedAndroidProjectPath: string | undefined;
+  const stageStarts = new Map<string, number>();
+  const startM6Stage = (stage: string) => stageStarts.set(stage, Date.now());
+  const finishM6Stage = (stage: string, status: 'PASS' | 'FAIL', errorClass?: string) => {
+    if (!m6Evidence) return;
+    const started = stageStarts.get(stage);
+    if (started === undefined) return;
+    m6Evidence.stages.push({
+      stage: stage as any,
+      startedAt: new Date(started).toISOString(),
+      durationMs: Date.now() - started,
+      status,
+      ...(errorClass ? { errorClass } : {}),
+    });
+    stageStarts.delete(stage);
+  };
 
   if (strategy.strategyName === 'unknown') {
     return {
@@ -634,6 +660,7 @@ export async function executeBuildJob(
         fs.existsSync(path.join(projectPath, 'app.config.ts'));
 
       const installCommand = nodeInstallCommand(projectPath);
+      startM6Stage('dependency-install');
       logs.push(`Installing React Native dependencies: ${installCommand}`);
       try {
         const installResult = await execAsync(installCommand, {
@@ -643,10 +670,17 @@ export async function executeBuildJob(
         });
         if (installResult.stdout) logs.push(`[Dependency stdout]: ${installResult.stdout.slice(-4000)}`);
         if (installResult.stderr) logs.push(`[Dependency stderr]: ${installResult.stderr.slice(-2000)}`);
+        finishM6Stage('dependency-install', 'PASS');
+        if (m6Evidence) m6Evidence.gates.G3 = 'PASS';
       } catch (installError: any) {
         const message = `React Native dependency installation failed: ${commandErrorText(installError)}`;
         logs.push(`Error: ${message}`);
-        return { success: false, logs, error: message };
+        finishM6Stage('dependency-install', 'FAIL', classifyBuildFailure(message));
+        if (m6Evidence) {
+          m6Evidence.gates.G3 = 'FAIL';
+          m6Evidence.failure = { gate: 'G3', classification: classifyBuildFailure(message), message };
+        }
+        return { success: false, logs, error: message, evidence: m6Evidence };
       }
 
       if (!findAndroidProjectRoot(projectPath) && usesExpo) {
@@ -685,6 +719,42 @@ export async function executeBuildJob(
         }
       }
       logs.push('React Native project dependencies are ready for the Android Gradle build.');
+
+      const rnAndroidProject = findAndroidProjectRoot(projectPath);
+      if (!rnAndroidProject) {
+        const message = 'React Native toolchain preflight requires a resolved Android project.';
+        if (m6Evidence) {
+          m6Evidence.gates.G4 = 'FAIL';
+          m6Evidence.failure = { gate: 'G4', classification: 'TOOLCHAIN_PREFLIGHT', message };
+        }
+        return { success: false, logs: [...logs, `Error: ${message}`], error: message, evidence: m6Evidence };
+      }
+
+      startM6Stage('toolchain-preflight');
+      try {
+        const preflight = await collectReactNativeToolchainPreflight(projectPath, rnAndroidProject, packageJson);
+        if (m6Evidence) m6Evidence.toolchain = preflight;
+        logs.push(`M6 Toolchain Preflight: JDK17=${preflight.checks.jdk17}, Gradle/AGP=${preflight.checks.gradleAgpCompatibility}`);
+        if (preflight.failures.length) {
+          logs.push(...preflight.failures.map((failure) => `[Preflight]: ${failure}`));
+        }
+        assertReactNativeToolchainPreflight(preflight);
+        finishM6Stage('toolchain-preflight', 'PASS');
+        if (m6Evidence) {
+          m6Evidence.gates.G4 = 'PASS';
+          m6Evidence.gates.G5 = preflight.checks.gradleAgpCompatibility;
+        }
+      } catch (preflightError: any) {
+        const message = `React Native toolchain preflight failed: ${preflightError.message}`;
+        logs.push(`Error: ${message}`);
+        finishM6Stage('toolchain-preflight', 'FAIL', 'TOOLCHAIN_PREFLIGHT');
+        if (m6Evidence) {
+          m6Evidence.gates.G4 = m6Evidence.toolchain?.checks.jdk17 ?? 'FAIL';
+          m6Evidence.gates.G5 = m6Evidence.toolchain?.checks.gradleAgpCompatibility ?? 'UNVERIFIED';
+          m6Evidence.failure = { gate: m6Evidence.gates.G4 === 'FAIL' ? 'G4' : 'G5', classification: 'TOOLCHAIN_PREFLIGHT', message };
+        }
+        return { success: false, logs, error: message, evidence: m6Evidence };
+      }
     }
 
     // Flutter projects must be built through the Flutter CLI so Flutter owns
@@ -898,6 +968,7 @@ export async function executeBuildJob(
     }
 
     const command = `${gradleCommand} assembleDebug --no-daemon --stacktrace`;
+    startM6Stage('native-compile');
     logs.push(`Executing Gradle command: ${command}`);
     const gradleEnvironment =
       strategy.strategyName === 'react-native' || gradleCommand === 'bash ./gradlew'
@@ -915,6 +986,8 @@ export async function executeBuildJob(
       });
       if (stdout) logs.push(`[Gradle Output]: ${stdout.slice(-2000)}`);
       if (stderr) logs.push(`[Gradle Stderr]: ${stderr.slice(-1000)}`);
+      finishM6Stage('native-compile', 'PASS');
+      if (m6Evidence) m6Evidence.gates.G7 = 'PASS';
     } catch (cmdErr: any) {
       const stdout = cmdErr.stdout ? String(cmdErr.stdout).slice(-2000) : '';
       const stderr = cmdErr.stderr ? String(cmdErr.stderr).slice(-2000) : '';
@@ -930,11 +1003,14 @@ export async function executeBuildJob(
         !isGradleWrapperBootstrapFailure(cmdErr) &&
         !isGradleJavaCompatibilityFailure(cmdErr)
       ) {
-        return {
-          success: false,
-          logs,
-          error: `Gradle build failed: ${cmdErr.message}`,
-        };
+        const message = `Gradle build failed: ${cmdErr.message}`;
+        const classification = classifyBuildFailure([cmdErr.message, cmdErr.stdout, cmdErr.stderr].filter(Boolean).join('\\n'));
+        finishM6Stage('native-compile', 'FAIL', classification);
+        if (m6Evidence) {
+          m6Evidence.gates.G7 = 'FAIL';
+          m6Evidence.failure = { gate: 'G7', classification, message };
+        }
+        return { success: false, logs, error: message, evidence: m6Evidence };
       }
 
       logs.push(
@@ -977,11 +1053,14 @@ export async function executeBuildJob(
         logs.push(`[Fallback Gradle Failure]: ${fallbackErr.message}`);
         if (fallbackStdout) logs.push(`[Fallback Gradle Output]: ${fallbackStdout}`);
         if (fallbackStderr) logs.push(`[Fallback Gradle Stderr]: ${fallbackStderr}`);
-        return {
-          success: false,
-          logs,
-          error: `Gradle wrapper and installed Gradle fallback failed: ${fallbackErr.message}`,
-        };
+        const message = `Gradle wrapper and installed Gradle fallback failed: ${fallbackErr.message}`;
+        const classification = classifyBuildFailure([fallbackErr.message, fallbackErr.stdout, fallbackErr.stderr].filter(Boolean).join('\\n'));
+        finishM6Stage('native-compile', 'FAIL', classification);
+        if (m6Evidence) {
+          m6Evidence.gates.G7 = 'FAIL';
+          m6Evidence.failure = { gate: 'G7', classification, message };
+        }
+        return { success: false, logs, error: message, evidence: m6Evidence };
       }
     }
 
@@ -998,21 +1077,33 @@ export async function executeBuildJob(
     const apkPath = apks.find(p => p.includes('debug')) ?? apks[0];
 
     let validated: { size: number; sha256: string };
+    startM6Stage('apk-validation');
     try {
       validated = await assertRealApk(apkPath);
     } catch (validationErr: any) {
       logs.push(`Error: ${validationErr.message}`);
-      return { success: false, logs, error: validationErr.message };
+      finishM6Stage('apk-validation', 'FAIL', 'APK_VALIDATION');
+      if (m6Evidence) {
+        m6Evidence.gates.G8 = 'FAIL';
+        m6Evidence.failure = { gate: 'G8', classification: 'APK_VALIDATION', message: validationErr.message };
+      }
+      return { success: false, logs, error: validationErr.message, evidence: m6Evidence };
     }
 
+    finishM6Stage('apk-validation', 'PASS');
+    if (m6Evidence) {
+      m6Evidence.gates.G8 = 'PASS';
+      m6Evidence.artifact = { path: apkPath, sizeBytes: validated.size, sha256: validated.sha256 };
+    }
     logs.push(
-      `Build finished. Verified real APK at ${apkPath} (${validated.size} bytes, SHA-256 ${validated.sha256}).`
+      `Build finished. Verified real APK at ${apkPath} (${validated.size} bytes, SHA-256 ${validated.sha256}).`,
     );
 
     return {
       success: true,
       logs,
-      outputPath: apkPath
+      outputPath: apkPath,
+      evidence: m6Evidence,
     };
   } catch (err: any) {
     logs.push(`Fatal build failure: ${err.message}`);

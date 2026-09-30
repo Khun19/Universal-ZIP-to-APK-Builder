@@ -30,6 +30,18 @@
 
 Build/CI success is not runtime PASS.
 
+## Modern M6 checkpoint — toolchain preflight + evidence
+
+Implemented on the active M6 line:
+
+- React Native toolchain preflight before Android Gradle build.
+- JDK 17 is checked using an actual JDK 17 executable, not only PATH `java`.
+- AGP/Gradle compatibility is checked when the AGP version is known; unknown versions remain `UNVERIFIED`.
+- Structured stage timing, gate state, APK size/SHA-256, and failure classification are recorded for G3/G4/G5/G7/G8.
+- No Gradle Configuration Cache/Build Cache is enabled yet; those belong to the later Performance Layer after M6 PASS.
+
+Reference: `docs/m6/M6-TOOLCHAIN-EVIDENCE.md`.
+
 ## Candidate history consolidated
 
 PR #12 = initial RN implementation.
