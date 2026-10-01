@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
-import { LayoutDashboard, PlusCircle, History, FolderGit2, Server, Settings, Menu, X, Sun, Moon, Laptop, ChevronRight, Layers, Sparkles } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, History, FolderGit2, Server, Settings, Menu, X, Sun, Moon, Laptop, ChevronRight, Layers } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useBuild } from '@/context/BuildContext';
 
@@ -111,7 +111,11 @@ export function AppShell({ children }: AppShellProps) {
 
         {mobileMenuOpen && <div className="fixed inset-0 z-50 lg:hidden"><div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)}/><div className="fixed inset-y-0 left-0 w-3/4 max-w-xs border-r border-border bg-sidebar text-sidebar-foreground p-6 shadow-2xl">
           <div className="flex items-center justify-between pb-6 border-b border-sidebar-border"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-black text-xs">RZ</div><span className="font-bold text-sm">RZ Universal Builder</span></div><button onClick={() => setMobileMenuOpen(false)}><X size={20}/></button></div>
-          <nav className="mt-6 space-y-1">{navItems.map((item, idx) => item.section ? <div key={idx} className="pt-4 pb-1 text-[10px] font-mono-ui uppercase tracking-widest text-sidebar-foreground/40 font-semibold">{item.section}</div> : <Link key={item.href} href={item.href!} onClick={() => setMobileMenuOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium ${isActive(item.href) ? 'bg-primary text-primary-foreground' : 'hover:bg-sidebar-accent'}`}><item.icon size={16}/>{item.label}</Link>)}</nav>
+          <nav className="mt-6 space-y-1">{navItems.map((item, idx) => {
+            if (item.section) return <div key={idx} className="pt-4 pb-1 text-[10px] font-mono-ui uppercase tracking-widest text-sidebar-foreground/40 font-semibold">{item.section}</div>;
+            const Icon = item.icon!;
+            return <Link key={item.href} href={item.href!} onClick={() => setMobileMenuOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium ${isActive(item.href) ? 'bg-primary text-primary-foreground' : 'hover:bg-sidebar-accent'}`}><Icon size={16}/>{item.label}</Link>;
+          })}</nav>
         </div></div>}
 
         <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">{children}</main>
