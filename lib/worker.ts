@@ -469,6 +469,65 @@ async function regenerateFlutterAndroidPlatform(
     fs.rmSync(scaffoldPath, { recursive: true, force: true });
   }
 }
+export function ensureReactNativeHermesCommand(
+  projectPath: string,
+  androidProjectPath: string,
+  logs?: string[],
+): boolean {
+  const prefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
+  const qemu = path.join(prefix, 'bin', 'qemu-x86_64');
+  if (!fs.existsSync(qemu)) return false;
+
+  const scriptPath = path.join(projectPath, 'hermesc-termux.sh');
+  const script = `#!/bin/sh
+set -eu
+
+PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+QEMU_X86_64="${PREFIX:-/data/data/com.termux/files/usr}/bin/qemu-x86_64"
+
+if [ ! -x "$QEMU_X86_64" ]; then
+  echo "qemu-x86_64 is required to run the React Native Linux x86-64 Hermes compiler on ARM64 Termux." >&2
+  exit 1
+fi
+
+RN_PACKAGE_JSON="$(node -p "require.resolve('react-native/package.json', {paths: [process.argv[1]]})" "$PROJECT_ROOT")"
+RN_ROOT="$(dirname "$RN_PACKAGE_JSON")"
+HERMESC="$RN_ROOT/sdks/hermesc/linux64-bin/hermesc"
+
+if [ ! -x "$HERMESC" ]; then
+  echo "React Native bundled Linux x86-64 hermesc was not found at $HERMESC." >&2
+  exit 1
+fi
+
+exec "$QEMU_X86_64" "$HERMESC" "$@"
+`;
+  fs.writeFileSync(scriptPath, script);
+  fs.chmodSync(scriptPath, 0o755);
+
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+  const appBuildPath = appBuildCandidates.find((candidate) => fs.existsSync(candidate));
+  if (!appBuildPath) return false;
+
+  let content = fs.readFileSync(appBuildPath, 'utf8');
+  const hermesLine = "    hermesCommand = file('../../hermesc-termux.sh').absolutePath";
+  if (content.includes('hermesCommand =')) {
+    content = content.replace(/^\s*hermesCommand\s*=.*$/m, hermesLine);
+  } else {
+    const reactBlock = content.match(/react\s*\{[\s\S]*?\n\}/m);
+    if (reactBlock) {
+      content = content.replace(reactBlock[0], reactBlock[0].replace(/\n\}/, `\n${hermesLine}\n}`));
+    } else {
+      content = content.replace(/^(plugins\s*\{[\s\S]*?\n\})/m, `\$1\n\nreact {\n${hermesLine}\n}\n`);
+    }
+  }
+  fs.writeFileSync(appBuildPath, content);
+  logs?.push(`Using Termux QEMU Hermes compiler wrapper: ${scriptPath}`);
+  return true;
+}
+
 function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   const requiredVersion = detectProjectJavaVersion(androidProjectPath);
 
@@ -711,6 +770,9 @@ export async function executeBuildJob(
       }
 
       const reactNativeAndroidProject = findAndroidProjectRoot(projectPath);
+      if (reactNativeAndroidProject) {
+        ensureReactNativeHermesCommand(projectPath, reactNativeAndroidProject, logs);
+      }
       if (reactNativeAndroidProject && !fs.existsSync(path.join(reactNativeAndroidProject, 'gradlew'))) {
         const reactNativePluginRoot = path.join(projectPath, 'node_modules', '@react-native', 'gradle-plugin');
         const pluginWrapper = path.join(reactNativePluginRoot, 'gradlew');
