@@ -12,9 +12,19 @@ test('configures Metro to see hoisted pnpm workspace dependencies', () => {
   const config = require(path.join(fixtureDir, 'metro.config.js'));
   const workspaceRoot = path.resolve(fixtureDir, '../../..');
   const workspaceNodeModules = path.join(workspaceRoot, 'node_modules');
+  const reactNativeTarget = fs.realpathSync(
+    path.join(fixtureDir, 'node_modules/react-native'),
+  );
+  const babelRuntimeTarget = fs.realpathSync(
+    path.join(fixtureDir, 'node_modules/@babel/runtime'),
+  );
 
-  assert.ok(config.watchFolders.includes(workspaceRoot));
+  assert.strictEqual(config.projectRoot, fixtureDir);
+  assert.ok(!config.watchFolders.includes(workspaceRoot));
+  assert.ok(config.watchFolders.includes(reactNativeTarget));
+  assert.ok(config.watchFolders.includes(babelRuntimeTarget));
   assert.ok(config.resolver.nodeModulesPaths.includes(workspaceNodeModules));
+  assert.strictEqual(config.resolver.disableHierarchicalLookup, true);
 });
 
 test(
