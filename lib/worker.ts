@@ -526,6 +526,147 @@ exec "$QEMU_X86_64" "$HERMESC" "$@"
   return true;
 }
 
+
+/**
+ * Android Gradle Plugin invokes the SDK's Linux x86-64 CMake/Ninja binaries
+ * directly. On ARM64 Termux those ELF files are not executable by the host
+ * shell, but they are usable inside the x86_64 PRoot/QEMU Debian environment.
+ *
+ * Use local.properties' supported cmake.dir hook to point AGP at thin host
+ * wrappers. The wrappers enter the x86_64 guest and execute the real SDK
+ * CMake/Ninja there.
+ */
+export function ensureReactNativeTermuxCmakeTooling(
+  projectPath: string,
+  androidProjectPath: string,
+  logs?: string[],
+): boolean {
+  const prefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
+  const qemu = process.env.BUILDER_QEMU_X86_64 || path.join(prefix, 'bin', 'qemu-x86_64');
+  const prootDistro = process.env.BUILDER_PROOT_DISTRO_BIN || path.join(prefix, 'bin', 'proot-distro');
+  const distro = process.env.BUILDER_X86_64_PROOT_DISTRO || 'm6-x86_64';
+  const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+  if (!fs.existsSync(qemu) || !fs.existsSync(prootDistro) || !sdkPath) return false;
+
+  const cmakeRoot = path.join(sdkPath, 'cmake');
+  if (!fs.existsSync(cmakeRoot)) return false;
+
+  let cmakeDirs: string[] = [];
+  try {
+    cmakeDirs = fs
+      .readdirSync(cmakeRoot, { withFileTypes: true })
+      .filter((entry) =>
+        entry.isDirectory() &&
+        fs.existsSync(path.join(cmakeRoot, entry.name, 'bin', 'cmake')) &&
+        fs.existsSync(path.join(cmakeRoot, entry.name, 'bin', 'ninja')),
+      )
+      .map((entry) => entry.name);
+  } catch {
+    return false;
+  }
+
+  if (!cmakeDirs.length) return false;
+
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+  const appBuildPath = appBuildCandidates.find((candidate) => fs.existsSync(candidate));
+  let appBuild = '';
+  if (appBuildPath) {
+    try {
+      appBuild = fs.readFileSync(appBuildPath, 'utf8');
+    } catch {
+      appBuild = '';
+    }
+  }
+
+  const requestedVersion =
+    appBuild.match(/externalNativeBuild[\s\S]*?cmake[\s\S]*?version\s*[=(]?\s*['"]([^'"]+)['"]/i)?.[1] ??
+    process.env.BUILDER_CMAKE_VERSION;
+
+  const preferred = requestedVersion
+    ? cmakeDirs.find((dir) => dir === requestedVersion || dir.startsWith(requestedVersion + '.'))
+    : undefined;
+  const realCmakeDir =
+    (preferred ? path.join(cmakeRoot, preferred) : undefined) ??
+    (cmakeDirs.includes('3.22.1-2') ? path.join(cmakeRoot, '3.22.1-2') : undefined);
+
+  if (!realCmakeDir) return false;
+
+  const wrapperDir = path.join(androidProjectPath, '.builder', 'termux-x86_64-cmake');
+  const binDir = path.join(wrapperDir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+
+  const quoteForShell = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+  const realCmake = path.join(realCmakeDir, 'bin', 'cmake');
+  const realNinja = path.join(realCmakeDir, 'bin', 'ninja');
+  const wrapperCmake = path.join(binDir, 'cmake');
+  const wrapperNinja = path.join(binDir, 'ninja');
+
+  const common = [
+    '#!/bin/sh',
+    'set -eu',
+    \`PROOT_DISTRO=\${quoteForShell(prootDistro)}\`,
+    \`DISTRO=\${quoteForShell(distro)}\`,
+    \`REAL_CMAKE=\${quoteForShell(realCmake)}\`,
+    \`REAL_NINJA=\${quoteForShell(realNinja)}\`,
+    \`WRAPPER_DIR=\${quoteForShell(wrapperDir)}\`,
+    'HOST_HOME="\${HOME:-/data/data/com.termux/files/home}"',
+    'HOST_CWD="$PWD"',
+    '',
+  ].join('\\n');
+
+  const cmakeScript = \`\${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  --bind "$HOST_HOME:$HOST_HOME" \\
+  --bind \${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
+  --bind \${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
+  --work-dir "$HOST_CWD" -- bash -lc '
+set -eu
+cd "$1"
+shift
+REAL_CMAKE="$1"
+REAL_NINJA="$2"
+WRAPPER_DIR="$3"
+shift 3
+args=()
+for arg in "$@"; do
+  if [ "$arg" = "-DCMAKE_MAKE_PROGRAM=$WRAPPER_DIR/bin/ninja" ]; then
+    args+=("-DCMAKE_MAKE_PROGRAM=$REAL_NINJA")
+  else
+    args+=("$arg")
+  fi
+done
+exec "$REAL_CMAKE" "\${args[@]}"
+' -- "$HOST_CWD" "$REAL_CMAKE" "$REAL_NINJA" "$WRAPPER_DIR" "$@"
+\`;
+
+  const ninjaScript = \`\${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  --bind "$HOST_HOME:$HOST_HOME" \\
+  --bind \${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
+  --bind \${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
+  --work-dir "$HOST_CWD" -- "$REAL_NINJA" "$@"
+\`;
+
+  fs.writeFileSync(wrapperCmake, cmakeScript);
+  fs.writeFileSync(wrapperNinja, ninjaScript);
+  fs.chmodSync(wrapperCmake, 0o755);
+  fs.chmodSync(wrapperNinja, 0o755);
+
+  const propertiesPath = path.join(androidProjectPath, 'local.properties');
+  const current = fs.existsSync(propertiesPath)
+    ? fs.readFileSync(propertiesPath, 'utf8')
+    : '';
+  const lines = current.split(/\\r?\\n/).filter((line) => !line.trim().startsWith('cmake.dir='));
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  lines.push(\`cmake.dir=\${wrapperDir}\`);
+  fs.writeFileSync(propertiesPath, \`\${lines.join('\\n')}\\n\`);
+
+  logs?.push(\`Using x86_64 PRoot CMake/Ninja wrappers: \${wrapperDir}\`);
+  logs?.push(\`CMake guest toolchain: \${realCmakeDir}\`);
+  return true;
+}
+
 function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   const requiredVersion = detectProjectJavaVersion(androidProjectPath);
 
