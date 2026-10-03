@@ -9,6 +9,7 @@ import {
   isGradleWrapperBootstrapFailure,
   findPnpmWorkspaceRoot,
   nodeInstallCommand,
+  ensureReactNativeTermuxCmakeTooling,
 } from '../lib/worker.ts';
 import { BuildStrategy } from '../lib/strategy.ts';
 import * as fs from 'fs';
@@ -262,4 +263,67 @@ test('configures the Termux QEMU Hermes wrapper for React Native builds', () => 
   const buildGradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
   assert.match(buildGradle, /hermesCommand = file\('\.\.\/\.\.\/hermesc-termux\.sh'\)\.absolutePath/);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+
+test('Configures x86_64 PRoot CMake/Ninja wrappers for React Native Termux builds', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'm6-cmake-proot-'));
+  const android = path.join(root, 'android');
+  const sdk = path.join(root, 'android-sdk');
+  const fakePrefix = path.join(root, 'prefix');
+  const bin = path.join(sdk, 'cmake', '3.22.1-2', 'bin');
+
+  fs.mkdirSync(path.join(android, 'app'), { recursive: true });
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(path.join(fakePrefix, 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(android, 'app', 'build.gradle'), "plugins { id 'com.android.application' }\n");
+  fs.writeFileSync(path.join(bin, 'cmake'), '');
+  fs.writeFileSync(path.join(bin, 'ninja'), '');
+  fs.writeFileSync(path.join(fakePrefix, 'bin', 'qemu-x86_64'), '');
+  fs.writeFileSync(path.join(fakePrefix, 'bin', 'proot-distro'), '');
+
+  const previous = {
+    prefix: process.env.PREFIX,
+    sdk: process.env.ANDROID_HOME,
+    sdkRoot: process.env.ANDROID_SDK_ROOT,
+    qemu: process.env.BUILDER_QEMU_X86_64,
+    proot: process.env.BUILDER_PROOT_DISTRO_BIN,
+    distro: process.env.BUILDER_X86_64_PROOT_DISTRO,
+  };
+
+  process.env.PREFIX = fakePrefix;
+  process.env.ANDROID_HOME = sdk;
+  delete process.env.ANDROID_SDK_ROOT;
+  process.env.BUILDER_QEMU_X86_64 = path.join(fakePrefix, 'bin', 'qemu-x86_64');
+  process.env.BUILDER_PROOT_DISTRO_BIN = path.join(fakePrefix, 'bin', 'proot-distro');
+  process.env.BUILDER_X86_64_PROOT_DISTRO = 'm6-x86_64';
+
+  try {
+    assert.strictEqual(ensureReactNativeTermuxCmakeTooling(root, android), true);
+
+    const properties = fs.readFileSync(path.join(android, 'local.properties'), 'utf8');
+    const wrapperDir = path.join(android, '.builder', 'termux-x86_64-cmake');
+    assert.ok(properties.includes('cmake.dir=' + wrapperDir));
+
+    const cmakeWrapper = fs.readFileSync(path.join(wrapperDir, 'bin', 'cmake'), 'utf8');
+    const ninjaWrapper = fs.readFileSync(path.join(wrapperDir, 'bin', 'ninja'), 'utf8');
+    assert.match(cmakeWrapper, /proot-distro/);
+    assert.match(cmakeWrapper, /3\.22\.1-2\/bin\/cmake/);
+    assert.match(cmakeWrapper, /CMAKE_MAKE_PROGRAM=/);
+    assert.match(ninjaWrapper, /3\.22\.1-2\/bin\/ninja/);
+  } finally {
+    if (previous.prefix === undefined) delete process.env.PREFIX;
+    else process.env.PREFIX = previous.prefix;
+    if (previous.sdk === undefined) delete process.env.ANDROID_HOME;
+    else process.env.ANDROID_HOME = previous.sdk;
+    if (previous.sdkRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+    else process.env.ANDROID_SDK_ROOT = previous.sdkRoot;
+    if (previous.qemu === undefined) delete process.env.BUILDER_QEMU_X86_64;
+    else process.env.BUILDER_QEMU_X86_64 = previous.qemu;
+    if (previous.proot === undefined) delete process.env.BUILDER_PROOT_DISTRO_BIN;
+    else process.env.BUILDER_PROOT_DISTRO_BIN = previous.proot;
+    if (previous.distro === undefined) delete process.env.BUILDER_X86_64_PROOT_DISTRO;
+    else process.env.BUILDER_X86_64_PROOT_DISTRO = previous.distro;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
