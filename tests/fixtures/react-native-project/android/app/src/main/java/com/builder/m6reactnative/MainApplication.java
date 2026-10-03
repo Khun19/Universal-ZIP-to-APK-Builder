@@ -48,7 +48,7 @@ public final class MainApplication extends Application implements ReactApplicati
     @Override
     public void onCreate() {
         super.onCreate();
-        SoLoader.init(this, OpenSourceMergedSoMapping);
+        SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
         if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
             DefaultNewArchitectureEntryPoint.load();
         }
