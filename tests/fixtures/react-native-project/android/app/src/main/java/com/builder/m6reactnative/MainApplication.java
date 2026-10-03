@@ -9,6 +9,7 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
 import com.facebook.react.defaults.DefaultReactNativeHost;
 import com.facebook.react.soloader.OpenSourceMergedSoMapping;
 import com.facebook.soloader.SoLoader;
+import java.io.IOException;
 import java.util.List;
 
 public final class MainApplication extends Application implements ReactApplication {
@@ -48,7 +49,11 @@ public final class MainApplication extends Application implements ReactApplicati
     @Override
     public void onCreate() {
         super.onCreate();
-        SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
+        try {
+            SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to initialize SoLoader", e);
+        }
         if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
             DefaultNewArchitectureEntryPoint.load();
         }
