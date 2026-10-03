@@ -607,20 +607,20 @@ export function ensureReactNativeTermuxCmakeTooling(
   const common = [
     '#!/bin/sh',
     'set -eu',
-    \`PROOT_DISTRO=\${quoteForShell(prootDistro)}\`,
-    \`DISTRO=\${quoteForShell(distro)}\`,
-    \`REAL_CMAKE=\${quoteForShell(realCmake)}\`,
-    \`REAL_NINJA=\${quoteForShell(realNinja)}\`,
-    \`WRAPPER_DIR=\${quoteForShell(wrapperDir)}\`,
+    `PROOT_DISTRO=${quoteForShell(prootDistro)}`,
+    `DISTRO=${quoteForShell(distro)}`,
+    `REAL_CMAKE=${quoteForShell(realCmake)}`,
+    `REAL_NINJA=${quoteForShell(realNinja)}`,
+    `WRAPPER_DIR=${quoteForShell(wrapperDir)}`,
     'HOST_HOME="\${HOME:-/data/data/com.termux/files/home}"',
     'HOST_CWD="$PWD"',
     '',
   ].join('\\n');
 
-  const cmakeScript = \`\${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  const cmakeScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
   --bind "$HOST_HOME:$HOST_HOME" \\
-  --bind \${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
-  --bind \${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
+  --bind ${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
   --work-dir "$HOST_CWD" -- bash -lc '
 set -eu
 cd "$1"
@@ -639,14 +639,14 @@ for arg in "$@"; do
 done
 exec "$REAL_CMAKE" "\${args[@]}"
 ' -- "$HOST_CWD" "$REAL_CMAKE" "$REAL_NINJA" "$WRAPPER_DIR" "$@"
-\`;
+`;
 
-  const ninjaScript = \`\${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  const ninjaScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
   --bind "$HOST_HOME:$HOST_HOME" \\
-  --bind \${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
-  --bind \${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
+  --bind ${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
   --work-dir "$HOST_CWD" -- "$REAL_NINJA" "$@"
-\`;
+`;
 
   fs.writeFileSync(wrapperCmake, cmakeScript);
   fs.writeFileSync(wrapperNinja, ninjaScript);
@@ -657,13 +657,13 @@ exec "$REAL_CMAKE" "\${args[@]}"
   const current = fs.existsSync(propertiesPath)
     ? fs.readFileSync(propertiesPath, 'utf8')
     : '';
-  const lines = current.split(/\\r?\\n/).filter((line) => !line.trim().startsWith('cmake.dir='));
+  const lines = current.split(/\r?\n/).filter((line) => !line.trim().startsWith('cmake.dir='));
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  lines.push(\`cmake.dir=\${wrapperDir}\`);
-  fs.writeFileSync(propertiesPath, \`\${lines.join('\\n')}\\n\`);
+  lines.push(`cmake.dir=${wrapperDir}`);
+  fs.writeFileSync(propertiesPath, `${lines.join('\n')}\n`);
 
-  logs?.push(\`Using x86_64 PRoot CMake/Ninja wrappers: \${wrapperDir}\`);
-  logs?.push(\`CMake guest toolchain: \${realCmakeDir}\`);
+  logs?.push(`Using x86_64 PRoot CMake/Ninja wrappers: ${wrapperDir}`);
+  logs?.push(`CMake guest toolchain: ${realCmakeDir}`);
   return true;
 }
 
