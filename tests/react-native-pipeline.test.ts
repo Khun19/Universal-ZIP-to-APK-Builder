@@ -16,7 +16,7 @@ test(
       'utf8',
     );
     assert.match(applicationSource, /getUseDeveloperSupport\(\)[\s\S]*?return false;/);
-    assert.match(applicationSource, /SoLoader\.init\(this, OpenSourceMergedSoMapping\)/);
+    assert.match(applicationSource, /SoLoader\.init\(this, OpenSourceMergedSoMapping(?:\.INSTANCE)?\)/);
     assert.match(applicationSource, /DefaultNewArchitectureEntryPoint\.load\(\)/);
     assert.match(
       fs.readFileSync(path.join(fixtureDir, 'android/settings.gradle'), 'utf8'),
