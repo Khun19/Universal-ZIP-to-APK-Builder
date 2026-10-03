@@ -247,8 +247,7 @@ export async function validateReactNativeApkNativeRuntime(
 async function assertRealApk(filePath: string): Promise<{ size: number; sha256: string }> {
   const info = fs.statSync(filePath);
   if (!info.isFile() || info.size <= 0) {
-    throw new Error(`APK artifact at ${filePath} is missing or empty`);
-  }
+    throw new Error(`APK artifact at ${filePath} is missing or empty`);  }
 
   const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, { maxBuffer: 2 * 1024 * 1024 });
   if (!stdout.split(/\r?\n/).includes('AndroidManifest.xml')) {
@@ -483,7 +482,7 @@ export function ensureReactNativeHermesCommand(
 set -eu
 
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-QEMU_X86_64="${PREFIX:-/data/data/com.termux/files/usr}/bin/qemu-x86_64"
+QEMU_X86_64="\${PREFIX:-/data/data/com.termux/files/usr}/bin/qemu-x86_64"
 
 if [ ! -x "$QEMU_X86_64" ]; then
   echo "qemu-x86_64 is required to run the React Native Linux x86-64 Hermes compiler on ARM64 Termux." >&2
@@ -498,7 +497,6 @@ if [ ! -x "$HERMESC" ]; then
   echo "React Native bundled Linux x86-64 hermesc was not found at $HERMESC." >&2
   exit 1
 fi
-
 exec "$QEMU_X86_64" "$HERMESC" "$@"
 `;
   fs.writeFileSync(scriptPath, script);
@@ -747,8 +745,7 @@ export async function executeBuildJob(
       }
 
       if (!findAndroidProjectRoot(projectPath) && usesExpo) {
-        logs.push('Expo Android project missing; running local Expo prebuild.');
-        try {
+        logs.push('Expo Android project missing; running local Expo prebuild.');        try {
           const prebuild = await execAsync('npx expo prebuild --platform android --no-install --non-interactive', {
             cwd: projectPath,
             timeout: BUILD_TIMEOUT_MS,
@@ -998,7 +995,6 @@ export async function executeBuildJob(
     if (gradleEnvironment.JAVA_HOME !== process.env.JAVA_HOME) {
       logs.push(`Using Gradle Java runtime: ${gradleEnvironment.JAVA_HOME}`);
     }
-
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd: androidProjectPath,
