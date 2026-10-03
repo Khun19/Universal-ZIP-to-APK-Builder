@@ -1,19 +1,22 @@
 const path = require('path');
 const { getDefaultConfig } = require('@react-native/metro-config');
 
-const config = getDefaultConfig(__dirname);
+const fixtureRoot = __dirname;
+const workspaceRoot = path.resolve(fixtureRoot, '../../..');
+const config = getDefaultConfig(workspaceRoot);
 
-// This fixture is intentionally nested inside the builder's pnpm workspace.
-// pnpm hoists the installed package targets into the workspace root, which is
-// outside this React Native project's projectRoot. Metro requires those
-// external dependency targets to be visible through watchFolders.
-const workspaceNodeModules = path.resolve(__dirname, '../../..', 'node_modules');
-
+// The tracked RN fixture is intentionally nested inside this pnpm workspace.
+// Metro must have the workspace root as its project boundary so the pnpm
+// symlink targets under node_modules/.pnpm remain visible to the file map.
 config.watchFolders = Array.from(
-  new Set([...(config.watchFolders ?? []), workspaceNodeModules]),
+  new Set([...(config.watchFolders ?? []), workspaceRoot]),
 );
 config.resolver.nodeModulesPaths = Array.from(
-  new Set([...(config.resolver.nodeModulesPaths ?? []), workspaceNodeModules]),
+  new Set([
+    path.join(fixtureRoot, 'node_modules'),
+    path.join(workspaceRoot, 'node_modules'),
+    ...(config.resolver.nodeModulesPaths ?? []),
+  ]),
 );
 
 module.exports = config;
