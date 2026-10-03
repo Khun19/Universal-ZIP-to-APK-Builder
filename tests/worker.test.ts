@@ -1,3 +1,4 @@
+import { ensureReactNativeHermesCommand } from '../lib/worker.ts';
 import { test } from 'node:test';
 import assert from 'node:assert';
 import {
@@ -12,6 +13,7 @@ import {
 import { BuildStrategy } from '../lib/strategy.ts';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { exec } from 'node:child_process';
 
 
@@ -237,4 +239,27 @@ test('Builds a runnable Flutter command through Ubuntu PRoot when native Flutter
     else process.env.FLUTTER_PROOT_PATH = previousProotPath;
     fs.rmSync(projectPath, { recursive: true, force: true });
   }
+});
+
+
+test('configures the Termux QEMU Hermes wrapper for React Native builds', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'm6-hermes-'));
+  const android = path.join(root, 'android');
+  fs.mkdirSync(path.join(android, 'app'), { recursive: true });
+  fs.writeFileSync(
+    path.join(android, 'app', 'build.gradle'),
+    "plugins { id 'com.android.application' }\n\nreact {\n    autolinkLibrariesWithApp()\n}\n",
+  );
+  const prefix = process.env.PREFIX;
+  const qemu = prefix ? path.join(prefix, 'bin', 'qemu-x86_64') : undefined;
+  if (!qemu || !fs.existsSync(qemu)) {
+    fs.rmSync(root, { recursive: true, force: true });
+    return;
+  }
+
+  assert.strictEqual(ensureReactNativeHermesCommand(root, android), true);
+  assert.ok(fs.existsSync(path.join(root, 'hermesc-termux.sh')));
+  const buildGradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
+  assert.match(buildGradle, /hermesCommand = file\('\.\.\/\.\.\/hermesc-termux\.sh'\)\.absolutePath/);
+  fs.rmSync(root, { recursive: true, force: true });
 });
