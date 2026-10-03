@@ -247,8 +247,7 @@ export async function validateReactNativeApkNativeRuntime(
 async function assertRealApk(filePath: string): Promise<{ size: number; sha256: string }> {
   const info = fs.statSync(filePath);
   if (!info.isFile() || info.size <= 0) {
-    throw new Error(`APK artifact at ${filePath} is missing or empty`);
-  }
+    throw new Error(`APK artifact at ${filePath} is missing or empty`);  }
 
   const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, { maxBuffer: 2 * 1024 * 1024 });
   if (!stdout.split(/\r?\n/).includes('AndroidManifest.xml')) {
@@ -469,6 +468,205 @@ async function regenerateFlutterAndroidPlatform(
     fs.rmSync(scaffoldPath, { recursive: true, force: true });
   }
 }
+export function ensureReactNativeHermesCommand(
+  projectPath: string,
+  androidProjectPath: string,
+  logs?: string[],
+): boolean {
+  const prefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
+  const qemu = path.join(prefix, 'bin', 'qemu-x86_64');
+  if (!fs.existsSync(qemu)) return false;
+
+  const scriptPath = path.join(projectPath, 'hermesc-termux.sh');
+  const script = `#!/bin/sh
+set -eu
+
+PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+QEMU_X86_64="\${PREFIX:-/data/data/com.termux/files/usr}/bin/qemu-x86_64"
+
+if [ ! -x "$QEMU_X86_64" ]; then
+  echo "qemu-x86_64 is required to run the React Native Linux x86-64 Hermes compiler on ARM64 Termux." >&2
+  exit 1
+fi
+
+RN_PACKAGE_JSON="$(node -p "require.resolve('react-native/package.json', {paths: [process.argv[1]]})" "$PROJECT_ROOT")"
+RN_ROOT="$(dirname "$RN_PACKAGE_JSON")"
+HERMESC="$RN_ROOT/sdks/hermesc/linux64-bin/hermesc"
+
+if [ ! -x "$HERMESC" ]; then
+  echo "React Native bundled Linux x86-64 hermesc was not found at $HERMESC." >&2
+  exit 1
+fi
+exec "$QEMU_X86_64" "$HERMESC" "$@"
+`;
+  fs.writeFileSync(scriptPath, script);
+  fs.chmodSync(scriptPath, 0o755);
+
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+  const appBuildPath = appBuildCandidates.find((candidate) => fs.existsSync(candidate));
+  if (!appBuildPath) return false;
+
+  let content = fs.readFileSync(appBuildPath, 'utf8');
+  const hermesLine = "    hermesCommand = file('../../hermesc-termux.sh').absolutePath";
+  if (content.includes('hermesCommand =')) {
+    content = content.replace(/^\s*hermesCommand\s*=.*$/m, hermesLine);
+  } else {
+    const reactBlock = content.match(/react\s*\{[\s\S]*?\n\}/m);
+    if (reactBlock) {
+      content = content.replace(reactBlock[0], reactBlock[0].replace(/\n\}/, `\n${hermesLine}\n}`));
+    } else {
+      content = content.replace(/^(plugins\s*\{[\s\S]*?\n\})/m, `\$1\n\nreact {\n${hermesLine}\n}\n`);
+    }
+  }
+  fs.writeFileSync(appBuildPath, content);
+  logs?.push(`Using Termux QEMU Hermes compiler wrapper: ${scriptPath}`);
+  return true;
+}
+
+
+/**
+ * Android Gradle Plugin invokes the SDK's Linux x86-64 CMake/Ninja binaries
+ * directly. On ARM64 Termux those ELF files are not executable by the host
+ * shell, but they are usable inside the x86_64 PRoot/QEMU Debian environment.
+ *
+ * Use local.properties' supported cmake.dir hook to point AGP at thin host
+ * wrappers. The wrappers enter the x86_64 guest and execute the real SDK
+ * CMake/Ninja there.
+ */
+export function ensureReactNativeTermuxCmakeTooling(
+  projectPath: string,
+  androidProjectPath: string,
+  logs?: string[],
+): boolean {
+  const prefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
+  const qemu = process.env.BUILDER_QEMU_X86_64 || path.join(prefix, 'bin', 'qemu-x86_64');
+  const prootDistro = process.env.BUILDER_PROOT_DISTRO_BIN || path.join(prefix, 'bin', 'proot-distro');
+  const distro = process.env.BUILDER_X86_64_PROOT_DISTRO || 'm6-x86_64';
+  const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+  if (!fs.existsSync(qemu) || !fs.existsSync(prootDistro) || !sdkPath) return false;
+
+  const cmakeRoot = path.join(sdkPath, 'cmake');
+  if (!fs.existsSync(cmakeRoot)) return false;
+
+  let cmakeDirs: string[] = [];
+  try {
+    cmakeDirs = fs
+      .readdirSync(cmakeRoot, { withFileTypes: true })
+      .filter((entry) =>
+        entry.isDirectory() &&
+        fs.existsSync(path.join(cmakeRoot, entry.name, 'bin', 'cmake')) &&
+        fs.existsSync(path.join(cmakeRoot, entry.name, 'bin', 'ninja')),
+      )
+      .map((entry) => entry.name);
+  } catch {
+    return false;
+  }
+
+  if (!cmakeDirs.length) return false;
+
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+  const appBuildPath = appBuildCandidates.find((candidate) => fs.existsSync(candidate));
+  let appBuild = '';
+  if (appBuildPath) {
+    try {
+      appBuild = fs.readFileSync(appBuildPath, 'utf8');
+    } catch {
+      appBuild = '';
+    }
+  }
+
+  const requestedVersion =
+    appBuild.match(/externalNativeBuild[\s\S]*?cmake[\s\S]*?version\s*[=(]?\s*['"]([^'"]+)['"]/i)?.[1] ??
+    process.env.BUILDER_CMAKE_VERSION;
+
+  const preferred = requestedVersion
+    ? cmakeDirs.find((dir) => dir === requestedVersion || dir.startsWith(requestedVersion + '.'))
+    : undefined;
+  const realCmakeDir =
+    (preferred ? path.join(cmakeRoot, preferred) : undefined) ??
+    (cmakeDirs.includes('3.22.1-2') ? path.join(cmakeRoot, '3.22.1-2') : undefined);
+
+  if (!realCmakeDir) return false;
+
+  const wrapperDir = path.join(androidProjectPath, '.builder', 'termux-x86_64-cmake');
+  const binDir = path.join(wrapperDir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+
+  const quoteForShell = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+  const realCmake = path.join(realCmakeDir, 'bin', 'cmake');
+  const realNinja = path.join(realCmakeDir, 'bin', 'ninja');
+  const wrapperCmake = path.join(binDir, 'cmake');
+  const wrapperNinja = path.join(binDir, 'ninja');
+
+  const common = [
+    '#!/bin/sh',
+    'set -eu',
+    `PROOT_DISTRO=${quoteForShell(prootDistro)}`,
+    `DISTRO=${quoteForShell(distro)}`,
+    `REAL_CMAKE=${quoteForShell(realCmake)}`,
+    `REAL_NINJA=${quoteForShell(realNinja)}`,
+    `WRAPPER_DIR=${quoteForShell(wrapperDir)}`,
+    'HOST_HOME="\${HOME:-/data/data/com.termux/files/home}"',
+    'HOST_CWD="$PWD"',
+    '',
+  ].join('\n');
+
+  const cmakeScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  --bind "$HOST_HOME:$HOST_HOME" \\
+  --bind ${quoteForShell(projectPath)}:${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:${quoteForShell(sdkPath)} \\
+  --work-dir "$HOST_CWD" -- bash -lc '
+set -eu
+cd "$1"
+shift
+REAL_CMAKE="$1"
+REAL_NINJA="$2"
+WRAPPER_DIR="$3"
+shift 3
+args=()
+for arg in "$@"; do
+  if [ "$arg" = "-DCMAKE_MAKE_PROGRAM=$WRAPPER_DIR/bin/ninja" ]; then
+    args+=("-DCMAKE_MAKE_PROGRAM=$REAL_NINJA")
+  else
+    args+=("$arg")
+  fi
+done
+exec "$REAL_CMAKE" "\${args[@]}"
+' -- "$HOST_CWD" "$REAL_CMAKE" "$REAL_NINJA" "$WRAPPER_DIR" "$@"
+`;
+
+  const ninjaScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  --bind "$HOST_HOME:$HOST_HOME" \\
+  --bind ${quoteForShell(projectPath)}:${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:${quoteForShell(sdkPath)} \\
+  --work-dir "$HOST_CWD" -- "$REAL_NINJA" "$@"
+`;
+
+  fs.writeFileSync(wrapperCmake, cmakeScript);
+  fs.writeFileSync(wrapperNinja, ninjaScript);
+  fs.chmodSync(wrapperCmake, 0o755);
+  fs.chmodSync(wrapperNinja, 0o755);
+
+  const propertiesPath = path.join(androidProjectPath, 'local.properties');
+  const current = fs.existsSync(propertiesPath)
+    ? fs.readFileSync(propertiesPath, 'utf8')
+    : '';
+  const lines = current.split(/\r?\n/).filter((line) => !line.trim().startsWith('cmake.dir='));
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  lines.push(`cmake.dir=${wrapperDir}`);
+  fs.writeFileSync(propertiesPath, `${lines.join('\n')}\n`);
+
+  logs?.push(`Using x86_64 PRoot CMake/Ninja wrappers: ${wrapperDir}`);
+  logs?.push(`CMake guest toolchain: ${realCmakeDir}`);
+  return true;
+}
+
 function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   const requiredVersion = detectProjectJavaVersion(androidProjectPath);
 
@@ -688,8 +886,7 @@ export async function executeBuildJob(
       }
 
       if (!findAndroidProjectRoot(projectPath) && usesExpo) {
-        logs.push('Expo Android project missing; running local Expo prebuild.');
-        try {
+        logs.push('Expo Android project missing; running local Expo prebuild.');        try {
           const prebuild = await execAsync('npx expo prebuild --platform android --no-install --non-interactive', {
             cwd: projectPath,
             timeout: BUILD_TIMEOUT_MS,
@@ -711,6 +908,10 @@ export async function executeBuildJob(
       }
 
       const reactNativeAndroidProject = findAndroidProjectRoot(projectPath);
+      if (reactNativeAndroidProject) {
+        ensureReactNativeHermesCommand(projectPath, reactNativeAndroidProject, logs);
+        ensureReactNativeTermuxCmakeTooling(projectPath, reactNativeAndroidProject, logs);
+      }
       if (reactNativeAndroidProject && !fs.existsSync(path.join(reactNativeAndroidProject, 'gradlew'))) {
         const reactNativePluginRoot = path.join(projectPath, 'node_modules', '@react-native', 'gradle-plugin');
         const pluginWrapper = path.join(reactNativePluginRoot, 'gradlew');
@@ -936,7 +1137,6 @@ export async function executeBuildJob(
     if (gradleEnvironment.JAVA_HOME !== process.env.JAVA_HOME) {
       logs.push(`Using Gradle Java runtime: ${gradleEnvironment.JAVA_HOME}`);
     }
-
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd: androidProjectPath,
