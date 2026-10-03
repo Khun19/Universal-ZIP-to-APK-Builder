@@ -1240,7 +1240,7 @@ export async function executeBuildJob(
       const properties = fs.existsSync(propertiesPath)
         ? fs.readFileSync(propertiesPath, 'utf8')
         : '';
-      const hermesEnabled = /^hermesEnabled\\s*=\\s*true\\s*$/im.test(properties);
+      const hermesEnabled = /^hermesEnabled\s*=\s*true\s*$/im.test(properties);
 
       try {
         const nativeLibraries = await validateReactNativeApkNativeRuntime(

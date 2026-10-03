@@ -6,6 +6,27 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { runBuildPipeline } from '../lib/pipeline.ts';
 
+
+test('configures Metro to see hoisted pnpm workspace dependencies', () => {
+  const fixtureDir = path.resolve('./tests/fixtures/react-native-project');
+  const config = require(path.join(fixtureDir, 'metro.config.js'));
+  const workspaceRoot = path.resolve(fixtureDir, '../../..');
+  const workspaceNodeModules = path.join(workspaceRoot, 'node_modules');
+  const reactNativeTarget = fs.realpathSync(
+    path.join(fixtureDir, 'node_modules/react-native'),
+  );
+  const babelRuntimeTarget = fs.realpathSync(
+    path.join(fixtureDir, 'node_modules/@babel/runtime'),
+  );
+
+  assert.strictEqual(config.projectRoot, fixtureDir);
+  assert.ok(!config.watchFolders.includes(workspaceRoot));
+  assert.ok(config.watchFolders.includes(reactNativeTarget));
+  assert.ok(config.watchFolders.includes(babelRuntimeTarget));
+  assert.ok(config.resolver.nodeModulesPaths.includes(workspaceNodeModules));
+  assert.strictEqual(config.resolver.disableHierarchicalLookup, true);
+});
+
 test(
   'builds the tracked React Native fixture into a validated Android APK',
   { skip: process.env.RUN_ANDROID_INTEGRATION !== '1', timeout: 20 * 60 * 1000 },
