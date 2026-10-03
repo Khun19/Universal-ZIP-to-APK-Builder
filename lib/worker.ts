@@ -643,8 +643,8 @@ exec "$REAL_CMAKE" "\${args[@]}"
 
   const ninjaScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
   --bind "$HOST_HOME:$HOST_HOME" \\
-  --bind ${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
-  --bind ${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
+  --bind ${quoteForShell(projectPath)}:${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:${quoteForShell(sdkPath)} \\
   --work-dir "$HOST_CWD" -- "$REAL_NINJA" "$@"
 `;
 
