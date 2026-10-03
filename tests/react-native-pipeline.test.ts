@@ -10,9 +10,10 @@ import { runBuildPipeline } from '../lib/pipeline.ts';
 test('configures Metro to see hoisted pnpm workspace dependencies', () => {
   const fixtureDir = path.resolve('./tests/fixtures/react-native-project');
   const config = require(path.join(fixtureDir, 'metro.config.js'));
-  const workspaceNodeModules = path.resolve(fixtureDir, '../../../node_modules');
+  const workspaceRoot = path.resolve(fixtureDir, '../../..');
+  const workspaceNodeModules = path.join(workspaceRoot, 'node_modules');
 
-  assert.ok(config.watchFolders.includes(workspaceNodeModules));
+  assert.ok(config.watchFolders.includes(workspaceRoot));
   assert.ok(config.resolver.nodeModulesPaths.includes(workspaceNodeModules));
 });
 
