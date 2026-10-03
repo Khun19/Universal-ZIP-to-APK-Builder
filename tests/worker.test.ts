@@ -6,12 +6,43 @@ import {
   executeBuildJob,
   validateReactNativeApkNativeRuntime,
   isGradleWrapperBootstrapFailure,
+  findPnpmWorkspaceRoot,
+  nodeInstallCommand,
 } from '../lib/worker.ts';
 import { BuildStrategy } from '../lib/strategy.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'node:child_process';
 
+
+test('Uses the pnpm workspace root and hoisted linker for React Native installs', () => {
+  const fixturePath = path.resolve('./tests/fixtures/react-native-project');
+  const workspaceRoot = findPnpmWorkspaceRoot(fixturePath);
+
+  assert.strictEqual(workspaceRoot, path.resolve('.'));
+
+  const plan = nodeInstallCommand(fixturePath);
+  assert.strictEqual(plan.cwd, path.resolve('.'));
+  assert.match(plan.command, /pnpm install/);
+  assert.match(plan.command, /--config\.node-linker=hoisted/);
+  assert.match(plan.command, /--frozen-lockfile/);
+  assert.doesNotMatch(plan.command, /--ignore-workspace/);
+});
+
+test('Keeps standalone pnpm projects outside a workspace', () => {
+  const projectPath = path.resolve('./.tmp-standalone-pnpm');
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(path.join(projectPath, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\\n');
+
+  try {
+    const plan = nodeInstallCommand(projectPath);
+    assert.strictEqual(plan.cwd, projectPath);
+    assert.match(plan.command, /--config\.node-linker=hoisted/);
+    assert.match(plan.command, /--frozen-lockfile/);
+  } finally {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});
 
 test('Validates the React Native 0.76 merged native runtime layout for Hermes', async () => {
   const projectPath = path.resolve('./.tmp-rn-apk-runtime-test');
