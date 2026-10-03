@@ -910,6 +910,7 @@ export async function executeBuildJob(
       const reactNativeAndroidProject = findAndroidProjectRoot(projectPath);
       if (reactNativeAndroidProject) {
         ensureReactNativeHermesCommand(projectPath, reactNativeAndroidProject, logs);
+        ensureReactNativeTermuxCmakeTooling(projectPath, reactNativeAndroidProject, logs);
       }
       if (reactNativeAndroidProject && !fs.existsSync(path.join(reactNativeAndroidProject, 'gradlew'))) {
         const reactNativePluginRoot = path.join(projectPath, 'node_modules', '@react-native', 'gradle-plugin');
