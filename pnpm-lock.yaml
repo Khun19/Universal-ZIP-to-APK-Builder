@@ -756,7 +756,7 @@ importers:
         version: 15.0.1(supports-color@8.1.1)(typescript@5.9.3)
       '@react-native-community/cli-platform-android':
         specifier: 15.0.1
-        version: 15.0.1(@react-native-community/cli@15.0.1(supports-color@8.1.1)(typescript@5.9.3))
+        version: 15.0.1
 
   worker:
     dependencies:
@@ -2130,26 +2130,6 @@ packages:
 
   '@react-native-community/cli-platform-android@15.0.1':
     resolution: {integrity: sha512-QlAMomj6H6TY6pHwjTYMsHDQLP5eLzjAmyW1qb03w/kyS/72elK2bjsklNWJrscFY9TMQLqw7qoAsXf1m5t/dg==}
-
-    dependencies:
-      '@react-native-community/cli': 15.0.1(supports-color@8.1.1)(typescript@5.9.3)
-      '@react-native/dev-middleware': 0.76.9
-      '@react-native/gradle-plugin': 0.76.9
-      '@react-native/js-polyfills': 0.76.9
-      '@react-native/normalize-colors': 0.76.9
-      '@react-native-community/cli-server-api': 15.0.1
-      chalk: 4.1.2
-      execa: 5.1.1
-      invariant: 2.2.4
-      lodash: 4.17.21
-      ora: 5.4.1
-      pretty-format: 29.7.0
-      semver: 7.7.4
-      temp: 0.9.4
-      ws: 8.18.3
-    transitivePeerDependencies:
-      - supports-color
-      - typescript
 
   '@react-native-community/cli-platform-apple@15.0.1':
     resolution: {integrity: sha512-iQj1Dt2fr/Q7X2CQhyhWnece3eLDCark1osfiwpViksOfTH2WdpNS3lIwlFcIKhsieFU7YYwbNuFqQ3tF9Dlvw==}
