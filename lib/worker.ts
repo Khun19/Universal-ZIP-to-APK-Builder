@@ -615,12 +615,12 @@ export function ensureReactNativeTermuxCmakeTooling(
     'HOST_HOME="\${HOME:-/data/data/com.termux/files/home}"',
     'HOST_CWD="$PWD"',
     '',
-  ].join('\\n');
+  ].join('\n');
 
   const cmakeScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
   --bind "$HOST_HOME:$HOST_HOME" \\
-  --bind ${quoteForShell(projectPath)}:\${quoteForShell(projectPath)} \\
-  --bind ${quoteForShell(sdkPath)}:\${quoteForShell(sdkPath)} \\
+  --bind ${quoteForShell(projectPath)}:${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:${quoteForShell(sdkPath)} \\
   --work-dir "$HOST_CWD" -- bash -lc '
 set -eu
 cd "$1"
