@@ -33,15 +33,60 @@ function findApks(directory: string): string[] {
   return results;
 }
 
-function nodeInstallCommand(projectPath: string): string {
+export interface NodeInstallPlan {
+  command: string;
+  cwd: string;
+}
+
+/**
+ * Resolve a pnpm workspace root for extracted projects. React Native projects
+ * can be nested inside a workspace fixture, so installing with --ignore-workspace
+ * breaks the dependency topology that Metro expects. Limit the upward search to
+ * avoid accidentally adopting an unrelated parent workspace.
+ */
+export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
+  let current = path.resolve(projectPath);
+
+  for (let depth = 0; depth <= 4; depth += 1) {
+    if (fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return undefined;
+}
+
+export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
   if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
-    return 'pnpm install --ignore-workspace --dangerously-allow-all-builds';
+    const workspaceRoot = findPnpmWorkspaceRoot(projectPath);
+
+    if (workspaceRoot) {
+      return {
+        command:
+          'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+        cwd: workspaceRoot,
+      };
+    }
+
+    return {
+      command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+      cwd: projectPath,
+    };
   }
-  if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) return 'yarn install --frozen-lockfile';
+
+  if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) {
+    return { command: 'yarn install --frozen-lockfile', cwd: projectPath };
+  }
+
   if (fs.existsSync(path.join(projectPath, 'bun.lockb')) || fs.existsSync(path.join(projectPath, 'bun.lock'))) {
-    return 'bun install';
+    return { command: 'bun install', cwd: projectPath };
   }
-  return 'npm install --no-audit --no-fund';
+
+  return { command: 'npm install --no-audit --no-fund', cwd: projectPath };
 }
 
 function isAndroidProject(directory: string): boolean {
@@ -624,11 +669,13 @@ export async function executeBuildJob(
         fs.existsSync(path.join(projectPath, 'app.config.js')) ||
         fs.existsSync(path.join(projectPath, 'app.config.ts'));
 
-      const installCommand = nodeInstallCommand(projectPath);
-      logs.push(`Installing React Native dependencies: ${installCommand}`);
+      const installPlan = nodeInstallCommand(projectPath);
+      logs.push(
+        `Installing React Native dependencies from ${installPlan.cwd}: ${installPlan.command}`,
+      );
       try {
-        const installResult = await execAsync(installCommand, {
-          cwd: projectPath,
+        const installResult = await execAsync(installPlan.command, {
+          cwd: installPlan.cwd,
           timeout: BUILD_TIMEOUT_MS,
           env: process.env,
         });
