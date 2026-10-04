@@ -115,7 +115,8 @@ test(
           ['-c', `pm install -r "${remoteApk}"`],
           { encoding: 'utf8', env: rishEnv },
         );
-        assert.match(installOutput, /Success/);
+        // Some Shizuku/rish + pm combinations return exit 0 with empty stdout.
+        // The authoritative install check is the package-manager path lookup below.
         const packagePath = execFileSync(
           'rish',
           ['-c', 'pm path com.builder.m6reactnative'],
