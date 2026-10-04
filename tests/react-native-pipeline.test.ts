@@ -106,23 +106,44 @@ test(
     assert.ok(result.logs.some((log) => log.includes('Verified real APK')));
 
     if (process.env.RUN_ANDROID_INSTALL === '1') {
+      // Primary device-control path: ADB. This keeps install/launch validation
+      // independent of Shizuku. rish remains an explicit fallback for devices
+      // where the user has chosen to expose Android shell access through Shizuku.
+      const adbAvailable = spawnSync('adb', ['get-state'], {
+        encoding: 'utf8',
+      }).status === 0;
+      const useAdb = process.env.ANDROID_DEVICE_CONTROL !== 'rish' && adbAvailable;
       const rishEnv = { ...process.env, RISH_APPLICATION_ID: 'com.termux' };
       const remoteApk = '/sdcard/Download/m6-react-native-g10.apk';
+
+      const shell = (command: string): string => {
+        if (useAdb) {
+          return execFileSync('adb', ['shell', command], { encoding: 'utf8' });
+        }
+        return execFileSync('rish', ['-c', command], {
+          encoding: 'utf8',
+          env: rishEnv,
+        });
+      };
+
       try {
-        execFileSync('cp', [apkPath, remoteApk], { stdio: 'inherit' });
-        execFileSync(
-          'rish',
-          ['-c', `pm install -r "${remoteApk}"`],
-          { encoding: 'utf8', env: rishEnv },
-        );
+        if (useAdb) {
+          execFileSync('adb', ['install', '-r', apkPath], {
+            encoding: 'utf8',
+            stdio: 'inherit',
+          });
+        } else {
+          execFileSync('cp', [apkPath, remoteApk], { stdio: 'inherit' });
+          execFileSync(
+            'rish',
+            ['-c', `pm install -r "${remoteApk}"`],
+            { encoding: 'utf8', env: rishEnv },
+          );
+        }
 
         let packagePath = '';
         for (let attempt = 0; attempt < 5; attempt += 1) {
-          packagePath = execFileSync(
-            'rish',
-            ['-c', 'pm path com.builder.m6reactnative'],
-            { encoding: 'utf8', env: rishEnv },
-          ).trim();
+          packagePath = shell('pm path com.builder.m6reactnative').trim();
           if (/^package:.*\/base\.apk$/.test(packagePath)) break;
           if (attempt < 4) {
             await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -133,13 +154,8 @@ test(
         // Resolve the exported launcher through Android's package manager rather
         // than hard-coding an Activity class. This verifies the actual installed
         // manifest contract used by the Android launcher.
-        const resolvedActivity = execFileSync(
-          'rish',
-          [
-            '-c',
-            'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER com.builder.m6reactnative',
-          ],
-          { encoding: 'utf8', env: rishEnv },
+        const resolvedActivity = shell(
+          'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER com.builder.m6reactnative',
         )
           .trim()
           .split(/\r?\n/)
@@ -147,16 +163,31 @@ test(
           .pop() ?? '';
         assert.match(resolvedActivity, /^com\.builder\.m6reactnative\/\.MainActivity$/);
 
-        // rish may emit ActivityManager output on stderr on this
-        // Termux/Shizuku setup, so capture both streams.
-        const launchResult = spawnSync(
-          'rish',
-          [
-            '-c',
-            'am force-stop com.builder.m6reactnative && am start -W -n com.builder.m6reactnative/.MainActivity',
-          ],
-          { encoding: 'utf8', env: rishEnv },
-        );
+        const launchResult = useAdb
+          ? spawnSync(
+              'adb',
+              [
+                'shell',
+                'am',
+                'force-stop',
+                'com.builder.m6reactnative',
+                '&&',
+                'am',
+                'start',
+                '-W',
+                '-n',
+                'com.builder.m6reactnative/.MainActivity',
+              ],
+              { encoding: 'utf8' },
+            )
+          : spawnSync(
+              'rish',
+              [
+                '-c',
+                'am force-stop com.builder.m6reactnative && am start -W -n com.builder.m6reactnative/.MainActivity',
+              ],
+              { encoding: 'utf8', env: rishEnv },
+            );
         const launchOutput = [launchResult.stdout, launchResult.stderr]
           .filter(Boolean)
           .join('\n');
@@ -167,16 +198,10 @@ test(
         let activityState = '';
         let processState = '';
         for (let attempt = 0; attempt < 8; attempt += 1) {
-          activityState = execFileSync(
-            'rish',
-            ['-c', 'dumpsys activity activities | grep -E "mResumedActivity|mFocusedApp" | head -5'],
-            { encoding: 'utf8', env: rishEnv },
+          activityState = shell(
+            'dumpsys activity activities | grep -E "mResumedActivity|mFocusedApp" | head -5',
           );
-          processState = execFileSync(
-            'rish',
-            ['-c', 'pidof com.builder.m6reactnative'],
-            { encoding: 'utf8', env: rishEnv },
-          ).trim();
+          processState = shell('pidof com.builder.m6reactnative').trim();
           if (
             /com\.builder\.m6reactnative\/.MainActivity/.test(activityState) &&
             /^\d+(?:\s+\d+)*$/.test(processState)
@@ -192,17 +217,28 @@ test(
         assert.match(processState, /^\d+(?:\s+\d+)*$/);
       } finally {
         try {
-          execFileSync('rish', ['-c', 'am force-stop com.builder.m6reactnative'], {
-            stdio: 'ignore',
-            env: rishEnv,
-          });
+          if (useAdb) {
+            execFileSync('adb', ['shell', 'am', 'force-stop', 'com.builder.m6reactnative'], {
+              stdio: 'ignore',
+            });
+          } else {
+            execFileSync('rish', ['-c', 'am force-stop com.builder.m6reactnative'], {
+              stdio: 'ignore',
+              env: rishEnv,
+            });
+          }
         } catch {
           // Best-effort cleanup only; launch validation result is authoritative.
         }
-        try {
-          execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], { stdio: 'ignore', env: rishEnv });
-        } catch {
-          // Best-effort cleanup only.
+        if (!useAdb) {
+          try {
+            execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], {
+              stdio: 'ignore',
+              env: rishEnv,
+            });
+          } catch {
+            // Best-effort cleanup only.
+          }
         }
       }
     }
