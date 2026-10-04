@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-set -u
+set -euo pipefail
 
 ROOT="${HOME}/Universal-ZIP-to-APK-Builder"
 WORK="${ROOT}/.workspace/rn-independent-smoke-0769"
@@ -30,17 +30,21 @@ fi
 if [ "${REBUILD:-1}" = "1" ]; then
   rm -rf "${WORK}"
   mkdir -p "${ROOT}/.workspace"
-  cd "${ROOT}/.workspace"
+  CREATE_DIR="$(mktemp -d "${TMPDIR:-/data/data/com.termux/files/usr/tmp}/rn-independent-0769.XXXXXX")"
 
   echo "=== CREATE FRESH RN PROJECT ==="
-  npx --yes @react-native-community/cli@15.0.1 init "${APP_NAME}" --version 0.76.9 --skip-install
+  echo "CLI workspace: ${CREATE_DIR}"
+  cd "${CREATE_DIR}"
+  npm_config_userconfig=/dev/null npx --yes @react-native-community/cli@15.0.1 init "${APP_NAME}" --version 0.76.9 --skip-install
+  mv "${CREATE_DIR}/${APP_NAME}" "${WORK}"
+  rm -rf "${CREATE_DIR}"
 
   cd "${WORK}"
   echo "=== VERIFY RN VERSION ==="
   node -p "require('./node_modules/react-native/package.json').version" 2>/dev/null || true
 
   echo "=== INSTALL NPM DEPENDENCIES ==="
-  npm install --no-audit --no-fund
+  npm_config_userconfig=/dev/null npm install --no-audit --no-fund
 else
   cd "${WORK}"
 fi
