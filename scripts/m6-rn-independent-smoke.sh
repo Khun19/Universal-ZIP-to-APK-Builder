@@ -39,6 +39,11 @@ if [ "${REBUILD:-1}" = "1" ]; then
   mv "${CREATE_DIR}/${APP_NAME}" "${WORK}"
   rm -rf "${CREATE_DIR}"
 
+  # Termux/mobile networks can exceed Gradle Wrapper's default 10s read timeout.
+  # Keep the official RN/Gradle distribution unchanged; only extend wrapper network timeout.
+  sed -i 's/^networkTimeout=.*/networkTimeout=120000/' \
+    "${WORK}/android/gradle/wrapper/gradle-wrapper.properties"
+
   cd "${WORK}"
   echo "=== VERIFY RN VERSION ==="
   node -p "require('./node_modules/react-native/package.json').version" 2>/dev/null || true
