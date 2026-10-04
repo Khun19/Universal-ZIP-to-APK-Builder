@@ -104,5 +104,30 @@ test(
     assert.ok(result.logs.some((log) => log.includes('Installing React Native dependencies')));
     assert.ok(result.logs.some((log) => log.includes('React Native native runtime artifact check passed')));
     assert.ok(result.logs.some((log) => log.includes('Verified real APK')));
+
+    if (process.env.RUN_ANDROID_INSTALL === '1') {
+      const remoteApk = '/sdcard/Download/m6-react-native-g9.apk';
+      try {
+        execFileSync('cp', [apkPath, remoteApk], { stdio: 'inherit' });
+        const installOutput = execFileSync(
+          'rish',
+          ['-c', `pm install -r "${remoteApk}"`],
+          { encoding: 'utf8' },
+        );
+        assert.match(installOutput, /Success/);
+        const packagePath = execFileSync(
+          'rish',
+          ['-c', 'pm path com.builder.m6reactnative'],
+          { encoding: 'utf8' },
+        );
+        assert.match(packagePath, /package:\/\/.*base\.apk/);
+      } finally {
+        try {
+          execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], { stdio: 'ignore' });
+        } catch {
+          // Best-effort cleanup only; install validation result is authoritative.
+        }
+      }
+    }
   },
 );
