@@ -28,7 +28,7 @@ test('configures Metro to see hoisted pnpm workspace dependencies', () => {
 });
 
 test(
-  'builds the tracked React Native fixture through native Android compilation',
+  'validates the tracked React Native APK structure after native Android compilation',
   { skip: process.env.RUN_ANDROID_INTEGRATION !== '1', timeout: 20 * 60 * 1000 },
   async () => {
     const fixtureDir = path.resolve('./tests/fixtures/react-native-project');
@@ -87,6 +87,7 @@ test(
     const stats = fs.statSync(apkPath);
     assert.ok(stats.isFile());
     assert.ok(stats.size > 0);
+    assert.strictEqual(execFileSync('unzip', ['-t', apkPath], { encoding: 'utf8' }).includes('No errors detected'), true);
     assert.match(execFileSync('unzip', ['-Z1', apkPath], { encoding: 'utf8' }), /^AndroidManifest\.xml$/m);
     assert.match(
       execFileSync('aapt', ['dump', 'badging', apkPath], { encoding: 'utf8' }),
