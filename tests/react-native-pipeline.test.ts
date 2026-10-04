@@ -104,5 +104,39 @@ test(
     assert.ok(result.logs.some((log) => log.includes('Installing React Native dependencies')));
     assert.ok(result.logs.some((log) => log.includes('React Native native runtime artifact check passed')));
     assert.ok(result.logs.some((log) => log.includes('Verified real APK')));
+
+    if (process.env.RUN_ANDROID_INSTALL === '1') {
+      const rishEnv = { ...process.env, RISH_APPLICATION_ID: 'com.termux' };
+      const remoteApk = '/sdcard/Download/m6-react-native-g9.apk';
+      try {
+        execFileSync('cp', [apkPath, remoteApk], { stdio: 'inherit' });
+        execFileSync(
+          'rish',
+          ['-c', `pm install -r "${remoteApk}"`],
+          { encoding: 'utf8', env: rishEnv },
+        );
+        // Shizuku/rish can transiently return empty stdout immediately after install.
+        // Poll the authoritative package-manager path before declaring installation failed.
+        let packagePath = '';
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          packagePath = execFileSync(
+            'rish',
+            ['-c', 'pm path com.builder.m6reactnative'],
+            { encoding: 'utf8', env: rishEnv },
+          ).trim();
+          if (/^package:.*\/base\.apk$/.test(packagePath)) break;
+          if (attempt < 4) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+        assert.match(packagePath, /^package:.*\/base\.apk$/);
+      } finally {
+        try {
+          execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], { stdio: 'ignore' });
+        } catch {
+          // Best-effort cleanup only; install validation result is authoritative.
+        }
+      }
+    }
   },
 );
