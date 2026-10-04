@@ -122,7 +122,7 @@ test(
           ['-c', 'pm path com.builder.m6reactnative'],
           { encoding: 'utf8', env: rishEnv },
         );
-        assert.match(packagePath, /package:\/\/.*base\.apk/);
+        assert.match(packagePath, /^package:.*\/base\.apk$/m);
       } finally {
         try {
           execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], { stdio: 'ignore' });
