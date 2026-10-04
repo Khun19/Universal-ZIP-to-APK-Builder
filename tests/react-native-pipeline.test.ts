@@ -110,19 +110,26 @@ test(
       const remoteApk = '/sdcard/Download/m6-react-native-g9.apk';
       try {
         execFileSync('cp', [apkPath, remoteApk], { stdio: 'inherit' });
-        const installOutput = execFileSync(
+        execFileSync(
           'rish',
           ['-c', `pm install -r "${remoteApk}"`],
           { encoding: 'utf8', env: rishEnv },
         );
-        // Some Shizuku/rish + pm combinations return exit 0 with empty stdout.
-        // The authoritative install check is the package-manager path lookup below.
-        const packagePath = execFileSync(
-          'rish',
-          ['-c', 'pm path com.builder.m6reactnative'],
-          { encoding: 'utf8', env: rishEnv },
-        );
-        assert.match(packagePath, /^package:.*\/base\.apk$/m);
+        // Shizuku/rish can transiently return empty stdout immediately after install.
+        // Poll the authoritative package-manager path before declaring installation failed.
+        let packagePath = '';
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          packagePath = execFileSync(
+            'rish',
+            ['-c', 'pm path com.builder.m6reactnative'],
+            { encoding: 'utf8', env: rishEnv },
+          ).trim();
+          if (/^package:.*\/base\.apk$/.test(packagePath)) break;
+          if (attempt < 4) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+        assert.match(packagePath, /^package:.*\/base\.apk$/);
       } finally {
         try {
           execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], { stdio: 'ignore' });
