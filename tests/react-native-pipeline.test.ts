@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { runBuildPipeline } from '../lib/pipeline.ts';
 
 
@@ -147,7 +147,9 @@ test(
           .pop() ?? '';
         assert.match(resolvedActivity, /^com\.builder\.m6reactnative\/\.MainActivity$/);
 
-        const launchOutput = execFileSync(
+        // rish may emit ActivityManager output on stderr on this
+        // Termux/Shizuku setup, so capture both streams.
+        const launchResult = spawnSync(
           'rish',
           [
             '-c',
@@ -155,6 +157,10 @@ test(
           ],
           { encoding: 'utf8', env: rishEnv },
         );
+        const launchOutput = [launchResult.stdout, launchResult.stderr]
+          .filter(Boolean)
+          .join('\n');
+        assert.strictEqual(launchResult.status, 0, launchOutput);
         assert.match(launchOutput, /Status:\s+ok/);
         assert.match(launchOutput, /Complete/);
 
