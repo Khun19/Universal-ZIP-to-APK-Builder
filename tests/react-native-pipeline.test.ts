@@ -106,7 +106,7 @@ test(
     assert.ok(result.logs.some((log) => log.includes('Verified real APK')));
 
     if (process.env.RUN_ANDROID_INSTALL === '1') {
-      const rishEnv = { ...process.env, RISH_APPLICATION_ID: 'com.builder.m6reactnative' };
+      const rishEnv = { ...process.env, RISH_APPLICATION_ID: 'com.termux' };
       const remoteApk = '/sdcard/Download/m6-react-native-g9.apk';
       try {
         execFileSync('cp', [apkPath, remoteApk], { stdio: 'inherit' });
