@@ -9,7 +9,7 @@ Purpose:
 - test the standard RN 0.76.9 New Architecture baseline;
 - keep the existing M6 fixture untouched.
 
-React Native 0.76 enables the New Architecture by default. The official release notes also document the merged native-library/SoLoader change used by the standard template. citeturn1view0
+React Native 0.76 enables the New Architecture by default. The standard template uses the React Native 0.76 New Architecture and merged native-library/SoLoader flow.
 
 ## Termux
 
@@ -22,7 +22,7 @@ git pull --ff-only origin test/rn-independent-smoke-0769
 bash scripts/m6-rn-independent-smoke.sh
 ```
 
-The script uses JDK 17 explicitly. React Native currently recommends JDK 17 and warns that higher JDK versions can cause problems. citeturn0search0
+The script uses JDK 17 explicitly. This smoke test pins JDK 17 because the M6 Termux environment has already shown Gradle/JDK compatibility issues with newer JDKs.
 
 The complete output is saved to:
 
