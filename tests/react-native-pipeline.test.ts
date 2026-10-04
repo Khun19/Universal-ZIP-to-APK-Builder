@@ -107,7 +107,7 @@ test(
 
     if (process.env.RUN_ANDROID_INSTALL === '1') {
       const rishEnv = { ...process.env, RISH_APPLICATION_ID: 'com.termux' };
-      const remoteApk = '/sdcard/Download/m6-react-native-g9.apk';
+      const remoteApk = '/sdcard/Download/m6-react-native-g10.apk';
       try {
         execFileSync('cp', [apkPath, remoteApk], { stdio: 'inherit' });
         execFileSync(
@@ -115,8 +115,7 @@ test(
           ['-c', `pm install -r "${remoteApk}"`],
           { encoding: 'utf8', env: rishEnv },
         );
-        // Shizuku/rish can transiently return empty stdout immediately after install.
-        // Poll the authoritative package-manager path before declaring installation failed.
+
         let packagePath = '';
         for (let attempt = 0; attempt < 5; attempt += 1) {
           packagePath = execFileSync(
@@ -130,11 +129,74 @@ test(
           }
         }
         assert.match(packagePath, /^package:.*\/base\.apk$/);
+
+        // Resolve the exported launcher through Android's package manager rather
+        // than hard-coding an Activity class. This verifies the actual installed
+        // manifest contract used by the Android launcher.
+        const resolvedActivity = execFileSync(
+          'rish',
+          [
+            '-c',
+            'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER com.builder.m6reactnative',
+          ],
+          { encoding: 'utf8', env: rishEnv },
+        )
+          .trim()
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .pop() ?? '';
+        assert.match(resolvedActivity, /^com\.builder\.m6reactnative\/\.MainActivity$/);
+
+        const launchOutput = execFileSync(
+          'rish',
+          [
+            '-c',
+            'am force-stop com.builder.m6reactnative && am start -W -n com.builder.m6reactnative/.MainActivity',
+          ],
+          { encoding: 'utf8', env: rishEnv },
+        );
+        assert.match(launchOutput, /Status:\s+ok/);
+        assert.match(launchOutput, /Complete/);
+
+        let activityState = '';
+        let processState = '';
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          activityState = execFileSync(
+            'rish',
+            ['-c', 'dumpsys activity activities | grep -E "mResumedActivity|mFocusedApp" | head -5'],
+            { encoding: 'utf8', env: rishEnv },
+          );
+          processState = execFileSync(
+            'rish',
+            ['-c', 'pidof com.builder.m6reactnative'],
+            { encoding: 'utf8', env: rishEnv },
+          ).trim();
+          if (
+            /com\.builder\.m6reactnative\/.MainActivity/.test(activityState) &&
+            /^\d+(?:\s+\d+)*$/.test(processState)
+          ) {
+            break;
+          }
+          if (attempt < 7) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+
+        assert.match(activityState, /com\.builder\.m6reactnative\/.MainActivity/);
+        assert.match(processState, /^\d+(?:\s+\d+)*$/);
       } finally {
         try {
-          execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], { stdio: 'ignore' });
+          execFileSync('rish', ['-c', 'am force-stop com.builder.m6reactnative'], {
+            stdio: 'ignore',
+            env: rishEnv,
+          });
         } catch {
-          // Best-effort cleanup only; install validation result is authoritative.
+          // Best-effort cleanup only; launch validation result is authoritative.
+        }
+        try {
+          execFileSync('rish', ['-c', `rm -f "${remoteApk}"`], { stdio: 'ignore', env: rishEnv });
+        } catch {
+          // Best-effort cleanup only.
         }
       }
     }
