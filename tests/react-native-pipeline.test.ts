@@ -28,7 +28,7 @@ test('configures Metro to see hoisted pnpm workspace dependencies', () => {
 });
 
 test(
-  'builds the tracked React Native fixture into a validated Android APK',
+  'builds the tracked React Native fixture through native Android compilation',
   { skip: process.env.RUN_ANDROID_INTEGRATION !== '1', timeout: 20 * 60 * 1000 },
   async () => {
     const fixtureDir = path.resolve('./tests/fixtures/react-native-project');
@@ -101,6 +101,7 @@ test(
     assert.doesNotMatch(apkEntries, /libjscexecutor\.so/);
     assert.match(crypto.createHash('sha256').update(fs.readFileSync(apkPath)).digest('hex'), /^[a-f0-9]{64}$/);
     assert.ok(result.logs.some((log) => log.includes('Installing React Native dependencies')));
+    assert.ok(result.logs.some((log) => log.includes('React Native native runtime artifact check passed')));
     assert.ok(result.logs.some((log) => log.includes('Verified real APK')));
   },
 );
