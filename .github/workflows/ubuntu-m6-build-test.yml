@@ -80,3 +80,5 @@ jobs:
       - name: SHA256 APK
         run: |
           find . -name "*.apk" -type f -exec sha256sum {} \;
+
+# CI refresh: Android SDK tools package fix
