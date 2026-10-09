@@ -33,6 +33,25 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Export Android env vars
+        run: |
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> $GITHUB_ENV
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> $GITHUB_ENV
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
+
+      - name: Add Android build-tools to PATH
+        run: |
+          if [ -n "${ANDROID_SDK_ROOT:-}" ]; then echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH; fi
+
+      - name: Ensure Gradle wrapper & show versions
+        run: |
+          if [ -f ./gradlew ]; then chmod +x ./gradlew; echo "Using project Gradle wrapper:"; ./gradlew --version || true; fi
+          if [ -f android/gradlew ]; then chmod +x android/gradlew; echo "Using android/gradlew:"; android/gradlew --version || true; fi
+          gradle --version || true
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
