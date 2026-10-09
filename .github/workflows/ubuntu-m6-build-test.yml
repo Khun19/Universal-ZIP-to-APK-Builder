@@ -19,6 +19,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,6 +30,9 @@ jobs:
       - name: Enable pnpm
         run: corepack enable
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -36,3 +40,18 @@ jobs:
         run: |
           RUN_ANDROID_INTEGRATION=1 \
           pnpm exec tsx --test tests/react-native-pipeline.test.ts
+
+      - name: Find APK
+        run: |
+          find . -name "*.apk" -type f
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: m6-build-apk
+          path: "**/*.apk"
+          if-no-files-found: ignore
+
+      - name: SHA256 APK
+        run: |
+          find . -name "*.apk" -type f -exec sha256sum {} \;
