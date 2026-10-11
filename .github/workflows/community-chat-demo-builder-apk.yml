@@ -1,0 +1,121 @@
+name: Community Chat Demo Builder ZIP to APK
+
+on:
+  push:
+    branches:
+      - test/community-chat-demo-builder-apk
+    paths:
+      - ".github/workflows/community-chat-demo-builder-apk.yml"
+      - "examples/react-native-chat-demo/**"
+      - "lib/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  builder-zip-to-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build toolchain
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;26.1.10909125" \
+            "cmake;3.22.1"
+          yes | sdkmanager --licenses >/dev/null
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
+          java -version
+          sdkmanager --list_installed
+
+      - name: Install Builder workspace dependencies
+        run: pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds
+
+      - name: Package clean Community Chat Demo ZIP
+        run: |
+          cd examples/react-native-chat-demo
+          zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
+            -x "node_modules/*" "android/*" "ios/*" ".gradle/*" "build/*"
+          unzip -t "$GITHUB_WORKSPACE/community-chat-demo.zip"
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'package.json'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'App.js'
+
+      - name: Build APK through the actual Builder CLI
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          BUILD_TIMEOUT_MS: "3600000"
+        run: |
+          set -o pipefail
+          pnpm run start:cli -- community-chat-demo.zip 2>&1 | tee community-chat-builder-build.log
+
+      - name: Validate APK, package ID, and SHA-256
+        run: |
+          set -euo pipefail
+          APK="$(find output -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test -s "$APK"
+          unzip -t "$APK"
+          unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          aapt dump badging "$APK" | tee apk-badging.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+          stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
+          printf 'APK_PATH=%s\n' "$APK" | tee apk-path.txt
+          {
+            echo "## Community Chat Demo — Builder APK"
+            echo
+            echo "- Commit: `$GITHUB_SHA`"
+            echo "- APK: `$APK`"
+            echo "- $(cat apk-size.txt)"
+            echo "- SHA-256: `$(awk '{print $1}' apk-sha256.txt)`"
+            echo "- Package: `$(sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" apk-badging.txt | head -n1)`"
+            echo "- Device install/launch/interaction: NOT RUN in cloud CI"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Builder APK and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-chat-demo-builder-apk
+          path: |
+            output/*.apk
+            community-chat-demo.zip
+            community-chat-builder-build.log
+            apk-badging.txt
+            apk-sha256.txt
+            apk-size.txt
+            apk-path.txt
+          if-no-files-found: error
+          retention-days: 14
