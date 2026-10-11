@@ -105,10 +105,13 @@ jobs:
           test -s "$APK"
           unzip -t "$APK"
           unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          unzip -Z1 "$APK" | grep -qx 'assets/index.android.bundle' || { echo 'ERROR: APK is missing assets/index.android.bundle; it would require Metro and is not a self-contained device-test build.' >&2; exit 1; }
           aapt dump badging "$APK" | tee apk-badging.txt
           sha256sum "$APK" | tee apk-sha256.txt
           stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
           printf 'APK_PATH=%s\n' "$APK" | tee apk-path.txt
+          PACKAGE_ID="$(awk -F\"'\" '/^package: name=/{print $2; exit}' apk-badging.txt)"
+          test -n "$PACKAGE_ID"
           {
             printf '%s\n' '## Community Chat Demo — Builder APK'
             printf '\n'
@@ -116,7 +119,7 @@ jobs:
             printf '%s\n' "- APK: $APK"
             cat apk-size.txt
             printf '%s\n' "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
-            printf '%s\n' "- Package: $(sed -n \"s/^package: name='\\\\([^']*\\\\)'.*/\\\\1/p\" apk-badging.txt | head -n1)"
+            printf '%s\\n' "- Package: $PACKAGE_ID"
             printf '%s\n' '- Device install/launch/interaction: NOT RUN in cloud CI'
           } >> "$GITHUB_STEP_SUMMARY"
 
