@@ -709,6 +709,9 @@ importers:
       '@react-native/metro-config':
         specifier: 0.76.9
         version: 0.76.9(supports-color@8.1.1)
+      memoize-one:
+        specifier: 6.0.0
+        version: 6.0.0
       react:
         specifier: 18.3.1
         version: 18.3.1
