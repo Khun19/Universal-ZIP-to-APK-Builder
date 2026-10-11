@@ -4,18 +4,25 @@ on:
   push:
     branches:
       - fix/m6-g10-theme
+      - fix/m6-runtime-interaction
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   m6-build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout
+      - name: Checkout exact commit
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -45,6 +52,7 @@ jobs:
           cmdline-tools-version: 12266719
           accept-android-sdk-licenses: true
           packages: platform-tools
+
       - name: Export Android env vars
         run: |
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> $GITHUB_ENV
@@ -58,19 +66,20 @@ jobs:
         run: |
           if [ -n "${ANDROID_SDK_ROOT:-}" ]; then echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH; fi
 
-      - name: Ensure Gradle wrapper & show versions
+      - name: Show resolved toolchain
         run: |
-          if [ -f ./gradlew ]; then chmod +x ./gradlew; echo "Using project Gradle wrapper:"; ./gradlew --version || true; fi
-          if [ -f android/gradlew ]; then chmod +x android/gradlew; echo "Using android/gradlew:"; android/gradlew --version || true; fi
-          gradle --version || true
+          java -version
+          node --version
+          pnpm --version
+          sdkmanager --list_installed
+          find . -path '*/gradle/wrapper/gradle-wrapper.properties' -print
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
       - name: Run M6 React Native pipeline test
         run: |
-          RUN_ANDROID_INTEGRATION=1 \
-          pnpm exec tsx --test tests/react-native-pipeline.test.ts
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
 
       - name: Find APK
         run: |
@@ -82,9 +91,8 @@ jobs:
           name: m6-build-apk
           path: ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
           if-no-files-found: error
+          retention-days: 14
 
       - name: SHA256 APK
         run: |
           find . -name "*.apk" -type f -exec sha256sum {} \;
-
-# CI refresh: Android SDK tools package fix
