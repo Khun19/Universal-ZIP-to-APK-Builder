@@ -4,11 +4,15 @@ on:
   push:
     branches:
       - test/community-chat-demo-builder-apk
+      - feat/framework-specific-platform-generators
     paths:
       - ".github/workflows/framework-detection.yml"
       - "lib/analyzer.ts"
+      - "lib/platform-generators.ts"
+      - "lib/strategy.ts"
       - "lib/server.ts"
       - "tests/analyzer.test.ts"
+      - "tests/platform-generators.test.ts"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -36,5 +40,5 @@ jobs:
           version: 11.23.0
       - name: Install workspace dependencies
         run: pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds
-      - name: Run strict framework detection tests
-        run: pnpm exec tsx --test tests/analyzer.test.ts
+      - name: Run strict framework detection and generator contract tests
+        run: pnpm exec tsx --test tests/analyzer.test.ts tests/platform-generators.test.ts
