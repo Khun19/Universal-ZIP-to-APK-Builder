@@ -1,5 +1,11 @@
 import * as path from 'path';
 
+export interface DetectionCheck {
+  stage: string;
+  passed: boolean;
+  detail: string;
+}
+
 export interface AnalysisResult {
   projectType:
     | 'Native Android'
@@ -13,13 +19,23 @@ export interface AnalysisResult {
   confidence: number;
   evidence: string[];
   warnings: string[];
+  checks: DetectionCheck[];
 }
 
 export function validateZipEntry(entryPath: string): boolean {
   if (entryPath.includes('..') || path.isAbsolute(entryPath)) return false;
-  if (/^[a-zA-Z]:\\\\/.test(entryPath)) return false;
+  if (/^[a-zA-Z]:\\/.test(entryPath)) return false;
   return true;
 }
+
+const hasPath = (paths: string[], suffix: string): boolean =>
+  paths.some((filePath) => filePath === suffix || filePath.endsWith('/' + suffix));
+
+const hasDependency = (dependencies: Record<string, unknown>, name: string): boolean =>
+  typeof dependencies[name] === 'string' && String(dependencies[name]).trim().length > 0;
+
+const hasAppConfigPath = (paths: string[]): boolean =>
+  paths.some((p) => /(^|\/)app\.config\.(js|ts|json)$/.test(p));
 
 export function analyzeProjectFiles(
   filePaths: string[],
@@ -27,78 +43,124 @@ export function analyzeProjectFiles(
 ): AnalysisResult {
   const evidence: string[] = [];
   const warnings: string[] = [];
-  const normalizedPaths = filePaths.map((filePath) => filePath.replace(/\\\\/g, '/'));
+  const checks: DetectionCheck[] = [];
+  const normalizedPaths = filePaths
+    .map((filePath) => filePath.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+/g, '/'))
+    .filter(Boolean);
 
-  const hasBuildGradle = normalizedPaths.some((filePath) => filePath.endsWith('build.gradle') || filePath.endsWith('build.gradle.kts'));
-  const hasAndroidManifest = normalizedPaths.some((filePath) => filePath.endsWith('AndroidManifest.xml'));
-  const hasCapacitorConfig = normalizedPaths.some((filePath) => /(^|\\/)capacitor\\.config\\.(json|js|cjs|ts|mjs)$/.test(filePath));
-  const hasAndroidDirectory = normalizedPaths.some((filePath) => /^android\\/(settings\\.gradle|settings\\.gradle\\.kts|app\\/)/.test(filePath));
+  const record = (stage: string, passed: boolean, detail: string) => {
+    checks.push({ stage, passed, detail });
+  };
+  const result = (projectType: AnalysisResult['projectType'], confidence: number): AnalysisResult =>
+    ({ projectType, confidence, evidence, warnings, checks });
 
-  if (hasCapacitorConfig) {
-    evidence.push('Capacitor configuration detected');
-    if (hasAndroidDirectory) evidence.push('Capacitor Android platform detected');
-    else warnings.push('Capacitor Android platform is missing; the build will try to add it using the local Capacitor CLI');
-    return { projectType: 'Capacitor', confidence: hasAndroidDirectory ? 98 : 90, evidence, warnings };
-  }
-
-  const hasFlutterMarkers = normalizedPaths.some((filePath) => filePath === 'pubspec.yaml' || filePath.endsWith('/pubspec.yaml'));
-  const hasFlutterDirectory = normalizedPaths.some((filePath) => filePath === 'lib/main.dart' || filePath.endsWith('/lib/main.dart'));
-  const hasFlutterAndroid = normalizedPaths.some((filePath) => /^android\\/(app\\/|settings\\.gradle|settings\\.gradle\\.kts)/.test(filePath));
-  if (hasFlutterMarkers && hasFlutterDirectory) {
-    evidence.push('Flutter pubspec.yaml detected');
-    evidence.push('Flutter lib/main.dart detected');
-    if (hasFlutterAndroid) evidence.push('Flutter Android platform detected');
-    else warnings.push('Flutter Android platform is missing; run flutter create . with the local Flutter SDK before building');
-    return { projectType: 'Flutter', confidence: hasFlutterAndroid ? 99 : 94, evidence, warnings };
-  }
+  record('1-path-normalization', normalizedPaths.length > 0,
+    normalizedPaths.length > 0 ? String(normalizedPaths.length) + ' normalized project paths' : 'ZIP contains no usable project paths');
 
   const dependencies = {
     ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
     ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((packageJson.peerDependencies as Record<string, unknown> | undefined) ?? {}),
   };
-  // app.json is common in plain React Native projects. It does not identify Expo
-  // unless the Expo runtime is declared; app.config.* is Expo-specific.
-  const hasExpoConfig = normalizedPaths.some((filePath) => /(^|\\/)app\\.config\\.(js|ts|json)$/.test(filePath));
-  const hasExpoDependency = typeof dependencies.expo === 'string';
-  const hasReactNativeDependency = typeof dependencies['react-native'] === 'string';
-  const hasAndroidProject = normalizedPaths.some((filePath) => /^android\\/(settings\\.gradle|settings\\.gradle\\.kts|app\\/)/.test(filePath));
-  if (hasExpoDependency || hasExpoConfig) {
-    evidence.push('Expo-specific dependency or app.config.* detected');
-    if (hasExpoDependency) evidence.push('expo dependency detected');
-    if (hasExpoConfig) evidence.push('app.config.* detected');
-    if (hasAndroidProject) evidence.push('Android project detected');
-    else warnings.push('Android platform is missing; local Expo prebuild is required before Gradle');
-    return { projectType: 'Expo', confidence: hasAndroidProject ? 97 : 92, evidence, warnings };
+  const hasPackageJson = hasPath(normalizedPaths, 'package.json');
+  const hasAppJson = hasPath(normalizedPaths, 'app.json');
+  const hasAppConfig = hasAppConfigPath(normalizedPaths);
+  const hasExpoDependency = hasDependency(dependencies, 'expo');
+  const hasReactNativeDependency = hasDependency(dependencies, 'react-native');
+  const hasCapacitorConfig = normalizedPaths.some((p) => /(^|\/)capacitor\.config\.(json|js|cjs|ts|mjs)$/.test(p));
+  const hasCapacitorDependency = hasDependency(dependencies, '@capacitor/core') || hasDependency(dependencies, '@capacitor/android');
+  const hasFlutterManifest = hasPath(normalizedPaths, 'pubspec.yaml');
+  const hasFlutterEntry = hasPath(normalizedPaths, 'lib/main.dart');
+  const hasAndroidManifest = hasPath(normalizedPaths, 'AndroidManifest.xml');
+  const hasGradleBuild = normalizedPaths.some((p) => p.endsWith('/build.gradle') || p.endsWith('/build.gradle.kts') || p === 'build.gradle' || p === 'build.gradle.kts');
+  const hasAndroidProject = normalizedPaths.some((p) =>
+    /(^|\/)android\/(settings\.gradle|settings\.gradle\.kts|app\/)/.test(p));
+  const hasViteConfig = normalizedPaths.some((p) => /(^|\/)vite\.config\.[^/]+$/.test(p));
+  const hasIndexHtml = hasPath(normalizedPaths, 'index.html');
+  const hasReactDependency = hasDependency(dependencies, 'react');
+  const hasViteDependency = hasDependency(dependencies, 'vite');
+
+  record('2-package-manifest', hasPackageJson || hasFlutterManifest || hasAndroidManifest,
+    'package.json=' + hasPackageJson + '; pubspec.yaml=' + hasFlutterManifest + '; AndroidManifest.xml=' + hasAndroidManifest);
+  record('3-framework-dependencies', hasExpoDependency || hasReactNativeDependency || hasCapacitorDependency || hasReactDependency || hasViteDependency,
+    'expo=' + hasExpoDependency + '; react-native=' + hasReactNativeDependency + '; capacitor=' + hasCapacitorDependency + '; react=' + hasReactDependency + '; vite=' + hasViteDependency);
+  record('4-platform-markers', hasAndroidProject || hasFlutterEntry || hasAppJson || hasAppConfig || hasCapacitorConfig || hasViteConfig || hasIndexHtml,
+    'android=' + hasAndroidProject + '; flutter-entry=' + hasFlutterEntry + '; app.json=' + hasAppJson + '; app.config=' + hasAppConfig + '; capacitor.config=' + hasCapacitorConfig + '; vite.config=' + hasViteConfig + '; index.html=' + hasIndexHtml);
+
+  // app.json is shared by plain React Native and Expo; it is never proof of Expo by itself.
+  if (hasExpoDependency) {
+    evidence.push('Explicit expo dependency found in package.json dependency sections');
+    if (hasReactNativeDependency) evidence.push('React Native runtime dependency also present');
+    if (hasAppConfig) evidence.push('Expo-specific app.config.* file present');
+    if (hasAndroidProject) evidence.push('Android Gradle project present');
+    if (!hasAndroidProject) warnings.push('Android platform missing; Expo prebuild is required for this confirmed Expo project');
+    record('5-framework-decision', true, 'Expo selected because the expo package is explicitly declared');
+    return result('Expo', hasAndroidProject ? 99 : 96);
   }
+
   if (hasReactNativeDependency) {
-    evidence.push('React Native dependency detected');
-    if (hasAndroidProject) evidence.push('Android project detected');
-    else warnings.push('Android platform is missing; Builder must generate a native Android project before building');
-    return { projectType: 'React Native', confidence: hasAndroidProject ? 97 : 88, evidence, warnings };
+    evidence.push('Explicit react-native dependency found in package.json');
+    if (hasAppJson) evidence.push('app.json present; treated as app metadata, not Expo proof');
+    if (hasAppConfig) warnings.push('app.config.* exists without expo dependency; classified by declared runtime and Expo prebuild will not be assumed');
+    if (hasAndroidProject) evidence.push('Android Gradle project present');
+    else warnings.push('Android platform missing; Builder must generate a native Android project before APK compilation');
+    record('5-framework-decision', true, 'React Native selected; Expo dependency absent');
+    return result('React Native', hasAndroidProject ? 98 : 90);
   }
 
-  if (hasBuildGradle && hasAndroidManifest) {
-    evidence.push('build.gradle detected');
-    evidence.push('AndroidManifest.xml detected');
-    return { projectType: 'Native Android', confidence: 95, evidence, warnings };
+  if (hasCapacitorConfig && hasCapacitorDependency) {
+    evidence.push('Capacitor config and @capacitor/core/@capacitor/android dependency both present');
+    if (hasAndroidProject) evidence.push('Android platform present');
+    else warnings.push('Capacitor Android platform missing; add/sync the Android platform before Gradle build');
+    record('5-framework-decision', true, 'Capacitor selected from matching config and package dependency');
+    return result('Capacitor', hasAndroidProject ? 99 : 94);
+  }
+  if (hasCapacitorConfig || hasCapacitorDependency) {
+    warnings.push('Incomplete Capacitor signature: config and @capacitor/core or @capacitor/android dependency must agree');
+    record('5-framework-decision', false, 'Capacitor evidence conflicts or is incomplete; continuing to other signatures');
   }
 
-  const hasPackageJson = normalizedPaths.some((filePath) => filePath.endsWith('package.json'));
-  const hasViteConfig = normalizedPaths.some((filePath) => filePath.includes('vite.config.'));
-  const hasIndexHtml = normalizedPaths.some((filePath) => filePath.endsWith('index.html'));
-
-  if (hasPackageJson && (hasViteConfig || hasIndexHtml)) {
-    evidence.push('package.json detected');
-    if (hasViteConfig) evidence.push('Vite config detected');
-    if (hasIndexHtml) evidence.push('index.html detected');
-    return { projectType: 'React/Vite Web App', confidence: 90, evidence, warnings };
+  if (hasFlutterManifest && hasFlutterEntry) {
+    evidence.push('Both pubspec.yaml and lib/main.dart are present');
+    if (hasAndroidProject) evidence.push('Flutter Android Gradle project present');
+    else warnings.push('Flutter Android platform missing; run flutter create . with the local Flutter SDK before building');
+    record('5-framework-decision', true, 'Flutter selected from paired manifest and Dart entry-point signatures');
+    return result('Flutter', hasAndroidProject ? 99 : 95);
+  }
+  if (hasFlutterManifest || hasFlutterEntry) {
+    warnings.push('Incomplete Flutter signature: both pubspec.yaml and lib/main.dart are required');
+    record('5-framework-decision', false, 'Flutter markers are incomplete');
   }
 
+  if (hasGradleBuild && hasAndroidManifest) {
+    evidence.push('Gradle build file and AndroidManifest.xml both present');
+    record('5-framework-decision', true, 'Native Android selected from paired Gradle and manifest signatures');
+    return result('Native Android', 96);
+  }
+  if (hasGradleBuild || hasAndroidManifest) {
+    warnings.push('Incomplete Native Android signature: Gradle build file and AndroidManifest.xml must both be present');
+    record('5-framework-decision', false, 'Native Android markers are incomplete');
+  }
+
+  if (hasPackageJson && hasViteConfig && hasViteDependency && (hasReactDependency || hasIndexHtml)) {
+    evidence.push('package.json, vite.config.*, vite dependency, and web/React entry marker present');
+    record('5-framework-decision', true, 'React/Vite Web App selected from combined package and config evidence');
+    return result('React/Vite Web App', 96);
+  }
+  if (hasPackageJson && hasIndexHtml && !hasReactNativeDependency && !hasExpoDependency && !hasCapacitorConfig) {
+    evidence.push('package.json and index.html present without native framework dependencies');
+    if (!hasViteConfig) evidence.push('No Vite config; treated as a web project rather than a named framework');
+    record('5-framework-decision', true, 'Web app selected from package manifest and HTML entry point');
+    return result('React/Vite Web App', 85);
+  }
   if (hasIndexHtml && !hasPackageJson) {
-    evidence.push('index.html detected without package.json');
-    return { projectType: 'Plain HTML/JS', confidence: 80, evidence, warnings: ['Advanced framework configuration not found'] };
+    evidence.push('index.html present without package.json');
+    warnings.push('Only a plain HTML entry point was found; framework-specific dependencies were not identified');
+    record('5-framework-decision', true, 'Plain HTML/JS selected from HTML entry point alone');
+    return result('Plain HTML/JS', 80);
   }
 
-  warnings.push('Could not determine exact project type');
-  return { projectType: 'Unknown', confidence: 0, evidence, warnings };
+  warnings.push('Could not determine the framework from a complete, non-conflicting signature; build blocked to avoid selecting the wrong toolchain');
+  record('5-framework-decision', false, 'No framework met the required evidence threshold');
+  return result('Unknown', 0);
 }
