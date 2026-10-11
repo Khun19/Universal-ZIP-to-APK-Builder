@@ -6,7 +6,7 @@ on:
       - fix/m6-g10-theme
   pull_request:
     branches:
-      - fix/m6-g10-theme
+      - main
   workflow_dispatch:
 
 jobs:
