@@ -66,7 +66,8 @@ test('Does not misclassify plain React Native app.json as Expo', () => {
   );
   assert.strictEqual(result.projectType, 'React Native');
   assert.ok(result.evidence.some((item) => item.includes('app.json present')));
-  assert.ok(!result.evidence.some((item) => item.includes('Expo')));
+  assert.ok(!result.evidence.some((item) => item.includes('Expo selected')));
+  assert.ok(result.checks.some((check) => check.stage === '5-framework-decision' && check.detail.includes('React Native selected')));
   assert.ok(result.warnings.some((warning) => warning.includes('generate a native Android project')));
 });
 
