@@ -1,0 +1,40 @@
+name: Framework Detection Gate
+
+on:
+  push:
+    branches:
+      - test/community-chat-demo-builder-apk
+    paths:
+      - ".github/workflows/framework-detection.yml"
+      - "lib/analyzer.ts"
+      - "lib/server.ts"
+      - "tests/analyzer.test.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  framework-detection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - name: Install workspace dependencies
+        run: pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds
+      - name: Run strict framework detection tests
+        run: pnpm exec tsx --test tests/analyzer.test.ts
