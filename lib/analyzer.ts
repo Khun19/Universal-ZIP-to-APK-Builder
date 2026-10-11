@@ -1,5 +1,3 @@
-import * as path from 'path';
-
 export interface AnalysisResult {
   projectType:
     | 'Native Android'
