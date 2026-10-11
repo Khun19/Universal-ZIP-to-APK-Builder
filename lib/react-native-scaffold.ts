@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 
 const execFileAsync = promisify(execFile);
 
@@ -70,13 +71,14 @@ export async function generateReactNativeAndroidScaffold(
     );
   }
 
-  const parent = path.dirname(projectRoot);
-  const tempRoot = path.join(parent, `.builder-rn-scaffold-${path.basename(projectRoot)}`);
+  // Keep the CLI project outside the repository/workspace ancestry. Otherwise
+  // npm inherits the Builder's root package.json overrides (pnpm-style keys
+  // such as "esbuild>@esbuild/darwin-arm64") and fails with EINVALIDPACKAGENAME.
+  // os.tmpdir() gives npm an isolated project ancestry while preserving the
+  // Android SDK/JDK environment variables required by the build.
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-rn-scaffold-'));
   const scaffoldProject = path.join(tempRoot, 'BuilderScaffold');
   const generatedAndroid = path.join(scaffoldProject, 'android');
-
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-  fs.mkdirSync(tempRoot, { recursive: true });
 
   try {
     await execFileAsync(
