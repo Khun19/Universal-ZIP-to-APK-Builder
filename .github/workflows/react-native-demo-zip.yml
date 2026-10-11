@@ -1,0 +1,67 @@
+name: React Native Demo ZIP
+
+on:
+  push:
+    branches:
+      - feat/react-native-demo-zip
+    paths:
+      - "examples/react-native-chat-demo/**"
+      - ".github/workflows/react-native-demo-zip.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-and-bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Install demo dependencies
+        working-directory: examples/react-native-chat-demo
+        run: npm install --no-audit --no-fund --legacy-peer-deps --package-lock=false
+
+      - name: Bundle JavaScript for Android
+        working-directory: examples/react-native-chat-demo
+        run: |
+          mkdir -p "$RUNNER_TEMP/community-chat-demo"
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/community-chat-demo/index.android.bundle" \
+            --assets-dest "$RUNNER_TEMP/community-chat-demo/assets"
+
+      - name: Package clean project ZIP
+        run: |
+          cd examples/react-native-chat-demo
+          zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
+            -x "node_modules/*" "android/*" "ios/*" ".gradle/*" "build/*"
+
+      - name: Verify ZIP root layout
+        run: |
+          unzip -l community-chat-demo.zip
+          unzip -Z1 community-chat-demo.zip | grep -qx 'package.json'
+          unzip -Z1 community-chat-demo.zip | grep -qx 'App.js'
+          unzip -Z1 community-chat-demo.zip | grep -qx 'index.js'
+          unzip -t community-chat-demo.zip
+
+      - name: Upload ZIP and Android JS bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-chat-demo-zip
+          path: |
+            community-chat-demo.zip
+            ${{ runner.temp }}/community-chat-demo/index.android.bundle
+          if-no-files-found: error
+          retention-days: 14
