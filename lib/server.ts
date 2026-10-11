@@ -51,6 +51,12 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
     }
   }
   const analysis = analyzeProjectFiles(filePaths, packageJson);
+  const detectionLogs = analysis.checks.map((check) =>
+    '[Detection ' + check.stage + '] ' + (check.passed ? 'PASS' : 'FAIL') + ' — ' + check.detail,
+  );
+  detectionLogs.push('[Detection result] ' + analysis.projectType + ' (' + analysis.confidence + '% confidence)');
+  detectionLogs.push(...analysis.evidence.map((item) => '[Detection evidence] ' + item));
+  detectionLogs.push(...analysis.warnings.map((item) => '[Detection warning] ' + item));
   if (analysis.projectType === 'Unknown') {
     return {
       success: false,
@@ -73,7 +79,7 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
     success: jobResult.success,
     projectType: analysis.projectType,
     strategyName: strategy.strategyName,
-    logs: jobResult.logs,
+    logs: [...detectionLogs, ...jobResult.logs],
     outputPath: jobResult.outputPath,
     error: jobResult.error
   };
