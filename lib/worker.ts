@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { BuildStrategy } from './strategy.ts';
+import { generateReactNativeAndroidScaffold } from './react-native-scaffold.ts';
 import { injectAndroidWrapper } from './template.ts';
 import { buildWebProject, findWebProjectRoot } from './web-builder.ts';
 import { syncCapacitorAndroid } from './capacitor-builder.ts';
@@ -902,10 +903,25 @@ export async function executeBuildJob(
         }
       }
 
+      if (!findAndroidProjectRoot(projectPath) && !usesExpo) {
+        logs.push('Bare React Native Android platform missing; generating it with the version-pinned React Native Community CLI.');
+        try {
+          const generated = await generateReactNativeAndroidScaffold(
+            projectPath,
+            dependencies['react-native'],
+          );
+          logs.push(`Generated Android platform with React Native ${generated.reactNativeVersion} / Community CLI ${generated.cliVersion} at ${generated.androidPath}.`);
+        } catch (scaffoldError: any) {
+          const message = `Bare React Native Android scaffold generation failed: ${commandErrorText(scaffoldError)}`;
+          logs.push(`Error: ${message}`);
+          return { success: false, logs, error: message };
+        }
+      }
+
       if (!findAndroidProjectRoot(projectPath)) {
         const message = usesExpo
           ? 'Expo prebuild completed without producing an Android Gradle project.'
-          : 'Bare React Native ZIP has no Android Gradle project. This Builder version does not yet generate a native Android scaffold for bare React Native; include a valid android/ project or use a project that explicitly declares Expo.';
+          : 'Bare React Native scaffold generation completed without producing a usable Android Gradle project.';
         logs.push(`Error: ${message}`);
         return { success: false, logs, error: message };
       }
