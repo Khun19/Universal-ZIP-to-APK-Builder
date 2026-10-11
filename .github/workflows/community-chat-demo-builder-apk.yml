@@ -110,7 +110,7 @@ jobs:
           sha256sum "$APK" | tee apk-sha256.txt
           stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
           printf 'APK_PATH=%s\n' "$APK" | tee apk-path.txt
-          PACKAGE_ID="$(awk -F\"'\" '/^package: name=/{print $2; exit}' apk-badging.txt)"
+          PACKAGE_ID="$(grep -m1 '^package: name=' apk-badging.txt | cut -d "'" -f2)"
           test -n "$PACKAGE_ID"
           {
             printf '%s\n' '## Community Chat Demo — Builder APK'
@@ -119,7 +119,7 @@ jobs:
             printf '%s\n' "- APK: $APK"
             cat apk-size.txt
             printf '%s\n' "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
-            printf '%s\\n' "- Package: $PACKAGE_ID"
+            printf '%s\n' "- Package: $PACKAGE_ID"
             printf '%s\n' '- Device install/launch/interaction: NOT RUN in cloud CI'
           } >> "$GITHUB_STEP_SUMMARY"
 
