@@ -55,3 +55,23 @@ test('Detects Expo projects from dependency and config markers', () => {
   assert.strictEqual(result.projectType, 'Expo');
   assert.ok(result.warnings.some((warning) => warning.includes('prebuild')));
 });
+
+test('does not misclassify plain React Native app.json as Expo', () => {
+  const result = analyzeProjectFiles(
+    ['package.json', 'app.json', 'App.js', 'index.js'],
+    { dependencies: { react: '18.3.1', 'react-native': '0.76.9' } },
+  );
+  assert.strictEqual(result.projectType, 'React Native');
+  assert.ok(result.evidence.some((item) => item.includes('React Native dependency')));
+  assert.ok(!result.evidence.some((item) => item.includes('Expo')));
+  assert.ok(result.warnings.some((warning) => warning.includes('generate a native Android project')));
+});
+
+test('detects Expo from its explicit runtime dependency', () => {
+  const result = analyzeProjectFiles(
+    ['package.json', 'app.json', 'App.js'],
+    { dependencies: { expo: '^52.0.0', 'react-native': '0.76.9' } },
+  );
+  assert.strictEqual(result.projectType, 'Expo');
+  assert.ok(result.evidence.some((item) => item.includes('expo dependency')));
+});
