@@ -9,6 +9,8 @@ on:
       - ".github/workflows/framework-detection.yml"
       - "lib/analyzer.ts"
       - "lib/platform-generators.ts"
+      - "lib/react-native-scaffold.ts"
+      - "lib/worker.ts"
       - "lib/strategy.ts"
       - "lib/server.ts"
       - "tests/analyzer.test.ts"
