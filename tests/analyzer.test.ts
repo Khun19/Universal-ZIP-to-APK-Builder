@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { validateZipEntry, analyzeProjectFiles } from '../lib/analyzer.ts';
+import { determineBuildStrategy } from '../lib/strategy.ts';
 
 test('Security check blocks path traversal', () => {
   assert.strictEqual(validateZipEntry('../../etc/passwd'), false);
@@ -115,4 +116,21 @@ test('Does not label a generic package.json plus index.html as React/Vite withou
     { dependencies: { express: '^4.0.0' } },
   );
   assert.strictEqual(result.projectType, 'Unknown');
+});
+
+
+test('Selects different missing-Android actions for Expo and bare React Native', () => {
+  const reactNative = analyzeProjectFiles(
+    ['package.json', 'app.json', 'App.js'],
+    { dependencies: { react: '18.3.1', 'react-native': '0.76.9' } },
+  );
+  const expo = analyzeProjectFiles(
+    ['package.json', 'app.json', 'App.js'],
+    { dependencies: { expo: '^52.0.0', 'react-native': '0.76.9' } },
+  );
+  const rnStrategy = determineBuildStrategy(reactNative);
+  const expoStrategy = determineBuildStrategy(expo);
+  assert.ok(rnStrategy.buildSteps.some((step) => step.includes('bare React Native scaffold generation is not implemented')));
+  assert.ok(!rnStrategy.buildSteps.some((step) => step.includes('Expo prebuild')));
+  assert.ok(expoStrategy.buildSteps.some((step) => step.includes('Expo prebuild')));
 });
