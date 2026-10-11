@@ -55,6 +55,10 @@ test(
       fs.readFileSync(path.join(fixtureDir, 'android/gradle.properties'), 'utf8'),
       /^newArchEnabled=true$/m,
     );
+    assert.match(
+      fs.readFileSync(path.join(fixtureDir, 'android/app/src/main/res/values/styles.xml'), 'utf8'),
+      /<style\s+name="AppTheme"\s+parent="Theme\.AppCompat\.Light\.NoActionBar"\s*\/>/,
+    );
     const fixtureFiles = [
       'package.json',
       'index.js',
