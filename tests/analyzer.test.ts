@@ -107,3 +107,11 @@ test('Requires framework evidence to be non-empty and exposes ordered detection 
   ]);
   assert.ok(result.checks.every((check) => typeof check.passed === 'boolean' && check.detail.length > 0));
 });
+
+test('Does not label a generic package.json plus index.html as React/Vite without framework evidence', () => {
+  const result = analyzeProjectFiles(
+    ['package.json', 'index.html', 'server.js'],
+    { dependencies: { express: '^4.0.0' } },
+  );
+  assert.strictEqual(result.projectType, 'Unknown');
+});
