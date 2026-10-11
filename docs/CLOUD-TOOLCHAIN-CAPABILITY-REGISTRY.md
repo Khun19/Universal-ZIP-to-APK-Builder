@@ -87,7 +87,42 @@ A framework becomes `APK_BUILD_VERIFIED` only after a versioned fixture and dete
 
 A framework becomes `DEVICE_RUNTIME_VERIFIED` only after the required real-device install, launch, UI rendering, and interaction tests pass. Keep each framework's status separate; success for one fixture does not establish universal compatibility.
 
-## 7. Official references
+## 7. Quota and cost-efficiency policy
+
+The Builder should minimize consumed build minutes and artifact/cache storage before adding paid capacity or more providers. Quotas are provider-specific; multiple providers increase available capacity only when each has an implemented adapter, configured credentials/billing, and compatible toolchains. Do not promise unlimited or guaranteed-free builds.
+
+### Required CI controls
+
+- **Change-aware workflow triggers:** Run documentation, formatting, and unit-test jobs without Android toolchain setup when Android build inputs are unchanged. Use path filters carefully so shared scripts, lockfiles, build logic, fixtures, and workflow changes still trigger relevant tests.
+- **Tiered validation:** Run fast lint/unit/security/strategy tests first. Run expensive real Android builds only for relevant code changes, explicit manual dispatch, scheduled compatibility checks, or release/milestone gates.
+- **Avoid duplicate work:** Use workflow/job concurrency groups to cancel superseded runs on the same branch, while protecting release/milestone evidence runs from accidental cancellation.
+- **Dependency caching:** Cache Gradle dependencies and package-manager downloads with keys derived from lockfiles, Gradle wrapper files, SDK/toolchain versions, and OS. Caches are performance optimizations, never authoritative build artifacts; a cache miss must remain safe and reproducible.
+- **No blind retries:** Retry only known transient failures, with bounded attempts and backoff. Do not repeatedly retry deterministic compile/test failures.
+- **Keep build scopes narrow:** Build only the affected framework fixture and required dependencies for routine changes; run the complete compatibility matrix at controlled milestones/nightly cadence.
+- **Control artifacts:** Upload only the APKs, concise reports, and logs needed as evidence. Set short retention for routine CI outputs and longer retention only for release or milestone evidence. Avoid uploading SDK directories, `node_modules`, build intermediates, duplicate APKs, or full workspaces.
+- **Pin and reuse toolchains:** Pin runner image/tool versions and use setup/cache mechanisms. Consider prebuilt/custom images only after measuring whether image creation/storage costs less than repeated setup.
+- **Measure before optimizing:** Record runner minutes, queue time, cache hit/miss, download volume, artifact bytes, failure category, and estimated cost per successful validated APK.
+
+### Provider routing and fallback
+
+- Start with one primary provider/runner path and one explicitly tested fallback; do not build a complex multi-cloud orchestrator before the first path is reliable.
+- A fallback may be selected only when the primary provider is unavailable, rate-limited, out of quota, or lacks a compatible toolchain. Preserve the same adapter contract and validation gates across providers.
+- Do not automatically retry a project on another provider after a deterministic source compile error; classify failures first.
+- Provider-specific credentials, billing, terms, regional availability, quotas, and source-retention policies must be checked before enabling that provider.
+- Fail closed when all eligible providers are unavailable: report `BLOCKED`, keep the input/build ID and reason, and let the user retry later. Never claim that quota limits can be bypassed or that free capacity is unlimited.
+
+### Candidate providers (not enabled by this document alone)
+
+| Provider | Potential role | Important limits / prerequisites | Registry status |
+|---|---|---|---|
+| GitHub Actions standard hosted runners | Primary CI and Android build path | Public-repository standard runner usage may be free; private repositories have plan-based minutes/storage; concurrency and job-duration limits still apply | Candidate; verify repository visibility/plan and actual usage |
+| Google Cloud Build | Secondary cloud runner for compatible Linux Android builds | Billing account/project, API/region quota, free-tier eligibility and machine-type constraints; monitor cost and egress | Candidate; not integrated |
+| Expo EAS Build | Expo-specific managed build service | Expo account, project setup, plan quota/credits, supported project requirements; paid usage may incur charges | Candidate; not integrated |
+| Other CI/build providers | Future provider adapters | Must support required OS/toolchain, artifact retrieval, secret isolation, budget controls, and source privacy | Not evaluated |
+
+A provider's advertised free allowance or quota is subject to plan, account, region, and policy. Confirm current terms in the provider's official documentation before relying on a capacity estimate.
+
+## 8. Official references
 
 - GitHub-hosted runner images and included-software inventory: https://github.com/actions/runner-images
 - GitHub-hosted runner specifications: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
