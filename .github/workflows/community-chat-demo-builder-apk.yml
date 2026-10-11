@@ -75,8 +75,6 @@ jobs:
 
       - name: Build APK through the actual Builder CLI
         env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           BUILD_TIMEOUT_MS: "3600000"
         run: |
           set -o pipefail
