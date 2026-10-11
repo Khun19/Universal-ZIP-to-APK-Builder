@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - test/community-chat-demo-builder-apk
+      - feat/framework-specific-platform-generators
     paths:
       - ".github/workflows/community-chat-demo-builder-apk.yml"
       - "examples/react-native-chat-demo/**"
