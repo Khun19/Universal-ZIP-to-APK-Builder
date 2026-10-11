@@ -14,7 +14,7 @@
 4. The M6 cloud build at commit `3907c23e93294f1fc1d061edf32a50db18cfb993` succeeded and produced an APK. This proves cloud build and the test's APK checks only; the device runtime gate has not been proven by this CI run.
 5. The M6 integration test runs native build/structural assertions only when `RUN_ANDROID_INTEGRATION=1`. Its device install/launch block additionally requires `RUN_ANDROID_INSTALL=1` and a working `adb` or `rish` control path. A cloud-hosted runner cannot control the user's physical phone by default.
 6. The root test matrix lists security cases, but checkboxes in a document are not execution evidence. CI must run executable tests for traversal, symlink escape, file-count/size/compression limits, APK structure, and strategy selection.
-7. The UI prototype under `artifacts/zip-to-apk-builder` is a React/Vite application with separate pages for upload/analysis, build console, success/failure, history, projects, environment, and settings. Its `App.tsx` imports generated `@workspace/api-client-react` hooks for health, project, build, logs, analysis, and artifact download. Before this UI is treated as the phone-first product, verify that it is not mandatorily coupled to the legacy API server and that all status is derived from real build state rather than demo data.
+7. **Critical UI evidence gap:** The UI prototype under `artifacts/zip-to-apk-builder` has a strong multi-screen visual skeleton, but `NewBuildPage.tsx` creates a fake `File` for sample projects, simulates upload progress with timers, and constructs a hard-coded analysis result. `BuildSuccessPage.tsx` can synthesize a default successful build and a fixed-looking APK hash when no stored build exists; `BuildFailedPage.tsx` likewise has a synthetic failure/log fallback. `App.tsx` also imports generated `@workspace/api-client-react` hooks for health, project, build, logs, analysis, and artifact download. These are prototype behaviors, not trustworthy product build evidence. Before production use, remove mock success/failure fallbacks from the real flow, connect every status to authoritative Builder state, and verify that the client is not mandatorily coupled to the legacy API server.
 8. Repository metadata still exposes a Replit homepage and the root manifest includes `@replit/connectors-sdk`. This is a cleanup/audit candidate, not sufficient proof by itself that the dependency is unused or safe to remove.
 
 ## Verified evidence
@@ -67,6 +67,7 @@
 - Result screen that distinguishes Build Passed, APK Validated, Device Installed, and Device Runtime Verified.
 - Show APK size, package ID, version/SDK details where reliably extracted, SHA-256, source commit, and download action.
 - Accessible tap targets, readable text on small screens, keyboard/screen-reader labels, and recoverable upload/download errors.
+- Do not show fake sample ZIPs as actual uploads, simulated progress as real transfer progress, fixed APK hashes as actual artifact metadata, or synthetic SUCCESS/FAILED results in the production path. Keep demos clearly labelled and isolated from build evidence.
 - Keep UI independent from a specific build provider through a stable Builder client contract. Confirm the generated API client does not force a retired server into the canonical product flow.
 
 ## Implementation order
