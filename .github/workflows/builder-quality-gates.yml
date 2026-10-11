@@ -1,0 +1,84 @@
+name: Builder Quality Gates
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'artifacts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+      - '.github/workflows/**'
+      - 'docs/ARCHITECTURE.md'
+      - 'docs/TEST-MATRIX.md'
+      - 'docs/VALIDATION-WORKFLOW.md'
+      - 'docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md'
+      - 'docs/DEVELOPMENT-READINESS-AUDIT.md'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'artifacts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+      - '.github/workflows/**'
+      - 'docs/ARCHITECTURE.md'
+      - 'docs/TEST-MATRIX.md'
+      - 'docs/VALIDATION-WORKFLOW.md'
+      - 'docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md'
+      - 'docs/DEVELOPMENT-READINESS-AUDIT.md'
+
+concurrency:
+  group: builder-quality-gates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck, unit tests, and workspace build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Record toolchain
+        run: |
+          node --version
+          pnpm --version
+          uname -a
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit and regression tests
+        run: pnpm test
+
+      - name: Build workspace packages
+        run: pnpm run build
