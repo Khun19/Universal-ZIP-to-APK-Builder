@@ -129,8 +129,15 @@ export async function generateReactNativeAndroidScaffold(
         gradle = gradle.replace(debuggableVariants, 'debuggableVariants = []');
       } else {
         const reactBlock = /react\s*\{/;
-        if (!reactBlock.test(gradle)) {
-          throw new Error('Generated React Native app/build.gradle has no react { } configuration block.');
+        if (reactBlock.test(gradle)) {
+          gradle = gradle.replace(reactBlock, (match) => match + '\n    debuggableVariants = []');
+        } else {
+          // Some Community CLI templates omit the optional react extension block.
+          const pluginBoundary = /(^|\n)(plugins\s*\{[\s\S]*?\n\})/;
+          if (!pluginBoundary.test(gradle)) {
+            throw new Error('Generated React Native app/build.gradle has neither react { } nor plugins { } configuration.');
+          }
+          gradle = gradle.replace(pluginBoundary, (match) => match + '\n\nreact {\n    debuggableVariants = []\n}');
         }
         gradle = gradle.replace(reactBlock, (match) => match + '\n    debuggableVariants = []');
       }
