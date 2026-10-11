@@ -903,7 +903,9 @@ export async function executeBuildJob(
       }
 
       if (!findAndroidProjectRoot(projectPath)) {
-        const message = 'React Native build requires an Android project; Expo prebuild did not produce one.';
+        const message = usesExpo
+          ? 'Expo prebuild completed without producing an Android Gradle project.'
+          : 'Bare React Native ZIP has no Android Gradle project. This Builder version does not yet generate a native Android scaffold for bare React Native; include a valid android/ project or use a project that explicitly declares Expo.';
         logs.push(`Error: ${message}`);
         return { success: false, logs, error: message };
       }
