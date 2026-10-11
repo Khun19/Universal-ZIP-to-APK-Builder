@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getPlatformPreparationPlan } from '../lib/platform-generators.ts';
+import { communityCliVersionForReactNative } from '../lib/react-native-scaffold.ts';
 
 test('Bare React Native uses its own CLI scaffold and preserves source files', () => {
   const plan = getPlatformPreparationPlan('React Native');
@@ -42,4 +43,16 @@ test('Returned plans are copied so callers cannot mutate the registry', () => {
   first.steps.push('mutated');
   const second = getPlatformPreparationPlan('Flutter');
   assert.ok(!second.steps.includes('mutated'));
+});
+
+test('Bare React Native scaffold generator pins CLI versions to verified framework minors', () => {
+  assert.equal(communityCliVersionForReactNative('0.76.9'), '15.0.1');
+  assert.equal(communityCliVersionForReactNative('0.75.4'), '14.1.0');
+  assert.equal(communityCliVersionForReactNative('0.74.7'), '13.6.9');
+});
+
+test('Bare React Native scaffold generator refuses unknown or non-exact versions', () => {
+  assert.equal(communityCliVersionForReactNative('latest'), undefined);
+  assert.equal(communityCliVersionForReactNative('^0.76.0'), undefined);
+  assert.equal(communityCliVersionForReactNative('0.80.0'), undefined);
 });
