@@ -190,6 +190,18 @@ The same orchestration model can run in:
 
 Environment-specific adaptations belong at the environment boundary.
 
+### Local / Cloud Execution Routing
+
+Local and cloud builds are execution environments, not additional canonical product layers. The Builder may use a hybrid policy:
+
+- Use local execution only when the exact framework/toolchain/OS/architecture combination is detected and verified.
+- Route to a maintained cloud adapter when required toolchains are missing or local execution is incompatible or impractical.
+- Do not assume a cloud runner can build every framework. Require compatible versions, licences/credentials where applicable, and a real fixture.
+- If neither environment is eligible, return a truthful `BLOCKED` or `UNSUPPORTED` result; never silently substitute a different framework/build semantics.
+- Keep toolchain availability, real APK build verification, and real-device runtime verification as separate evidence levels.
+
+The initial toolchain inventory, framework adapters, evidence statuses, security constraints, and upstream references are maintained in [`docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md`](CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md). Entries marked `CANDIDATE` are not supported-framework claims.
+
 ## 9. Web and Hybrid Strategies
 
 Web/PWA projects may use the approved Web-to-APK strategy when their output is suitable for offline Android packaging.
@@ -298,6 +310,7 @@ Avoid:
 - `docs/ARCHITECTURE.md` — this architecture.
 - `docs/TEST-MATRIX.md` — test/evidence requirements.
 - `docs/VALIDATION-WORKFLOW.md` — GitHub → Termux → real-device validation procedure.
+- `docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md` — local/cloud toolchain inventory and evidence status.
 - `docs/ADR/` — long-term architectural decisions.
 
 Do not create a second roadmap or a second architecture document with competing rules.
