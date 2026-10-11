@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - test/community-chat-demo-builder-apk
+      - feat/framework-specific-platform-generators
     paths:
       - ".github/workflows/community-chat-demo-builder-apk.yml"
       - "examples/react-native-chat-demo/**"
@@ -30,6 +31,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.13.0
+
+      - name: Pin npm for deterministic React Native scaffold generation
+        run: |
+          npm install --global npm@10.9.4
+          node --version
+          npm --version
+          npm config get registry
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -67,6 +75,12 @@ jobs:
       - name: Install Builder workspace dependencies
         run: pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds
 
+      - name: Verify patch hygiene and scaffold isolation fix
+        run: |
+          git diff --check
+          grep -F "os.tmpdir()" lib/react-native-scaffold.ts
+          ! grep -F "path.dirname(projectRoot)" lib/react-native-scaffold.ts
+
       - name: Package clean Community Chat Demo ZIP
         run: |
           cd examples/react-native-chat-demo
@@ -91,19 +105,22 @@ jobs:
           test -s "$APK"
           unzip -t "$APK"
           unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          unzip -Z1 "$APK" | grep -qx 'assets/index.android.bundle' || { echo 'ERROR: APK is missing assets/index.android.bundle; it would require Metro and is not a self-contained device-test build.' >&2; exit 1; }
           aapt dump badging "$APK" | tee apk-badging.txt
           sha256sum "$APK" | tee apk-sha256.txt
           stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
           printf 'APK_PATH=%s\n' "$APK" | tee apk-path.txt
+          PACKAGE_ID="$(grep -m1 '^package: name=' apk-badging.txt | cut -d "'" -f2)"
+          test -n "$PACKAGE_ID"
           {
-            echo "## Community Chat Demo — Builder APK"
-            echo
-            echo "- Commit: `$GITHUB_SHA`"
-            echo "- APK: `$APK`"
-            echo "- $(cat apk-size.txt)"
-            echo "- SHA-256: `$(awk '{print $1}' apk-sha256.txt)`"
-            echo "- Package: `$(sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" apk-badging.txt | head -n1)`"
-            echo "- Device install/launch/interaction: NOT RUN in cloud CI"
+            printf '%s\n' '## Community Chat Demo — Builder APK'
+            printf '\n'
+            printf '%s\n' "- Commit: $GITHUB_SHA"
+            printf '%s\n' "- APK: $APK"
+            cat apk-size.txt
+            printf '%s\n' "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
+            printf '%s\n' "- Package: $PACKAGE_ID"
+            printf '%s\n' '- Device install/launch/interaction: NOT RUN in cloud CI'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Builder APK and evidence
