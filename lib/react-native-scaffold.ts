@@ -124,15 +124,15 @@ export async function generateReactNativeAndroidScaffold(
     const appBuildGradle = path.join(androidPath, 'app', 'build.gradle');
     if (fs.existsSync(appBuildGradle)) {
       let gradle = fs.readFileSync(appBuildGradle, 'utf8');
-      const debuggableVariants = /debuggableVariants\\s*=\\s*\\[[^\\]]*\\]/;
+      const debuggableVariants = /debuggableVariants\s*=\s*\[[^\]]*\]/;
       if (debuggableVariants.test(gradle)) {
         gradle = gradle.replace(debuggableVariants, 'debuggableVariants = []');
       } else {
-        const reactBlock = /react\\s*\\{/;
+        const reactBlock = /react\s*\{/;
         if (!reactBlock.test(gradle)) {
           throw new Error('Generated React Native app/build.gradle has no react { } configuration block.');
         }
-        gradle = gradle.replace(reactBlock, (match) => match + '\\n    debuggableVariants = []');
+        gradle = gradle.replace(reactBlock, (match) => match + '\n    debuggableVariants = []');
       }
       fs.writeFileSync(appBuildGradle, gradle);
     } else {
