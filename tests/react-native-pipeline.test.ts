@@ -59,6 +59,12 @@ test(
       fs.readFileSync(path.join(fixtureDir, 'android/app/src/main/res/values/styles.xml'), 'utf8'),
       /<style\s+name="AppTheme"\s+parent="Theme\.AppCompat\.Light\.NoActionBar"\s*\/>/,
     );
+    const appSource = fs.readFileSync(path.join(fixtureDir, 'App.js'), 'utf8');
+    assert.match(appSource, /M6 React Native direct build fixture/);
+    assert.match(appSource, /accessibilityRole="button"/);
+    assert.match(appSource, /accessibilityLabel="Increment tap count"/);
+    assert.match(appSource, /Tap count: \{count\}/);
+    assert.match(appSource, /onPress=\{\(\) => setCount/);
     const fixtureFiles = [
       'package.json',
       'index.js',
