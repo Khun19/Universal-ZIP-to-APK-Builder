@@ -116,6 +116,29 @@ export async function generateReactNativeAndroidScaffold(
     }
 
     fs.cpSync(generatedAndroid, androidPath, { recursive: true, errorOnExist: true });
+
+    // The generated Community CLI template marks the debug variant as
+    // debuggable, which skips createBundleDebugJsAndAssets. That APK then
+    // requires a Metro server and is not a self-contained device-test build.
+    // Force the debug APK to include the JavaScript bundle for offline launch.
+    const appBuildGradle = path.join(androidPath, 'app', 'build.gradle');
+    if (fs.existsSync(appBuildGradle)) {
+      let gradle = fs.readFileSync(appBuildGradle, 'utf8');
+      const debuggableVariants = /debuggableVariants\\s*=\\s*\\[[^\\]]*\\]/;
+      if (debuggableVariants.test(gradle)) {
+        gradle = gradle.replace(debuggableVariants, 'debuggableVariants = []');
+      } else {
+        const reactBlock = /react\\s*\\{/;
+        if (!reactBlock.test(gradle)) {
+          throw new Error('Generated React Native app/build.gradle has no react { } configuration block.');
+        }
+        gradle = gradle.replace(reactBlock, (match) => match + '\\n    debuggableVariants = []');
+      }
+      fs.writeFileSync(appBuildGradle, gradle);
+    } else {
+      throw new Error('Generated React Native Android scaffold is missing app/build.gradle; cannot ensure a bundled debug APK.');
+    }
+
     return { reactNativeVersion, cliVersion, androidPath };
   } catch (error) {
     fs.rmSync(androidPath, { recursive: true, force: true });
