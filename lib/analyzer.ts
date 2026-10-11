@@ -60,7 +60,7 @@ export function analyzeProjectFiles(
   const dependencies = {
     ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
     ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson.peerDependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((packageJson.optionalDependencies as Record<string, unknown> | undefined) ?? {}),
   };
   const hasPackageJson = hasPath(normalizedPaths, 'package.json');
   const hasAppJson = hasPath(normalizedPaths, 'app.json');
@@ -147,11 +147,11 @@ export function analyzeProjectFiles(
     record('5-framework-decision', true, 'React/Vite Web App selected from combined package and config evidence');
     return result('React/Vite Web App', 96);
   }
-  if (hasPackageJson && hasIndexHtml && !hasReactNativeDependency && !hasExpoDependency && !hasCapacitorConfig) {
-    evidence.push('package.json and index.html present without native framework dependencies');
-    if (!hasViteConfig) evidence.push('No Vite config; treated as a web project rather than a named framework');
-    record('5-framework-decision', true, 'Web app selected from package manifest and HTML entry point');
-    return result('React/Vite Web App', 85);
+  if (hasPackageJson && hasIndexHtml && (hasReactDependency || (hasViteConfig && hasViteDependency)) &&
+      !hasReactNativeDependency && !hasExpoDependency && !hasCapacitorConfig && !hasCapacitorDependency) {
+    evidence.push('package.json and index.html paired with React or explicit Vite dependency/config');
+    record('5-framework-decision', true, 'React/Vite Web App selected from framework dependency and web entry evidence');
+    return result('React/Vite Web App', 93);
   }
   if (hasIndexHtml && !hasPackageJson) {
     evidence.push('index.html present without package.json');
