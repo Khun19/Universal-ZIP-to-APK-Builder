@@ -1,14 +1,6 @@
 # Source ZIP Generator and Framework-Specific Platform Generators
 
-## Product placement
-
-Keep **Import Source ZIP** and **Create Source Project** as two entry points in the same project intake screen:
-
-1. **Import Source ZIP** — user selects an existing archive.
-2. **Create Source Project** — user chooses a template (for example, a bare React Native starter or a web starter), enters a project name, and optionally chooses starter features.
-3. Both paths produce a source directory/archive and converge at the same security-validation and project-analysis pipeline.
-
-The Source ZIP Generator belongs **before ZIP validation/extraction**, beside the import entry point. It is a source-project authoring tool, not an Android platform generator. Generated ZIPs must be treated as untrusted input too and pass the same validation pipeline; do not bypass validation merely because the Builder generated them.
+undefined
 
 ## Build pipeline
 
