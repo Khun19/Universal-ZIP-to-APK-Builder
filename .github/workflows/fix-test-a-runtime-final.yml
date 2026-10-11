@@ -4,56 +4,27 @@ on:
   push:
     branches:
       - fix/test-a-runtime-final
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: write
 
 jobs:
   finalize:
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/test-a-runtime-final'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Checkout exact branch commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref || github.ref_name }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Normalize SAF patch script for current template
+      - name: Verify checked-out commit
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('scripts/patch-test-a-directory-picker.py')
-          s = p.read_text()
-          old = ('            @Override\\n'
-                 '            public WebResourceResponse shouldInterceptRequest(\\n'
-                 '                    WebView view, String url) {\\n'
-                 '                return assetLoader.shouldInterceptRequest(Uri.parse(url));\\n'
-                 '            }\\n')
-          new = ('            @Override\\n'
-                 '            @SuppressWarnings("deprecation")\\n'
-                 '            public WebResourceResponse shouldInterceptRequest(\\n'
-                 '                    WebView view, String url) {\\n'
-                 '                return assetLoader.shouldInterceptRequest(Uri.parse(url));\\n'
-                 '            }\\n')
-          if old in s:
-              s = s.replace(old, new, 1)
-          old_call = "rep(marker, marker + js, 'page finished')"
-          new_call = '''anchor = 'new WebViewClient() {'
-          if s.count(anchor) != 1:
-              raise SystemExit(f'WebViewClient anchor: expected exactly one match, got {s.count(anchor)}')
-          s = s.replace(old_call, "s = s.replace(anchor, anchor + js, 1)", 1)
-          if old_call in s:
-              raise SystemExit('page-finished patch call was not replaced')
-          '''
-          if old_call not in s:
-              raise SystemExit('expected legacy page-finished patch call')
-          s = s.replace(old_call, new_call, 1)
-          p.write_text(s)
-          print('SAF patch script normalized for current WebViewClient template')
-          PY
+          echo "Workflow SHA: $GITHUB_SHA"
+          echo "Checked-out SHA: $(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Apply Android SAF bridge
         run: python3 scripts/patch-test-a-directory-picker.py
@@ -86,7 +57,7 @@ jobs:
           rm -f .github/workflows/fix-test-a-runtime-final.yml scripts/patch-test-a-directory-picker.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add lib/template.ts .github/workflows/fix-test-a-runtime-final.yml scripts/patch-test-a-directory-picker.py
+          git add -A lib/template.ts .github/workflows/fix-test-a-runtime-final.yml scripts/patch-test-a-directory-picker.py
           git diff --cached --quiet && exit 0 || true
           git commit -m 'fix(test-a): finalize Android SAF directory picker bridge'
           git push origin HEAD:fix/test-a-runtime-final
