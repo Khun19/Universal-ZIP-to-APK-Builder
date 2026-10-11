@@ -110,14 +110,14 @@ jobs:
           stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
           printf 'APK_PATH=%s\n' "$APK" | tee apk-path.txt
           {
-            echo "## Community Chat Demo — Builder APK"
-            echo
-            echo "- Commit: `$GITHUB_SHA`"
-            echo "- APK: `$APK`"
-            echo "- $(cat apk-size.txt)"
-            echo "- SHA-256: `$(awk '{print $1}' apk-sha256.txt)`"
-            echo "- Package: `$(sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" apk-badging.txt | head -n1)`"
-            echo "- Device install/launch/interaction: NOT RUN in cloud CI"
+            printf '%s\n' '## Community Chat Demo — Builder APK'
+            printf '\n'
+            printf '%s\n' "- Commit: $GITHUB_SHA"
+            printf '%s\n' "- APK: $APK"
+            cat apk-size.txt
+            printf '%s\n' "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
+            printf '%s\n' "- Package: $(sed -n \"s/^package: name='\\\\([^']*\\\\)'.*/\\\\1/p\" apk-badging.txt | head -n1)"
+            printf '%s\n' '- Device install/launch/interaction: NOT RUN in cloud CI'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Builder APK and evidence
