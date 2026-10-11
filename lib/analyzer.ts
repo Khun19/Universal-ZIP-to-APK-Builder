@@ -17,7 +17,7 @@ export interface AnalysisResult {
 
 export function validateZipEntry(entryPath: string): boolean {
   if (entryPath.includes('..') || path.isAbsolute(entryPath)) return false;
-  if (/^[a-zA-Z]:\\/.test(entryPath)) return false;
+  if (/^[a-zA-Z]:\\\\/.test(entryPath)) return false;
   return true;
 }
 
@@ -27,12 +27,12 @@ export function analyzeProjectFiles(
 ): AnalysisResult {
   const evidence: string[] = [];
   const warnings: string[] = [];
-  const normalizedPaths = filePaths.map((filePath) => filePath.replace(/\\/g, '/'));
+  const normalizedPaths = filePaths.map((filePath) => filePath.replace(/\\\\/g, '/'));
 
   const hasBuildGradle = normalizedPaths.some((filePath) => filePath.endsWith('build.gradle') || filePath.endsWith('build.gradle.kts'));
   const hasAndroidManifest = normalizedPaths.some((filePath) => filePath.endsWith('AndroidManifest.xml'));
-  const hasCapacitorConfig = normalizedPaths.some((filePath) => /(^|\/)capacitor\.config\.(json|js|cjs|ts|mjs)$/.test(filePath));
-  const hasAndroidDirectory = normalizedPaths.some((filePath) => /^android\/(settings\.gradle|settings\.gradle\.kts|app\/)/.test(filePath));
+  const hasCapacitorConfig = normalizedPaths.some((filePath) => /(^|\\/)capacitor\\.config\\.(json|js|cjs|ts|mjs)$/.test(filePath));
+  const hasAndroidDirectory = normalizedPaths.some((filePath) => /^android\\/(settings\\.gradle|settings\\.gradle\\.kts|app\\/)/.test(filePath));
 
   if (hasCapacitorConfig) {
     evidence.push('Capacitor configuration detected');
@@ -43,7 +43,7 @@ export function analyzeProjectFiles(
 
   const hasFlutterMarkers = normalizedPaths.some((filePath) => filePath === 'pubspec.yaml' || filePath.endsWith('/pubspec.yaml'));
   const hasFlutterDirectory = normalizedPaths.some((filePath) => filePath === 'lib/main.dart' || filePath.endsWith('/lib/main.dart'));
-  const hasFlutterAndroid = normalizedPaths.some((filePath) => /^android\/(app\/|settings\.gradle|settings\.gradle\.kts)/.test(filePath));
+  const hasFlutterAndroid = normalizedPaths.some((filePath) => /^android\\/(app\\/|settings\\.gradle|settings\\.gradle\\.kts)/.test(filePath));
   if (hasFlutterMarkers && hasFlutterDirectory) {
     evidence.push('Flutter pubspec.yaml detected');
     evidence.push('Flutter lib/main.dart detected');
@@ -56,14 +56,16 @@ export function analyzeProjectFiles(
     ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
     ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
   };
-  const hasExpoConfig = normalizedPaths.some((filePath) => /(^|\/)app\.config\.(js|ts|json)$/.test(filePath) || /(^|\/)app\.json$/.test(filePath));
+  // app.json is common in plain React Native projects. It does not identify Expo
+  // unless the Expo runtime is declared; app.config.* is Expo-specific.
+  const hasExpoConfig = normalizedPaths.some((filePath) => /(^|\\/)app\\.config\\.(js|ts|json)$/.test(filePath));
   const hasExpoDependency = typeof dependencies.expo === 'string';
   const hasReactNativeDependency = typeof dependencies['react-native'] === 'string';
-  const hasAndroidProject = normalizedPaths.some((filePath) => /^android\/(settings\.gradle|settings\.gradle\.kts|app\/)/.test(filePath));
+  const hasAndroidProject = normalizedPaths.some((filePath) => /^android\\/(settings\\.gradle|settings\\.gradle\\.kts|app\\/)/.test(filePath));
   if (hasExpoDependency || hasExpoConfig) {
-    evidence.push('Expo project markers detected');
+    evidence.push('Expo-specific dependency or app.config.* detected');
     if (hasExpoDependency) evidence.push('expo dependency detected');
-    if (hasExpoConfig) evidence.push('Expo configuration detected');
+    if (hasExpoConfig) evidence.push('app.config.* detected');
     if (hasAndroidProject) evidence.push('Android project detected');
     else warnings.push('Android platform is missing; local Expo prebuild is required before Gradle');
     return { projectType: 'Expo', confidence: hasAndroidProject ? 97 : 92, evidence, warnings };
@@ -71,7 +73,7 @@ export function analyzeProjectFiles(
   if (hasReactNativeDependency) {
     evidence.push('React Native dependency detected');
     if (hasAndroidProject) evidence.push('Android project detected');
-    else warnings.push('Android platform is missing; a native Android project is required for local APK builds');
+    else warnings.push('Android platform is missing; Builder must generate a native Android project before building');
     return { projectType: 'React Native', confidence: hasAndroidProject ? 97 : 88, evidence, warnings };
   }
 
