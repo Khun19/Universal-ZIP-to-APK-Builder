@@ -1,681 +1,290 @@
-<div align="center">📦 Universal ZIP-to-APK Builder
+# Universal ZIP-to-APK Builder
 
-Build Android APKs from structured ZIP projects — automatically.
+**Phone-first Android Builder: ZIP → Analyze → Real Build → APK → Install/Runtime**
 
-""License" (https://img.shields.io/badge/License-MIT-yellow.svg)" (LICENSE)
-""PRs Welcome" (https://img.shields.io/badge/PRs-welcome-brightgreen.svg)" (CONTRIBUTING.md)]
+Universal ZIP-to-APK Builder is a developer-focused build orchestrator for turning structured project ZIPs into real Android APKs. The project prioritizes truthful build evidence, deterministic strategy selection, and local phone/Termux execution.
 
-Universal ZIP-to-APK Builder is a developer-focused build platform that analyzes
-structured ZIP projects, selects an appropriate Android build strategy, executes
-the build pipeline, validates the resulting APK, and makes the final artifact
-available for download.
+> **Important:** Build/CI success is not runtime success. A runtime-sensitive milestone is PASS only after the required install/launch/runtime evidence exists.
 
-The project is designed to support local Android build environments, including
-phone-based development environments such as Termux, as well as containerized
-build environments.
+## Canonical project rules
 
----
+The canonical development contract is defined by these repository documents:
 
-"✨ Features" (#-features) ·
-"🏗️ Architecture" (#️-architecture) ·
-"🚀 Quick Start" (#-quick-start) ·
-"📦 Supported Projects" (#-supported-project-types) ·
-"📁 Project Structure" (#-project-structure) ·
-"🐳 Docker" (#-docker) ·
-"🔧 Build Pipeline" (#-build-pipeline) ·
-"🧪 Testing" (#-testing) ·
-"🤝 Contributing" (#-contributing) ·
-"📄 License" (#-license)
+- **Master roadmap:** `/ROADMAP.md`
+- **Architecture:** `docs/ARCHITECTURE.md`
+- **Engineering / agent rules:** `AGENTS.md`
+- **Validation workflow:** `docs/VALIDATION-WORKFLOW.md`
+- **Test/evidence matrix:** `docs/TEST-MATRIX.md`
+- **Architectural decisions:** `docs/ADR/`
 
----
+### Goal Alignment & Deviation Audit
 
-</div>✨ Features
+Before and after every milestone or major implementation, the development agent must verify that the work still serves the project's target goal.
 
-- ZIP → APK pipeline — Upload a structured ZIP project and build an Android APK.
-- Automatic project detection — Detects Native Android, Capacitor, React/Vite, and plain Web projects.
-- Strategy-based builds — Selects the appropriate build strategy based on project analysis.
-- Native Android builds — Supports existing Android/Gradle projects.
-- Web-to-APK builds — Web projects can be prepared for Android through the web-wrapper build pipeline.
-- Capacitor builds — Supports projects using Capacitor.
-- Secure ZIP extraction — ZIP files are validated before extraction to reduce path-traversal and unsafe archive risks.
-- APK validation — Generated APKs are checked to ensure they are valid Android package artifacts.
-- SHA-256 verification — The final APK can be hashed for artifact integrity verification.
-- Build logs — The build engine exposes detailed build information and logs.
-- Environment detection — Android SDK, JDK, Gradle, Node.js, npm, AAPT2, and related tooling can be checked before building.
-- Developer dashboard — Provides a browser-based interface for managing builds and artifacts.
-- Termux-friendly architecture — The build engine can operate in a local Android/Termux development environment.
-- Docker support — A dedicated Android builder environment is available under "docker/android-builder".
-- Monorepo architecture — Shared packages separate analysis, security, build execution, API contracts, database access, and frontend functionality.
+The audit asks:
 
----
+1. Is the implementation correct technically?
+2. Is it still aligned with the target goal and current architecture?
+3. Can a technically correct change create goal deviation?
+4. What requirements, dependencies, constraints, or acceptance criteria are missing?
+5. Is there false progress, scope drift, or a legacy architecture pulling the implementation off course?
+6. What must be corrected before the milestone can proceed?
 
-🏗️ Architecture
+This is a **development/governance gate**, not a replacement for build or runtime validation.
 
-The project consists of several major layers.
+### GitHub-Gated Milestone Development & Termux Validation Loop
 
-Shared Build Libraries
+`Goal Alignment Audit → implement one milestone → GitHub → pull exact commit in Termux → build/test → record evidence → PASS/FAIL/BLOCKED`
 
-The "lib/" directory contains reusable build infrastructure:
+Do not advance a failed, blocked, or goal-misaligned milestone.
 
-- "shared" — Shared types and utilities.
-- "security" — ZIP validation, safe extraction, hashing, and APK validation.
-- "analyzer" — Project-type detection and analysis.
-- "build-engine" — Build strategy selection and process execution.
-- "build-queue" — Build queue infrastructure.
-- "db" — Database and repository layer.
-- "api-spec" — API contracts and OpenAPI definitions.
-- "api-client-react" — Generated React API client/hooks.
-- "api-zod" — Generated validation schemas.
+## Core pipeline
 
-Web Application
-
-The frontend lives under:
-
-artifacts/zip-to-apk-builder/
-
-It is built with a modern React/Vite stack and provides the user-facing dashboard for:
-
-- Uploading projects
-- Viewing project analysis
-- Monitoring builds
-- Viewing logs
-- Inspecting artifacts
-- Downloading APKs
-
-API Server
-
-The API implementation is located under:
-
-artifacts/api-server/
-
-It provides the application API and connects the frontend to project/build data.
-
-Local Build Pipeline
-
-The legacy/local HTTP entry point and local build executor live under "lib/".
-
-The local build pipeline is particularly important for environments such as
-Termux, where the actual Android build is performed on the local machine.
-
-Worker Infrastructure
-
-The "worker/" directory contains background build infrastructure intended for
-containerized/queued build workflows.
-
----
-
-📦 Supported Project Types
-
-The analyzer can identify several common project structures.
-
-Native Android
-
-Typical indicators include:
-
-- "settings.gradle"
-- "settings.gradle.kts"
-- Android "app/" module
-- "AndroidManifest.xml"
-- Gradle build files
-
-Strategy:
-
-native-gradle
-
-Capacitor
-
-Projects containing Capacitor configuration can use the Capacitor build pipeline.
-
-Strategy:
-
-capacitor
-
-Typical flow:
-
-Web Build
-    ↓
-Capacitor Sync
-    ↓
-Gradle Build
-    ↓
+```text
+ZIP
+ ↓
+Security Validation
+ ↓
+Project Detection
+ ↓
+Evidence / Confidence
+ ↓
+Strategy / Official Flow Adapter
+ ↓
+Phone-Compatible Environment
+ ↓
+Real Build
+ ↓
+APK Discovery
+ ↓
 APK Validation
+ ↓
+SHA-256
+ ↓
+Delivery
+ ↓
+Install / Launch / Runtime Validation
+```
 
-React / Vite
+## Official Flow Adapter principle
 
-Web projects can be prepared for Android through the web-wrapper pipeline.
+When a framework has an established official/native Android build flow, Builder uses an **Official Flow Adapter** rather than inventing a substitute compiler or wrapper.
 
-Strategy:
+```text
+Official Framework Flow
+        ↓
+Phone/Termux-Compatible Environment
+        ↓
+Real Native Build
+        ↓
+Real APK
+        ↓
+Install / Launch
+        ↓
+Runtime Validation
+```
 
-web-wrapper
+Initial priority:
 
-Typical flow:
+1. React Native
+2. Expo
+3. Flutter
+4. Capacitor
+5. Native Android
 
-Web Build
-    ↓
-Android Wrapper
-    ↓
-Gradle Build
-    ↓
-APK Validation
+The Builder may adapt the execution environment for Android phone/ARM64/Termux constraints, but it must preserve the framework's real native build semantics.
 
-Plain HTML / JavaScript
+The Builder must not:
 
-Supported web projects can also be wrapped into an Android application through
-the web-wrapper strategy.
+- create fake or mock APKs;
+- use compile-only evidence as runtime PASS;
+- silently replace a native framework with a generic WebView wrapper;
+- silently fall back to an unrelated strategy;
+- claim support from detector code alone.
 
-Unknown Projects
+## Current strategy direction
 
-If the analyzer cannot confidently identify a supported project structure, the
-build can be blocked rather than attempting an unsafe or invalid build.
+The roadmap covers:
 
----
+- Plain HTML/CSS/JS
+- React/Vite/PWA
+- Flutter
+- React Native
+- Expo
+- Capacitor/Ionic/Cordova
+- Native Android Kotlin/Java
+- Additional frameworks and Android-buildable project types
 
-🔧 Build Pipeline
+**Roadmap targets are not automatically supported/PASS.** Each framework needs a real fixture, deterministic strategy, real APK, and the runtime evidence required by its milestone.
 
-The Builder Engine follows a phase-based pipeline.
+## Canonical repository architecture
 
-ZIP Upload
-    ↓
-EXTRACTING
-    ↓
-ANALYZING
-    ↓
-PREPARING_ENV
-    ↓
-WEB_BUILD          (when required)
-    ↓
-CAPACITOR_SYNC     (when required)
-    ↓
-GRADLE_BUILD
-    ↓
-LOCATING_APK
-    ↓
-VALIDATING_APK
-    ↓
-HASHING
-    ↓
-SUCCESS
+The project has exactly **three canonical development layers**:
 
-Depending on the project type, some phases are skipped.
+```text
+Layer 1 — Android Builder UI
+Layer 2 — Termux Environment Setup
+Layer 3 — GitHub Builder Code
+```
 
-For example, a Native Android project normally follows:
+### Layer 1 — Android Builder UI
 
-EXTRACTING
-    ↓
-ANALYZING
-    ↓
-PREPARING_ENV
-    ↓
-GRADLE_BUILD
-    ↓
-LOCATING_APK
-    ↓
-VALIDATING_APK
-    ↓
-HASHING
-    ↓
-SUCCESS
+The phone-first user interface and presentation layer.
 
-Build States
+Primary source/prototype location:
 
-The application can represent states such as:
+`artifacts/zip-to-apk-builder/`
 
-QUEUED
-EXTRACTING
-ANALYZING
-PREPARING_ENV
-WEB_BUILD
-CAPACITOR_SYNC
-GRADLE_BUILD
-LOCATING_APK
-VALIDATING_APK
-HASHING
-SUCCESS
-FAILED
-BLOCKED
+UI state must come from real Builder state. Demo/mock data must never be presented as build evidence.
 
-The UI should display these real build phases rather than inventing artificial
-percentage-based progress.
+### Layer 2 — Termux Environment Setup
 
----
+The phone-local environment and setup/diagnostic tooling required to execute the Builder on Android/Termux.
 
-🔐 ZIP Security
+This layer is responsible for preparing and detecting the local toolchain; it is not a second Builder implementation.
 
-Uploaded ZIP archives are processed through security checks before being used
-as build input.
+### Layer 3 — GitHub Builder Code
 
-The extraction pipeline is designed to protect against common unsafe archive
-conditions, including:
+The canonical Builder implementation and its shared development/test code:
 
-- Absolute paths
-- Directory traversal
-- Windows drive paths
-- NUL characters
-- Unsafe extracted paths
-- Symlink-related risks
-- Excessive file counts
-- Excessive uncompressed archive size
-- Abnormally high compression ratios
+- `lib/` — analyzer, security, build engine, strategy/adapter logic, shared types/utilities, and other canonical Builder code
+- `tests/` — unit, integration, fixture, security, compatibility, and acceptance tests
+- `scripts/` — repository-supported setup and diagnostic tooling
+- `docs/` — architecture, roadmap, validation, test matrix, and ADRs
 
-Only validated project contents should be passed into the build pipeline.
+### Explicit architecture boundary
 
----
+The following are **not canonical architecture layers**:
 
-📱 Termux / Local Android Builds
+- `artifacts/api-server/`
+- `lib/db/`
+- `lib/build-queue/`
+- `worker/`
+- `docker/` or other container-specific builder infrastructure
+- legacy/replit-specific files or infrastructure
 
-The Builder Engine is designed to support local Android build environments.
+If such files remain in the repository for compatibility, history, CI, or cleanup purposes, they are **Secondary/Legacy**, not part of the three-layer product architecture. New development must not treat them as required product layers unless an explicit ADR changes the architecture.
 
-A typical Termux environment may provide:
+Do not create a competing backend, database, queue, Docker, or hosted architecture and present it as the phone-first Builder architecture.
 
-Android SDK
-Build Tools
-JDK 17 / JDK 21
-Gradle
-Node.js
-npm
-unzip
-AAPT2
+## Phone / Termux
 
-The Android SDK location is supplied through the environment rather than being
-hard-coded into the application.
+The primary development target is a local Android phone environment such as Termux.
 
-For example:
+Typical prerequisites include:
 
+- Android SDK
+- Android build-tools
+- Java/JDK
+- Gradle
+- Node.js/package manager
+- framework-specific native toolchains where required
+- AAPT2 and related Android tools
+
+Tool paths must be detected from the environment rather than hard-coded.
+
+A typical environment may use:
+
+```bash
 export ANDROID_HOME="$HOME/android-sdk"
 export ANDROID_SDK_ROOT="$HOME/android-sdk"
+```
 
-The exact SDK path depends on the host environment.
+Use the repository's current setup/diagnostic scripts rather than assuming a specific SDK installation.
 
----
+## Development
 
-🚀 Quick Start
+Install dependencies:
 
-1. Clone the Repository
-
-git clone https://github.com/Khun19/Universal-ZIP-to-APK-Builder.git
-cd Universal-ZIP-to-APK-Builder
-
-2. Install Dependencies
-
-This repository uses pnpm workspace tooling.
-
-Install pnpm if necessary, then run:
-
+```bash
 pnpm install
+```
 
-3. Configure Environment
+Typecheck:
 
-If environment configuration is required:
-
-cp .env.example .env
-
-Review the variables in ".env.example" and configure only the values required
-by your environment.
-
-4. Development
-
-Use the development scripts defined in the repository's "package.json".
-
-To inspect the available scripts:
-
-cat package.json
-
-or:
-
-node -e "console.log(require('./package.json').scripts)"
-
-Then start the appropriate development service.
-
-5. Production Build
-
-Build the workspace with:
-
-pnpm run build
-
-Type-check the workspace with:
-
+```bash
 pnpm run typecheck
+```
 
-«The exact development command may vary depending on which workspace/service
-you are running. Check the corresponding "package.json" before starting a
-specific service.»
+Build:
 
----
-
-🌐 Development Services
-
-The repository contains multiple application layers rather than a single
-standalone server.
-
-Depending on the development setup, the project may expose:
-
-Frontend UI
-API Server
-Local Build Executor
-
-The local build environment can use a browser-accessible dashboard together
-with the local Builder Engine.
-
-The actual ports should be taken from the current development configuration
-rather than assumed in documentation.
-
----
-
-📁 Project Structure
-
-Universal-ZIP-to-APK-Builder/
-│
-├── .agents/
-│   └── memory/
-│
-├── .claude/
-│   └── skills/
-│
-├── .github/
-│   └── workflows/
-│
-├── .workspace/
-│
-├── _bmad/
-│
-├── artifacts/
-│   ├── api-server/
-│   │   └── API implementation
-│   │
-│   └── zip-to-apk-builder/
-│       └── React/Vite web application
-│
-├── docker/
-│   └── android-builder/
-│       └── Android builder environment
-│
-├── docs/
-│   └── Documentation
-│
-├── lib/
-│   ├── analyzer/
-│   ├── api-client-react/
-│   ├── api-spec/
-│   ├── api-zod/
-│   ├── build-engine/
-│   ├── build-queue/
-│   ├── db/
-│   ├── security/
-│   ├── shared/
-│   ├── analyzer.ts
-│   ├── capacitor-builder.ts
-│   ├── server-http.ts
-│   ├── strategy.ts
-│   ├── template.ts
-│   ├── web-builder.ts
-│   └── worker.ts
-│
-├── public/
-│
-├── scripts/
-│
-├── tests/
-│
-├── worker/
-│
-├── dashboard.html
-├── package.json
-├── pnpm-lock.yaml
-├── pnpm-workspace.yaml
-└── .env.example
-
-«Project structure can evolve as the Builder Engine and frontend continue to
-be developed.»
-
----
-
-🐳 Docker
-
-The repository includes an Android builder environment under:
-
-docker/android-builder/
-
-Docker can be used when a reproducible containerized Android build environment
-is desired.
-
-Example:
-
-docker compose up
-
-«Docker configuration depends on the files and services currently included in
-the repository. For local Termux builds, the native/local Builder Engine may
-be used instead of Docker.»
-
----
-
-📱 Termux Setup
-
-For a new Android phone running Termux, clone the repository and run:
-
-    git clone https://github.com/Khun19/Universal-ZIP-to-APK-Builder.git
-    cd Universal-ZIP-to-APK-Builder
-    ./scripts/setup-termux.sh
-    pnpm test
-
-The setup script is idempotent: it keeps existing Node.js, pnpm, Java, Gradle, and Android SDK installations, installs only missing components, persists the Android/Java environment in ~/.profile and ~/.bashrc, and installs dependencies with the frozen pnpm-lock.yaml when available. It does not force-install disabled Android ARM64 native packages or rewrite the repository's package overrides.
-
-The default SDK target is Android API 33 with build-tools 33.0.2. Override ANDROID_API_LEVEL, ANDROID_BUILD_TOOLS_VERSION, or ANDROID_SDK_ROOT before running the script when a project requires another installed SDK target.
-
----
-
-🧪 Testing
-
-Run the repository's type-checking workflow:
-
-pnpm run typecheck
-
-Run the configured build:
-
+```bash
 pnpm run build
+```
 
-Run the project's test command if configured:
+Tests:
 
+```bash
 pnpm test
+```
 
-To inspect all available scripts:
+Inspect available scripts:
 
+```bash
 node -e "console.log(require('./package.json').scripts)"
+```
 
-The project should be tested against:
+## Security
 
-- ZIP validation
-- Safe extraction
-- Project detection
-- Build strategy selection
-- Android build execution
-- APK discovery
-- APK validation
-- SHA-256 hashing
-- API responses
-- Frontend build state handling
+ZIP files are untrusted input.
 
----
+The security layer is expected to address:
 
-📡 API
+- absolute paths;
+- `../` traversal;
+- Windows drive paths;
+- unsafe/NUL filenames;
+- symlink escapes;
+- excessive file count;
+- excessive uncompressed size;
+- abnormal compression ratios;
+- workspace containment;
+- safe command/argument handling.
 
-The application is designed around API-driven project and build management.
+Do not execute user-controlled filenames as shell syntax.
 
-Important API operations include:
+## APK evidence
 
-GET  /api/healthz
-GET  /api/environment
+A build is not complete merely because a command exits successfully.
 
-GET  /api/builds
-POST /api/builds
+Required evidence depends on the milestone and includes:
 
-GET  /api/builds/:id
-GET  /api/builds/:id/logs
-GET  /api/builds/:id/analysis
-GET  /api/builds/:id/artifact
-GET  /api/builds/:id/artifact/download
+- branch;
+- commit SHA;
+- fixture filename/SHA-256;
+- detected type;
+- toolchain versions;
+- build command/result;
+- APK path and byte size;
+- APK SHA-256;
+- install result;
+- runtime result;
+- device information when applicable;
+- failure logs and limitations.
 
-The exact availability of an endpoint depends on the currently deployed backend
-implementation.
+## Status semantics
 
-API contracts are maintained under:
+| Status | Meaning |
+|---|---|
+| **PASS** | All mandatory evidence exists and passes |
+| **FAIL** | A mandatory criterion failed |
+| **BLOCKED** | Required external environment/device/tool is unavailable |
+| **NOT RUN** | Verification has not been executed |
 
-lib/api-spec/
+**BLOCKED is never PASS.**
 
----
+## Documentation policy
 
-📦 APK Artifacts
+Keep one source of truth per concern:
 
-After a successful build, the Builder Engine locates the generated APK and
-validates it before exposing it as an artifact.
+- `ROADMAP.md` — milestones
+- `docs/ARCHITECTURE.md` — architecture
+- `docs/TEST-MATRIX.md` — tests/evidence
+- `docs/VALIDATION-WORKFLOW.md` — validation loop
+- `docs/ADR/` — architectural decisions
 
-Artifact information can include:
+Do not recreate competing roadmap or architecture documents.
 
-Filename
-File Size
-SHA-256
-Build ID
-Download URL
+## License
 
-The APK validation process checks that the generated file is a real APK artifact
-and contains the expected Android package structure.
-
----
-
-🛠️ Build Strategies
-
-Native Gradle
-
-Used for existing Android projects.
-
-Project
-  ↓
-Android Project Detection
-  ↓
-Environment Preparation
-  ↓
-Gradle assembleDebug
-  ↓
-APK Validation
-
-Capacitor
-
-Used for projects containing Capacitor.
-
-Project
-  ↓
-Web Build
-  ↓
-Capacitor Sync
-  ↓
-Gradle Build
-  ↓
-APK Validation
-
-Web Wrapper
-
-Used for supported web applications.
-
-Web Project
-  ↓
-Web Build
-  ↓
-Android Wrapper
-  ↓
-Gradle Build
-  ↓
-APK Validation
-
----
-
-📊 Design Principles
-
-The Builder Engine and its UI follow several important principles.
-
-Real Build State
-
-The UI should reflect actual backend state.
-
-REAL BUILD STATE
-      >
-FAKE VISUAL PROGRESS
-
-If the backend does not provide exact percentage progress, the UI should use
-phase-based progress instead.
-
-Fail Clearly
-
-Build failures should expose the failed phase and useful technical information
-instead of hiding the error behind generic messages.
-
-Validate Before Delivery
-
-An APK should not be presented as successfully built until it has passed the
-required validation checks.
-
-Separate Concerns
-
-The project separates:
-
-Security
-Analysis
-Build Execution
-API
-Database
-Frontend
-Worker Infrastructure
-
-This allows individual layers to evolve without unnecessarily rewriting the
-entire build system.
-
----
-
-🤝 Contributing
-
-Contributions, bug reports, improvements, and feature requests are welcome.
-
-Report a Bug
-
-Please provide:
-
-- Project type
-- ZIP structure
-- Build strategy
-- Build phase where the problem occurred
-- Relevant logs
-- Environment information
-- Error message
-
-Avoid uploading secrets, API keys, private certificates, or sensitive project
-files.
-
-Pull Requests
-
-Before submitting a pull request:
-
-pnpm install
-pnpm run typecheck
-pnpm run build
-
-Run the project's configured test suite when applicable.
-
----
-
-📄 License
-
-This project is distributed under the MIT License.
-
-See:
-
-LICENSE
-
-for the complete license text.
-
----
-
-<div align="center">Universal ZIP-to-APK Builder
-
-Built for developers who want a simpler path from project ZIP to Android APK.
-
-"Khun19" (https://github.com/Khun19)
-
-</div>
+MIT. See `LICENSE`.
