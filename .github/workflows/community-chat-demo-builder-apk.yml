@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - test/community-chat-demo-builder-apk
+  pull_request:
+    branches:
+      - test/community-chat-demo-builder-apk
     paths:
       - ".github/workflows/community-chat-demo-builder-apk.yml"
       - "examples/react-native-chat-demo/**"
