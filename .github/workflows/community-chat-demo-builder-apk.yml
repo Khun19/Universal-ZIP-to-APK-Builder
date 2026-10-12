@@ -75,10 +75,8 @@ jobs:
           set -euo pipefail
           SCAFFOLD_DIR="$RUNNER_TEMP/community-chat-native-scaffold"
           rm -rf "$SCAFFOLD_DIR"
-          npx --yes @react-native-community/cli@15.0.1 init CommunityChatDemo \\
-            --version 0.76.9 \\
-            --directory "$SCAFFOLD_DIR" \\
-            --skip-install
+          cd "$RUNNER_TEMP"
+          npx --yes @react-native-community/cli@15.0.1 init CommunityChatDemo --version 0.76.9 --directory "$SCAFFOLD_DIR" --skip-install
           test -s "$SCAFFOLD_DIR/android/gradlew"
           test -s "$SCAFFOLD_DIR/android/app/build.gradle"
           rm -rf examples/react-native-chat-demo/android
