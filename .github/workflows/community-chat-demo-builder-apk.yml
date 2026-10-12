@@ -5,6 +5,7 @@ on:
     branches:
       - test/community-chat-demo-builder-apk
       - feat/framework-specific-platform-generators
+      - fix/community-chat-rn-js-bundle
     paths:
       - ".github/workflows/community-chat-demo-builder-apk.yml"
       - "examples/react-native-chat-demo/**"
