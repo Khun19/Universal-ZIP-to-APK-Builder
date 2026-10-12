@@ -67,11 +67,26 @@ jobs:
       - name: Install Builder workspace dependencies
         run: pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds
 
+      - name: Generate matching React Native Android platform for the demo ZIP
+        run: |
+          set -euo pipefail
+          SCAFFOLD_DIR="$RUNNER_TEMP/community-chat-native-scaffold"
+          rm -rf "$SCAFFOLD_DIR"
+          npx --yes @react-native-community/cli@15.0.1 init CommunityChatDemo \\
+            --version 0.76.9 \\
+            --directory "$SCAFFOLD_DIR" \\
+            --skip-install
+          test -s "$SCAFFOLD_DIR/android/gradlew"
+          test -s "$SCAFFOLD_DIR/android/app/build.gradle"
+          rm -rf examples/react-native-chat-demo/android
+          cp -a "$SCAFFOLD_DIR/android" examples/react-native-chat-demo/android
+          echo "Generated Android scaffold for AppRegistry component CommunityChatDemo"
+
       - name: Package clean Community Chat Demo ZIP
         run: |
           cd examples/react-native-chat-demo
           zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
-            -x "node_modules/*" "android/*" "ios/*" ".gradle/*" "build/*"
+            -x "node_modules/*" "ios/*" ".gradle/*" "build/*"
           unzip -t "$GITHUB_WORKSPACE/community-chat-demo.zip"
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'package.json'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'App.js'
