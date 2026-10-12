@@ -170,6 +170,37 @@ export async function generateReactNativeAndroidScaffold(
 
     fs.writeFileSync(appBuildGradle, gradle);
 
+    // Do not rely exclusively on the Gradle plugin to bundle JavaScript:
+    // some generated/template combinations can still assemble a native APK
+    // without registering createBundleDebugJsAndAssets. Pre-bundle explicitly
+    // into Android's source assets so the APK remains launchable without Metro.
+    const reactNativeCli = path.join(projectRoot, 'node_modules', '.bin', 'react-native');
+    if (!fs.existsSync(reactNativeCli)) {
+      throw new Error('React Native CLI executable is missing; cannot create a self-contained Android JavaScript bundle.');
+    }
+    const androidAssetsPath = path.join(androidPath, 'app', 'src', 'main', 'assets');
+    const jsBundlePath = path.join(androidAssetsPath, 'index.android.bundle');
+    fs.mkdirSync(androidAssetsPath, { recursive: true });
+    await execFileAsync(
+      reactNativeCli,
+      [
+        'bundle',
+        '--platform', 'android',
+        '--dev', 'true',
+        '--entry-file', 'index.js',
+        '--bundle-output', jsBundlePath,
+        '--assets-dest', path.join(androidPath, 'app', 'src', 'main', 'res'),
+      ],
+      {
+        cwd: projectRoot,
+        timeout: Number(process.env.BUILD_TIMEOUT_MS) || 30 * 60 * 1000,
+        maxBuffer: 8 * 1024 * 1024,
+      },
+    );
+    if (!fs.existsSync(jsBundlePath) || fs.statSync(jsBundlePath).size === 0) {
+      throw new Error('React Native bundle command completed without creating android/app/src/main/assets/index.android.bundle.');
+    }
+
     return { reactNativeVersion, cliVersion, androidPath };
   } catch (error) {
     fs.rmSync(androidPath, { recursive: true, force: true });
