@@ -117,34 +117,58 @@ export async function generateReactNativeAndroidScaffold(
 
     fs.cpSync(generatedAndroid, androidPath, { recursive: true, errorOnExist: true });
 
-    // The generated Community CLI template marks the debug variant as
-    // debuggable, which skips createBundleDebugJsAndAssets. That APK then
-    // requires a Metro server and is not a self-contained device-test build.
-    // Force the debug APK to include the JavaScript bundle for offline launch.
+    // A native APK can compile without the React Native Gradle plugin being
+    // applied to :app. In that case assembleDebug succeeds but never registers
+    // createBundleDebugJsAndAssets, leaving an APK that needs Metro at runtime.
     const appBuildGradle = path.join(androidPath, 'app', 'build.gradle');
-    if (fs.existsSync(appBuildGradle)) {
-      let gradle = fs.readFileSync(appBuildGradle, 'utf8');
-      const debuggableVariants = /debuggableVariants\s*=\s*\[[^\]]*\]/;
-      if (debuggableVariants.test(gradle)) {
-        gradle = gradle.replace(debuggableVariants, 'debuggableVariants = []');
-      } else {
-        const reactBlock = /react\s*\{/;
-        if (reactBlock.test(gradle)) {
-          gradle = gradle.replace(reactBlock, (match) => match + '\n    debuggableVariants = []');
-        } else {
-          // Some Community CLI templates omit the optional react extension block.
-          const pluginBoundary = /(^|\n)(plugins\s*\{[\s\S]*?\n\})/;
-          if (!pluginBoundary.test(gradle)) {
-            throw new Error('Generated React Native app/build.gradle has neither react { } nor plugins { } configuration.');
-          }
-          gradle = gradle.replace(pluginBoundary, (match) => match + '\n\nreact {\n    debuggableVariants = []\n}');
-        }
-        gradle = gradle.replace(reactBlock, (match) => match + '\n    debuggableVariants = []');
-      }
-      fs.writeFileSync(appBuildGradle, gradle);
-    } else {
+    if (!fs.existsSync(appBuildGradle)) {
       throw new Error('Generated React Native Android scaffold is missing app/build.gradle; cannot ensure a bundled debug APK.');
     }
+
+    let gradle = fs.readFileSync(appBuildGradle, 'utf8');
+    const hasReactPlugin =
+      /id\\s*\\(?\\s*['"]com\\.facebook\\.react['"]/.test(gradle) ||
+      /apply\\s+plugin\\s*:\\s*['"]com\\.facebook\\.react['"]/.test(gradle);
+
+    if (!hasReactPlugin) {
+      const pluginsBlock = /plugins\\s*\\{/;
+      if (pluginsBlock.test(gradle)) {
+        gradle = gradle.replace(pluginsBlock, (match) => match + '\\n    id("com.facebook.react")');
+      } else {
+        const androidPlugin = /apply\\s+plugin\\s*:\\s*['"]com\\.android\\.application['"]/;
+        if (!androidPlugin.test(gradle)) {
+          throw new Error('Generated React Native app/build.gradle does not declare the Android application plugin; cannot safely apply the React Native Gradle plugin.');
+        }
+        gradle = gradle.replace(androidPlugin, (match) => match + '\\napply plugin: "com.facebook.react"');
+      }
+    }
+
+    // Debuggable variants skip JS bundling and require Metro. Force a bundle
+    // into the debug APK so it can launch offline on a physical device.
+    const debuggableVariants = /debuggableVariants\\s*=\\s*\\[[^\\]]*\\]/;
+    if (debuggableVariants.test(gradle)) {
+      gradle = gradle.replace(debuggableVariants, 'debuggableVariants = []');
+    } else {
+      const reactBlock = /react\\s*\\{/;
+      if (reactBlock.test(gradle)) {
+        gradle = gradle.replace(reactBlock, (match) => match + '\\n    debuggableVariants = []');
+      } else {
+        const pluginsBlockWithBody = /(^|\\n)(plugins\\s*\\{[\\s\\S]*?\\n\\})/;
+        if (!pluginsBlockWithBody.test(gradle)) {
+          throw new Error('Generated React Native app/build.gradle has neither react { } nor a supported plugins { } configuration.');
+        }
+        gradle = gradle.replace(pluginsBlockWithBody, (match) => match + '\\n\\nreact {\\n    debuggableVariants = []\\n}');
+      }
+    }
+
+    const pluginIsConfigured =
+      /id\\s*\\(?\\s*['"]com\\.facebook\\.react['"]/.test(gradle) ||
+      /apply\\s+plugin\\s*:\\s*['"]com\\.facebook\\.react['"]/.test(gradle);
+    if (!pluginIsConfigured || !/debuggableVariants\\s*=\\s*\\[\\s*\\]/.test(gradle)) {
+      throw new Error('Unable to configure the React Native Gradle plugin for a self-contained debug APK.');
+    }
+
+    fs.writeFileSync(appBuildGradle, gradle);
 
     return { reactNativeVersion, cliVersion, androidPath };
   } catch (error) {
