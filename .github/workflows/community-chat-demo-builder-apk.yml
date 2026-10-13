@@ -83,7 +83,7 @@ jobs:
           cp -a "$SCAFFOLD_DIR/android" "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
           python3 - <<'PY'
           from pathlib import Path
-          gradle_file = Path("examples/react-native-chat-demo/android/app/build.gradle")
+          gradle_file = Path(__import__("os").environ["GITHUB_WORKSPACE"]) / "examples/react-native-chat-demo/android/app/build.gradle"
           text = gradle_file.read_text()
           marker = 'react {'
           if text.count(marker) != 1:
