@@ -280,6 +280,8 @@ Keep one source of truth per concern:
 - `ROADMAP.md` — milestones
 - `docs/ARCHITECTURE.md` — architecture
 - `docs/TEST-MATRIX.md` — tests/evidence
+- `docs/FRAMEWORK-SOURCE-ZIP-CONTRACT.md` — framework-specific source ZIP inputs, required files, exclusions, generators, and acceptance evidence
+- `docs/M6-ACCEPTANCE-REPORT.md` — recorded M6 React Native device acceptance
 - `docs/VALIDATION-WORKFLOW.md` — validation loop
 - `docs/ADR/` — architectural decisions
 
