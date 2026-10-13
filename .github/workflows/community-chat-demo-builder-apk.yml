@@ -88,7 +88,7 @@ jobs:
           marker = 'react {'
           if text.count(marker) != 1:
               raise SystemExit("Expected exactly one React Gradle configuration block")
-          text = text.replace(marker, marker + '\\n    // This APK must run without Metro; embed the JS bundle in every variant.\\n    debuggableVariants = []', 1)
+          text = text.replace(marker, marker + '\n    // This APK must run without Metro; embed the JS bundle in every variant.\n    debuggableVariants = []', 1)
           gradle_file.write_text(text)
           if 'debuggableVariants = []' not in gradle_file.read_text():
               raise SystemExit("Failed to enable embedded React Native bundle")
