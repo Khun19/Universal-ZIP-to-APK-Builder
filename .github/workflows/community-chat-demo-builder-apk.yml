@@ -81,7 +81,19 @@ jobs:
           test -s "$SCAFFOLD_DIR/android/app/build.gradle"
           rm -rf "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
           cp -a "$SCAFFOLD_DIR/android" "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
-          echo "Generated Android scaffold for AppRegistry component CommunityChatDemo"
+          python3 - <<'PY'
+          from pathlib import Path
+          gradle_file = Path("examples/react-native-chat-demo/android/app/build.gradle")
+          text = gradle_file.read_text()
+          marker = 'react {'
+          if text.count(marker) != 1:
+              raise SystemExit("Expected exactly one React Gradle configuration block")
+          text = text.replace(marker, marker + '\\n    // This APK must run without Metro; embed the JS bundle in every variant.\\n    debuggableVariants = []', 1)
+          gradle_file.write_text(text)
+          if 'debuggableVariants = []' not in gradle_file.read_text():
+              raise SystemExit("Failed to enable embedded React Native bundle")
+          PY
+          echo "Generated Android scaffold with embedded React Native JS bundle enabled"
 
       - name: Package clean Community Chat Demo ZIP
         run: |
@@ -109,6 +121,7 @@ jobs:
           test -s "$APK"
           unzip -t "$APK"
           unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          unzip -Z1 "$APK" | grep -qx 'assets/index.android.bundle'
           aapt dump badging "$APK" | tee apk-badging.txt
           sha256sum "$APK" | tee apk-sha256.txt
           stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
