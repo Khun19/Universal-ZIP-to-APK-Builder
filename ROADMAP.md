@@ -557,3 +557,5 @@ The project is complete only when:
 - `docs/ROADMAP.md` must not be recreated as a second roadmap.
 - Changes to milestone numbering or milestone scope require an explicit GitHub architectural decision.
 - Supporting documents may define tests, architecture, or validation procedures, but they must not redefine milestone numbering.
+- `docs/FRAMEWORK-SOURCE-ZIP-CONTRACT.md` defines the required source ZIP structure and validation evidence for each framework; it does not itself declare framework support or authorize adding frameworks to the pipeline.
+- React Native compatibility fixtures RN-1 through RN-6 must be validated one at a time, with CI/APK evidence and real-device checks before M7 planning. Expo remains out of scope until a separate M7 decision.
