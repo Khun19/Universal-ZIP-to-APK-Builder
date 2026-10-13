@@ -79,18 +79,20 @@ jobs:
           npx --yes @react-native-community/cli@15.0.1 init CommunityChatDemo --version 0.76.9 --directory "$SCAFFOLD_DIR" --skip-install
           test -s "$SCAFFOLD_DIR/android/gradlew"
           test -s "$SCAFFOLD_DIR/android/app/build.gradle"
-          rm -rf examples/react-native-chat-demo/android
-          cp -a "$SCAFFOLD_DIR/android" examples/react-native-chat-demo/android
+          rm -rf "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
+          cp -a "$SCAFFOLD_DIR/android" "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
           echo "Generated Android scaffold for AppRegistry component CommunityChatDemo"
 
       - name: Package clean Community Chat Demo ZIP
         run: |
-          cd examples/react-native-chat-demo
+          cd "$GITHUB_WORKSPACE/examples/react-native-chat-demo"
           zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
             -x "node_modules/*" "ios/*" ".gradle/*" "build/*"
           unzip -t "$GITHUB_WORKSPACE/community-chat-demo.zip"
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'package.json'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'App.js'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/gradlew'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/app/build.gradle'
 
       - name: Build APK through the actual Builder CLI
         env:
