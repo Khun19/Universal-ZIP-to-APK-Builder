@@ -145,7 +145,7 @@ jobs:
               "source": {"gitHead": command("git", "rev-parse", "HEAD")},
           }
           Path(".ci-evidence/quality-gate-provenance.json").write_text(
-              json.dumps(record, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+              json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
           )
           PY
 
