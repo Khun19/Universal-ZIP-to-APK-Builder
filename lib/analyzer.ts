@@ -23,8 +23,20 @@ export interface AnalysisResult {
 }
 
 export function validateZipEntry(entryPath: string): boolean {
-  if (entryPath.includes('..') || path.isAbsolute(entryPath)) return false;
-  if (/^[a-zA-Z]:\\/.test(entryPath)) return false;
+  if (typeof entryPath !== 'string' || entryPath.length === 0 || entryPath.includes('\0')) {
+    return false;
+  }
+
+  const normalized = entryPath.replace(/\\/g, '/');
+  if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized)) {
+    return false;
+  }
+
+  const segments = normalized.split('/');
+  if (segments.some((segment) => segment === '..' || segment === '.' || segment.length === 0)) {
+    return false;
+  }
+
   return true;
 }
 
