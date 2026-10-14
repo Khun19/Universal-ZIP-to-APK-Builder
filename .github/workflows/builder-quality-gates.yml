@@ -35,6 +35,8 @@ on:
       - 'docs/ARCHITECTURE.md'
       - 'docs/TEST-MATRIX.md'
       - 'docs/VALIDATION-WORKFLOW.md'
+      - 'docs/MILESTONE-CI-MATRIX.md'
+      - 'docs/BUILD-QUALITY-SECURITY-STANDARDS.md'
       - 'docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md'
       - 'docs/DEVELOPMENT-READINESS-AUDIT.md'
 
