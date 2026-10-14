@@ -314,7 +314,7 @@ export async function validateApk(file: string): Promise<{
   if (!info.isFile() || info.size <= 0) throw new Error("APK artifact is missing or empty");
 
   const { stdout } = await exec("unzip", ["-Z1", file], { maxBuffer: 2 * 1024 * 1024 });
-  if (!stdout.split(/\\r?\\n/).includes("AndroidManifest.xml")) {
+  if (!stdout.split(/\r?\n/).includes("AndroidManifest.xml")) {
     throw new Error("APK does not contain AndroidManifest.xml");
   }
 
