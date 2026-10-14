@@ -14,6 +14,8 @@ import {
 function archive(entries: Array<[string, string | Buffer]>): AdmZip {
   const zip = new AdmZip();
   for (const [name, value] of entries) zip.addFile(name, Buffer.isBuffer(value) ? value : Buffer.from(value));
+  // Materialize compressed sizes/CRC metadata before the tests inspect or mutate entries.
+  zip.toBuffer();
   return zip;
 }
 
