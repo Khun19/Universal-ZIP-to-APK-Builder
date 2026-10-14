@@ -86,14 +86,86 @@ jobs:
         run: |
           find . -name "*.apk" -type f
 
-      - name: Upload APK artifact
+      - name: Write M6 APK provenance
+        if: always()
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p .ci-evidence
+          python3 - <<'PY'
+          import hashlib, json, os, platform, subprocess
+          from pathlib import Path
+
+          apk = Path(".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk")
+          apk_hash = None
+          apk_size = None
+          if apk.is_file():
+              h = hashlib.sha256()
+              with apk.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(chunk)
+              apk_hash = h.hexdigest()
+              apk_size = apk.stat().st_size
+
+          def command(*args):
+              try:
+                  return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+              except Exception as exc:
+                  return f"unavailable: {exc}"
+
+          record = {
+              "schemaVersion": 1,
+              "evidenceType": "android-apk-build",
+              "milestone": "M6",
+              "repository": os.getenv("GITHUB_REPOSITORY"),
+              "commit": os.getenv("GITHUB_SHA"),
+              "ref": os.getenv("GITHUB_REF"),
+              "runId": os.getenv("GITHUB_RUN_ID"),
+              "runAttempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+              "source": {"gitHead": command("git", "rev-parse", "HEAD")},
+              "runner": {"os": platform.platform()},
+              "toolchain": {
+                  "java": command("java", "-version"),
+                  "node": command("node", "--version"),
+                  "pnpm": command("pnpm", "--version"),
+                  "sdkmanager": command("sdkmanager", "--version"),
+              },
+              "inputs": {
+                  "pnpmLockSha256": hashlib.sha256(Path("pnpm-lock.yaml").read_bytes()).hexdigest()
+                      if Path("pnpm-lock.yaml").is_file() else None,
+              },
+              "artifact": {
+                  "path": str(apk),
+                  "found": apk.is_file(),
+                  "sizeBytes": apk_size,
+                  "sha256": apk_hash,
+              },
+              "runtimeValidation": "not-performed-by-ubuntu-build-workflow",
+          }
+          Path(".ci-evidence/m6-apk-provenance.json").write_text(
+              json.dumps(record, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+          )
+          if apk_hash:
+              Path(".ci-evidence/app-debug.apk.sha256").write_text(
+                  f"{apk_hash}  app-debug.apk\\n", encoding="utf-8"
+              )
+          PY
+
+      - name: Upload M6 APK and provenance
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: m6-build-apk
-          path: ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
+          name: m6-build-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk
+            .ci-evidence/m6-apk-provenance.json
+            .ci-evidence/app-debug.apk.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
-      - name: SHA256 APK
-        run: |
-          find . -name "*.apk" -type f -exec sha256sum {} \;
+      - name: Validate APK output exists
+        run: test -s .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk
