@@ -223,7 +223,7 @@ async function streamExtractArchive(
     const totals = { bytes: 0 };
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
-      const relativePath = entry.entryName.replace(/\\\\/g, "/").replace(/\\/+$/, "");
+      const relativePath = entry.entryName.replace(/\\/g, "/").replace(/\/+$/, "");
       const targetPath = path.resolve(canonicalStaging, relativePath);
       if (!targetPath.startsWith(canonicalStaging + path.sep)) {
         throw new Error(`Blocked ZIP path breakout: ${relativePath}`);
