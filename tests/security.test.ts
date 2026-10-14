@@ -68,6 +68,23 @@ test("path depth accepts the configured boundary and rejects deeper paths", () =
   );
 });
 
+test("exact duplicate ZIP entry names are rejected", () => {
+  const bytes = archive([["a.txt", "first"], ["b.txt", "second"]]).toBuffer();
+  const centralDirectorySignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+  const first = bytes.indexOf(centralDirectorySignature);
+  const second = bytes.indexOf(centralDirectorySignature, first + 4);
+  assert.notEqual(first, -1);
+  assert.notEqual(second, -1);
+  const firstNameLength = bytes.readUInt16LE(first + 28);
+  const secondNameLength = bytes.readUInt16LE(second + 28);
+  assert.equal(firstNameLength, secondNameLength);
+  bytes.copy(bytes, second + 46, first + 46, first + 46 + firstNameLength);
+  assert.throws(
+    () => inspectAdmZip(new AdmZip(bytes)),
+    /duplicate or case-colliding/,
+  );
+});
+
 test("duplicate and case-colliding paths are rejected", () => {
   assert.throws(
     () => inspectAdmZip(archive([["Readme.txt", "a"], ["README.TXT", "b"]])),
