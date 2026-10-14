@@ -81,6 +81,17 @@ test("symlink entries are rejected", () => {
   assert.throws(() => inspectAdmZip(zip), /Symbolic links and special files/);
 });
 
+test("entry CRC mismatch is rejected before extraction is published", () => {
+  const zip = archive([["file.txt", "content"]]);
+  const entry = zip.getEntry("file.txt");
+  assert.ok(entry);
+  entry.header.crc = 0;
+  assert.throws(
+    () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-crc-should-not-publish-" + Date.now())),
+    /CRC mismatch/,
+  );
+});
+
 test("malformed ZIP bytes are rejected", async () => {
   await withTempDir(async (directory) => {
     const file = path.join(directory, "malformed.zip");
