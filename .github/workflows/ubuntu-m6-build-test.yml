@@ -6,6 +6,7 @@ on:
       - fix/m6-g10-theme
       - fix/m6-runtime-interaction
       - feat/main-m2-m6-framework-integration
+      - main
   pull_request:
     branches:
       - main
@@ -86,14 +87,50 @@ jobs:
         run: |
           find . -name "*.apk" -type f
 
-      - name: Upload APK artifact
+
+      - name: Generate APK checksum and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK_PATH"
+          OUT_DIR="$(dirname "$APK_PATH")"
+          sha256sum "$APK_PATH" > "$OUT_DIR/SHA256SUMS.txt"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          apk = Path(".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk")
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          provenance = {
+              "source_commit": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "artifact": {
+                  "path": str(apk),
+                  "size_bytes": apk.stat().st_size,
+                  "sha256": digest,
+              },
+              "ci_build": True,
+              "real_device_acceptance": "NOT_RUN",
+          }
+          apk.with_name("provenance.json").write_text(
+              json.dumps(provenance, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(provenance, indent=2))
+          PY
+
+      - name: Upload APK checksum and provenance
         uses: actions/upload-artifact@v4
         with:
           name: m6-build-apk
-          path: ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
+          path: |
+            .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk
+            .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/SHA256SUMS.txt
+            .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json
           if-no-files-found: error
           retention-days: 14
-
-      - name: SHA256 APK
-        run: |
-          find . -name "*.apk" -type f -exec sha256sum {} \;
