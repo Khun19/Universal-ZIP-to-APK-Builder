@@ -1,6 +1,6 @@
 # M6 React Native Android Acceptance Report
 
-**Status: PASS for the M6 acceptance fixture**  
+**Status: Fixture-specific report; NOT proof of current-main M6 gate PASS**  
 **Recorded:** 2026-10-14  
 **Scope:** The Community Chat Demo React Native 0.76.9 Android project built through the Universal ZIP-to-APK Builder. This PASS is not a claim that every React Native project is compatible.
 
@@ -32,9 +32,9 @@ The user reports that all following tests passed on the physical Android device:
 
 Device-test results above are recorded from the user's report; this document does not claim an independently captured device log or screenshot.
 
-## Decision
+## Decision and current-main boundary
 
-M6 is **PASS for the tested Community Chat Demo fixture**. Do not interpret this as universal React Native compatibility.
+The report records a fixture-specific result based on the CI run and user-reported physical-device checks listed above. It is **not sufficient by itself to declare the current canonical `main` M6 gate PASS**, because the fixture/PR evidence is tied to a separate Community Chat Demo change and is not proof that an APK built from the current `main` SHA has passed install, launch, UI rendering, and touch interaction. In particular, the previously observed AppCompat launch crash/theme fix must be revalidated against a fresh APK built from the exact current-main commit. Until that exact-main device record is added, the canonical-main M6 device gate remains **BLOCKED / NOT ACCEPTED**. Do not interpret the fixture-specific result as universal React Native compatibility.
 
 ## Remaining work before considering M7
 
