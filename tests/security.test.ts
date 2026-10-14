@@ -8,6 +8,7 @@ import {
   inspectAdmZip,
   inspectZip,
   safeExtractAdmZip,
+  validateApk,
   ZIP_LIMITS,
 } from "../lib/security/src/index.ts";
 
@@ -90,6 +91,16 @@ test("entry CRC mismatch is rejected before extraction is published", async () =
     () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-crc-should-not-publish-" + Date.now())),
     /CRC mismatch/,
   );
+});
+
+test("APK validation recognizes AndroidManifest.xml in a real ZIP listing", async () => {
+  await withTempDir(async (directory) => {
+    const apk = path.join(directory, "fixture.apk");
+    await writeFile(apk, archive([["AndroidManifest.xml", "fixture"], ["classes.dex", "dex"]]).toBuffer());
+    const result = await validateApk(apk);
+    assert.ok(result.size > 0);
+    assert.match(result.sha256, /^[a-f0-9]{64}$/);
+  });
 });
 
 test("malformed ZIP bytes are rejected", async () => {
