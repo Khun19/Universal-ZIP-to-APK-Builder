@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, mkdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -87,7 +87,7 @@ export function inspectAdmZip(
 
   for (const entry of entries) {
     const rawName = entry.entryName.replace(/\\/g, "/");
-    const name = entry.isDirectory ? rawName.replace(/\\/+$/, "") : rawName;
+    const name = entry.isDirectory ? rawName.replace(/\/+$/, "") : rawName;
     validateZipName(name, limits);
 
     const collisionKey = name.normalize("NFC").toLocaleLowerCase("en-US");
@@ -160,7 +160,7 @@ export function safeExtractAdmZip(
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
 
-      const relativePath = entry.entryName.replace(/\\/g, "/").replace(/\\/+$/, "");
+      const relativePath = entry.entryName.replace(/\\/g, "/").replace(/\/+$/, "");
       const targetPath = path.resolve(canonicalStaging, relativePath);
       if (!targetPath.startsWith(canonicalStaging + path.sep)) {
         throw new Error(`Blocked ZIP path breakout: ${relativePath}`);
@@ -189,7 +189,7 @@ export function safeExtractAdmZip(
     return { filePaths, extractedPath: resolvedDestination };
   } catch (error) {
     // A failed extraction must not leave a partial trusted workspace.
-    rmSyncSafe(stagingPath);
+    rmSync(stagingPath, { recursive: true, force: true });
     throw error;
   }
 }
