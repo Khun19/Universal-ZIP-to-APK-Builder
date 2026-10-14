@@ -174,3 +174,32 @@ For each important real test, record at least:
 ## Current Acceptance Rule
 
 The project should not claim universal compatibility merely because Tests A, B, and C pass. Those tests establish an expanding compatibility baseline. New project types require their own fixture and acceptance criteria before being represented as supported.
+
+## Additional Build Quality and Security Gates
+
+The normative requirements and detailed security cases are defined in [Build Quality, Security, and Evidence Standards](BUILD-QUALITY-SECURITY-STANDARDS.md). Apply these gates to relevant fixtures and implementation changes; this section does not imply that all checks are already implemented.
+
+| Area | Required check | Acceptance evidence |
+|---|---|---|
+| ZIP intake | Reject traversal, absolute paths, unsafe symlinks, duplicate/case-colliding paths, malformed archives | Automated adversarial fixture results |
+| Resource limits | Enforce compressed/uncompressed size, entry count, per-entry size, depth, and expansion ratio during extraction | Boundary and over-limit tests |
+| Cleanup | Cancellation/failure stops child processes and removes or invalidates partial outputs | Integration test and workspace inspection |
+| Secrets | Detect likely secrets and redact secret values from diagnostics | Safe test fixture and log assertions |
+| Detection | Multiple signals, conflict handling, no silent strategy fallback | Positive, negative, and ambiguous fixtures |
+| Provenance | Source/ZIP/lockfile hashes, generator revision, toolchain versions, command, CI run | Complete fixture evidence record |
+| APK validation | Separate artifact, structure, install, runtime, and feature results | Per-level test evidence |
+| Identity/security | Package ID, SDK metadata, signing type, relevant permissions | APK inspection report |
+| Diagnostics | Stable error category, failed phase, exit code/log excerpt where available | Failure fixture and redaction test |
+| Device acceptance | Device/API/ABI and evidence source recorded; CI and device results separated | Device log/screenshot or clearly labeled user report |
+
+## Support Status Is Not a Single Boolean
+
+Use the following independent labels in reports:
+- `DOCUMENTED`: specification exists.
+- `IMPLEMENTED`: code path exists, not necessarily validated.
+- `AUTOMATED-TESTED`: named tests passed at a named revision.
+- `CI-VERIFIED`: required CI checks passed for a named fixture/revision.
+- `DEVICE-VERIFIED`: required device/runtime checks passed and the evidence source is recorded.
+- `BLOCKED`, `NOT RUN`, and `FAIL`: preserve their distinct meanings.
+
+Do not convert skipped tests to PASS. A fixture can only receive its final PASS when all mandatory levels in its fixture contract have evidence. CI success is not device verification, and one passing fixture is not universal framework support.
