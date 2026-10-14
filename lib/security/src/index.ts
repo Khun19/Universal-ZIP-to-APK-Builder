@@ -197,7 +197,12 @@ async function streamEntry(
   });
   await streamResult;
   if (rejected) throw rejected;
-  if (exitCode !== 0) throw new Error(`ZIP streaming extraction failed for ${entryName}: ${stderr.trim()}`);
+  if (exitCode !== 0) {
+    if (/bad CRC|CRC error|invalid zip file with overlapped components/i.test(stderr)) {
+      throw new Error(`ZIP entry CRC mismatch: ${entryName}`);
+    }
+    throw new Error(`ZIP streaming extraction failed for ${entryName}: ${stderr.trim()}`);
+  }
   const actualCrc = (crc ^ 0xffffffff) >>> 0;
   if (actualCrc !== (Number(expectedCrc) >>> 0)) {
     throw new Error(`ZIP entry CRC mismatch: ${entryName}`);
