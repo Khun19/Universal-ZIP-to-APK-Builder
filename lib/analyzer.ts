@@ -1,5 +1,3 @@
-import * as path from 'path';
-
 export interface AnalysisResult {
   projectType:
     | 'Native Android'
@@ -12,13 +10,25 @@ export interface AnalysisResult {
   warnings: string[];
 }
 
+/**
+ * Validates a ZIP entry name independent of the host OS. Treat both slash
+ * styles as separators so Windows paths cannot bypass checks on Linux/Termux.
+ */
 export function validateZipEntry(entryPath: string): boolean {
-  if (entryPath.includes('..') || path.isAbsolute(entryPath)) {
+  if (typeof entryPath !== 'string' || entryPath.length === 0 || entryPath.includes('\0')) {
     return false;
   }
-  if (/^[a-zA-Z]:\\/.test(entryPath)) {
+
+  const normalized = entryPath.replace(/\\/g, '/');
+  if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized)) {
     return false;
   }
+
+  const segments = normalized.split('/');
+  if (segments.some((segment) => segment === '..' || segment === '.' || segment.length === 0)) {
+    return false;
+  }
+
   return true;
 }
 
