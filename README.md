@@ -15,6 +15,7 @@ The canonical development contract is defined by these repository documents:
 - **Engineering / agent rules:** `AGENTS.md`
 - **Validation workflow:** `docs/VALIDATION-WORKFLOW.md`
 - **Test/evidence matrix:** `docs/TEST-MATRIX.md`
+- **Build quality/security/evidence standards:** `docs/BUILD-QUALITY-SECURITY-STANDARDS.md`
 - **Architectural decisions:** `docs/ADR/`
 
 ### Goal Alignment & Deviation Audit
@@ -281,6 +282,7 @@ Keep one source of truth per concern:
 - `docs/ARCHITECTURE.md` — architecture
 - `docs/TEST-MATRIX.md` — tests/evidence
 - `docs/FRAMEWORK-SOURCE-ZIP-CONTRACT.md` — framework-specific source ZIP inputs, required files, exclusions, generators, and acceptance evidence
+- `docs/BUILD-QUALITY-SECURITY-STANDARDS.md` — enforceable ZIP security, build provenance, APK validation levels, diagnostics, and support-status definitions
 - `docs/M6-ACCEPTANCE-REPORT.md` — recorded M6 React Native device acceptance
 - `docs/VALIDATION-WORKFLOW.md` — validation loop
 - `docs/ADR/` — architectural decisions

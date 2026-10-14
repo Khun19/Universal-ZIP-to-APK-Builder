@@ -23,6 +23,8 @@ Do not mark a fixture supported just because a ZIP can be created or detected. D
 
 ## 2. Common ZIP packaging requirements
 
+Apply the additional normative security and evidence rules in [`BUILD-QUALITY-SECURITY-STANDARDS.md`](BUILD-QUALITY-SECURITY-STANDARDS.md). In particular, ZIP validation must enforce limits while extracting, reject ambiguous duplicate/case-colliding paths, and retain the distinction between archive validity, APK validity, device installation, runtime, and feature acceptance.
+
 1. ZIP paths are relative to one project root; avoid an extra wrapper directory unless the fixture explicitly tests wrapper-directory detection.
 2. Include source, manifests/configuration, lockfiles when available, required local assets, and required native project files for the selected build strategy.
 3. Exclude dependency caches and transient outputs: `node_modules/`, `.gradle/`, `build/`, `.dart_tool/`, `.expo/`, `.git/`, OS metadata, secrets, signing keys, local SDK paths, and machine-specific absolute paths.
