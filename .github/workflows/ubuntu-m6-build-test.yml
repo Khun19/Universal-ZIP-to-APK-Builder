@@ -117,8 +117,17 @@ jobs:
               except Exception as exc:
                   return f"unavailable: {exc}"
 
+          event_payload = {}
+          event_path = os.getenv("GITHUB_EVENT_PATH")
+          if event_path and Path(event_path).is_file():
+              try:
+                  event_payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+              except Exception:
+                  event_payload = {}
+          pull_request = event_payload.get("pull_request") or {}
+
           record = {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "evidenceType": "android-apk-build",
               "milestone": "M6",
               "repository": os.getenv("GITHUB_REPOSITORY"),
@@ -126,7 +135,12 @@ jobs:
               "ref": os.getenv("GITHUB_REF"),
               "runId": os.getenv("GITHUB_RUN_ID"),
               "runAttempt": os.getenv("GITHUB_RUN_ATTEMPT"),
-              "source": {"gitHead": command("git", "rev-parse", "HEAD")},
+              "source": {
+                  "gitHead": command("git", "rev-parse", "HEAD"),
+                  "checkoutSha": os.getenv("GITHUB_SHA"),
+                  "pullRequestHeadSha": (pull_request.get("head") or {}).get("sha"),
+                  "pullRequestBaseSha": (pull_request.get("base") or {}).get("sha"),
+              },
               "runner": {"os": platform.platform()},
               "toolchain": {
                   "java": command("java", "-version"),
