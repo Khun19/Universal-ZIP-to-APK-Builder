@@ -46,10 +46,14 @@ export interface NodeInstallPlan {
  */
 export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
   let current = path.resolve(projectPath);
+  let workspaceRoot: string | undefined;
 
+  // Walk the bounded ancestry and prefer the outermost workspace root. Nested
+  // fixture/package workspaces must not shadow the repository workspace that
+  // owns the lockfile and shared dependency graph.
   for (let depth = 0; depth <= 4; depth += 1) {
     if (fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))) {
-      return current;
+      workspaceRoot = current;
     }
 
     const parent = path.dirname(current);
@@ -57,7 +61,7 @@ export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
     current = parent;
   }
 
-  return undefined;
+  return workspaceRoot;
 }
 
 export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
