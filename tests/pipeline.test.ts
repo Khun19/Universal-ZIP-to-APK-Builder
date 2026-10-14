@@ -7,6 +7,36 @@ import * as crypto from 'crypto';
 import { execFileSync } from 'child_process';
 
 test(
+  'Runs complete end-to-end build pipeline successfully',
+  { skip: process.env.RUN_ANDROID_INTEGRATION !== '1' },
+  async () => {
+  const buildInput = {
+    buildId: 'test-build-101',
+    files: [
+      { relativePath: 'package.json', content: '{"name": "react-app"}' },
+      { relativePath: 'vite.config.ts', content: 'export default {}' },
+      { relativePath: 'index.html', content: '<h1>App</h1>' }
+    ]
+  };
+
+  const result = await runBuildPipeline(buildInput);
+
+  console.log('FULL RESULT:', result);
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.projectType, 'React/Vite Web App');
+  assert.strictEqual(result.strategyName, 'web-wrapper');
+  assert.ok(result.outputPath?.endsWith('.apk'));
+
+  // Clean up test workspace
+  const workspaceDir = path.resolve('./.workspace/test-build-101');
+  if (fs.existsSync(workspaceDir)) {
+    fs.rmSync(workspaceDir, { recursive: true, force: true });
+  }
+  },
+);
+
+test(
   'builds the tracked Vite PWA fixture into a validated Android APK',
   { skip: process.env.RUN_ANDROID_INTEGRATION !== '1', timeout: 12 * 60 * 1000 },
   async () => {
