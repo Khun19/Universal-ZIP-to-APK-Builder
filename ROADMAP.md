@@ -93,6 +93,38 @@ This decision does **not** require copying framework source code. It requires re
 
 ---
 
+## Current audited implementation status — 2026-10-15
+
+This snapshot records what is currently evidenced on canonical `main` (HEAD at audit start: `12eca7d7c94fb31000a82a5bf8cf07773c05d17c`). It does not change milestone scope or acceptance gates. Re-check the exact commit, open PRs, CI artifacts, and device evidence before changing any state.
+
+| Milestone | Current status | Evidence-based disposition |
+|---|---|---|
+| M1 — Foundation/security/integrity | **PARTIAL — NOT PASS** | ZIP path/symlink hardening and general quality-gate work are on main, but archive resource-limit implementation and boundary tests remain in open PRs #54 and #51. PR #54 documents an unresolved hard process-memory bound because AdmZip inflates entries into buffers before actual byte-length checks. |
+| M2 — Analyzer/strategy registry | **PARTIAL — NOT GATE-PASS VERIFIED** | Framework detection/build-path integration was merged to main in `12eca7d`; all required analyzer fixtures, ambiguity cases, and deterministic unsupported-project behavior still need a complete gate record. Detector presence alone is not support evidence. |
+| M3 — Static Web → APK | **NOT GATE-PASS VERIFIED** | Required fixture build, APK identity/hash, and install/launch evidence tied to a current main-based build are not established by this audit. |
+| M4 — React/Vite/PWA → APK | **PARTIAL — NOT GATE-PASS VERIFIED** | The dedicated acceptance workflow is proposed in open PR #57. Both roadmap fixtures and applicable runtime behavior must be evidenced separately. |
+| M5 — Flutter → APK | **PARTIAL — NOT GATE-PASS VERIFIED** | The isolated Flutter acceptance workflow is proposed in open PR #58. Keep M4/M5 evidence separate and require the exact artifact/provenance plus phone runtime checks. |
+| M6 — React Native → APK | **IMPLEMENTATION INTEGRATED; CANONICAL-MAIN DEVICE GATE BLOCKED** | M2–M6 framework integration is on main, but the latest known AppCompat launch crash/theme-fix history is not closed by a verified install/launch/UI/touch run for an APK built from the exact current main commit. The Community Chat Demo report is fixture-specific and user-reported; its separate PR/fixture evidence must not be substituted for current-main acceptance. |
+| M7 — Expo → APK | **NOT STARTED — GATED** | Do not start until the M6 current-main device gate is closed and the React Native compatibility matrix is reviewed. |
+| M8 — Capacitor/Ionic/Cordova | **NOT GATE-PASS VERIFIED** | Required per-framework fixtures, native permission/plugin behavior, and runtime evidence remain acceptance work. |
+| M9 — Native Kotlin/Java | **NOT GATE-PASS VERIFIED** | Both required native fixtures need real APK and runtime evidence. |
+| M10 — Additional frameworks | **NOT STARTED AS ACCEPTED SUPPORT** | Add targets only one at a time with deterministic adapters, real fixtures, and runtime acceptance. |
+| M11 — Diagnostics/reliability/production security | **PARTIAL** | Standards and some quality-gate/security work exist; remaining ZIP resource/memory limits, isolation, concurrency, recovery, and regression gates must be proven. |
+| M12 — Standalone Android Builder / final E2E | **NOT GATE-PASS VERIFIED** | The user-facing flow must be connected to real build state and pass the mandatory Web, Flutter, and Native E2E fixtures on the required target environment. |
+
+### Immediate execution order
+
+1. **P0 — M6 exact-main device gate:** verify current main SHA; build a fresh APK from that exact source; record APK SHA-256; install; launch; confirm no AppCompat/ReactHost crash; inspect UI rendering; exercise a meaningful touch interaction; save logs/screenshots and results. If any gate fails, fix M6 only and repeat.
+2. **P1 — M1 archive safety:** review PRs #54 and #51 together for overlap and dependencies; resolve the AdmZip memory-bound limitation or explicitly keep the security gate blocked; run adversarial limit-boundary tests on the exact candidate commit.
+3. **P1 — M2/M3/M4/M5 evidence reconciliation:** use focused main-based acceptance PRs/workflows; verify each required fixture, APK provenance/hash, and device gate independently. Do not treat the newest CI run as evidence for a different SHA.
+4. **P2 — repository CI/provenance:** review PR #56 and #55 against current main and existing workflows; merge only after exact-head checks and artifact provenance review.
+5. **P3 — UI/productization:** connect the Android Builder UI to real pipeline state, hide developer logs by default, expose actionable failure reasons, and ensure demo/mock states cannot masquerade as real builds.
+6. **Hold M7–M12 expansion** until the earlier required gates and compatibility decisions are recorded.
+
+This status table is a snapshot, not a second roadmap. `ROADMAP.md` remains the only milestone scope source of truth; this table must be updated when new evidence changes a state.
+
+---
+
 # M1 — Foundation, Security & Artifact Integrity
 
 ## Goal
