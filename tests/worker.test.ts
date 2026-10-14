@@ -33,7 +33,7 @@ test('Uses the pnpm workspace root and hoisted linker for React Native installs'
 });
 
 test('Keeps standalone pnpm projects outside a workspace', () => {
-  const projectPath = path.resolve('./.tmp-standalone-pnpm');
+  const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-standalone-pnpm-'));
   fs.mkdirSync(projectPath, { recursive: true });
   fs.writeFileSync(path.join(projectPath, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\\n');
 
