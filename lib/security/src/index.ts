@@ -31,7 +31,7 @@ export type ZipSecurityLimitOverrides = Partial<ZipSecurityLimits>;
 function effectiveLimits(overrides: ZipSecurityLimitOverrides = {}): ZipSecurityLimits {
   const limits = { ...ZIP_LIMITS, ...overrides };
   for (const [name, value] of Object.entries(limits)) {
-    if (!Number.isSafeInteger(value) || value <= 0) {
+    if ((name === "maxCompressionRatio" ? !Number.isFinite(value) : !Number.isSafeInteger(value)) || value <= 0) {
       throw new Error(`Invalid ZIP security limit ${name}: expected a positive safe integer`);
     }
   }
@@ -41,7 +41,7 @@ function effectiveLimits(overrides: ZipSecurityLimitOverrides = {}): ZipSecurity
   return limits;
 }
 
-export function validateZipName(name: string, limits: ZipSecurityLimits = ZIP_LIMITS): void {
+export function validateZipName(name: string, limits: Readonly<ZipSecurityLimits> = ZIP_LIMITS): void {
   const normalized = name.replace(/\\/g, "/");
   const segments = normalized.split("/");
   if (
