@@ -73,6 +73,14 @@ test("duplicate and case-colliding paths are rejected", () => {
   );
 });
 
+test("symlink entries are rejected", () => {
+  const zip = archive([["link", "../outside.txt"]]);
+  const entry = zip.getEntry("link");
+  assert.ok(entry);
+  entry.attr = (0o120777 << 16) >>> 0;
+  assert.throws(() => inspectAdmZip(zip), /Symbolic links and special files/);
+});
+
 test("malformed ZIP bytes are rejected", async () => {
   await withTempDir(async (directory) => {
     const file = path.join(directory, "malformed.zip");
