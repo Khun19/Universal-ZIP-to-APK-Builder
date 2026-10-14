@@ -77,6 +77,9 @@ export function inspectAdmZip(
   const limits = effectiveLimits(overrides);
   const entries = zip.getEntries();
 
+  if (entries.length === 0) {
+    throw new Error("ZIP archive contains no entries or is malformed");
+  }
   if (entries.length > limits.maxFiles) {
     throw new Error("Archive contains too many entries");
   }
