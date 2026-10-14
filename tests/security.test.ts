@@ -8,7 +8,6 @@ import {
   inspectAdmZip,
   inspectZip,
   safeExtractAdmZip,
-  safeExtract,
   ZIP_LIMITS,
 } from "../lib/security/src/index.ts";
 
@@ -99,6 +98,17 @@ test("extraction publishes exact bytes into a fresh destination", async () => {
     assert.deepEqual(result.filePaths, ["nested/hello.txt"]);
     assert.equal(await readFile(path.join(destination, "nested", "hello.txt"), "utf8"), "hello");
   });
+});
+
+test("actual inflated bytes are checked even when entry size metadata understates them", () => {
+  const zip = archive([["file.txt", "123456"]]);
+  const entry = zip.getEntry("file.txt");
+  assert.ok(entry);
+  entry.header.size = 1;
+  assert.throws(
+    () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-should-not-publish-" + Date.now()), { maxEntryBytes: 5, maxUncompressedBytes: 5 }),
+    /per-entry size|Actual extracted bytes/,
+  );
 });
 
 test("failed extraction leaves no staging directory or partial published destination", async () => {
