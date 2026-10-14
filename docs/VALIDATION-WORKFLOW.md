@@ -4,11 +4,11 @@ This document defines the project-wide verification loop for the Universal ZIP-t
 
 ## Source-of-Truth Loop
 
-`Repository guidance/specs → Goal Alignment Audit → GitHub change → CI verification → Termux execution → real APK/device verification → evidence → milestone gate`
+`Repository guidance/specs → Goal Alignment Audit → focused GitHub PR → GitHub Actions CI/build/artifacts → evidence review → device/runtime verification when required → milestone gate`
 
 Repository documentation is part of the development contract. When guidance conflicts, use the current explicit project requirements and the most specific applicable repository rule, and document unresolved conflicts rather than silently choosing a legacy path.
 
-GitHub is the source of truth for source, tests, workflow definitions, and recorded engineering decisions. Termux is the primary local execution environment for phone-first builds. Real Android behavior is verified separately from CI.
+GitHub is the source of truth for source, tests, workflow definitions, build logs, artifacts, and recorded engineering decisions. **GitHub Actions on Ubuntu is the primary development, automated-test, and reproducible-build environment.** Termux is not a required development step. Physical Android install/launch checks remain a separate acceptance gate whenever the milestone requires runtime evidence; CI success alone never proves device behavior.
 
 ## Milestone Rule
 
@@ -22,12 +22,11 @@ Work is gated one milestone at a time:
 6. Push the focused branch and open a pull request against `main`.
 7. Review CI results and the changed files.
 8. Merge only the milestone currently under validation.
-9. Pull the resulting `main` commit in Termux.
-10. Run the milestone's required local build/tests.
-11. When runtime behavior matters, install and verify the generated APK on a real Android device.
-12. Record evidence in the test matrix or an associated test record.
-13. A milestone is complete only when its applicable acceptance criteria have evidence **and the goal-alignment audit is ALIGNED**.
-14. Stop at the gate and do not start the next milestone until the current milestone is explicitly accepted.
+9. Download and inspect artifacts produced by the exact PR commit; verify APK structure and SHA-256 where applicable.
+10. When runtime behavior matters, install and verify that exact APK on a real Android device or supported emulator; if unavailable, record BLOCKED rather than claiming PASS.
+11. Record workflow run URL, commit SHA, fixture hash, toolchain versions, artifact name/size/hash, test result, and runtime evidence in the test matrix or an associated test record.
+12. A milestone is complete only when its applicable acceptance criteria have evidence **and the goal-alignment audit is ALIGNED**.
+13. Stop at the gate and do not start the next milestone until the current milestone is explicitly accepted.
 
 ### Goal Alignment & Deviation Audit
 
@@ -63,29 +62,20 @@ The project should distinguish these states:
 - `BLOCKED` — a required environment or device is unavailable.
 - `NOT RUN` — verification has not been executed.
 
-## Termux Procedure
+## GitHub Actions Procedure
 
-From the repository checkout:
+For each focused PR:
 
-```sh
-cd ~/Universal-ZIP-to-APK-Builder-main
+1. Check out the exact PR head SHA on an Ubuntu runner.
+2. Install the repository-pinned runtime and package-manager versions.
+3. Install dependencies from the committed lockfile using frozen-lockfile mode.
+4. Run the repository's existing typecheck, unit tests, and workspace build checks.
+5. Run the milestone-specific tests and framework build only when that workflow is applicable.
+6. Upload required artifacts with a clear name and bounded retention; emit SHA-256 and build metadata.
+7. Fail the workflow on missing mandatory artifacts or failed checks. Do not turn optional/skipped checks into PASS.
+8. Keep workflows additive and scoped: do not remove existing checks or change framework architecture as part of CI migration without a separate reviewed PR.
 
-git fetch origin --prune
-git checkout main
-git pull --ff-only origin main
-
-pnpm install --frozen-lockfile
-pnpm run typecheck
-pnpm test
-```
-
-For a build acceptance test, use a complete project ZIP and run the documented CLI entry point, for example:
-
-```sh
-pnpm run start:cli "/storage/emulated/0/Download/<project>.zip"
-```
-
-The build record must retain the command output needed to identify the phase, exit code, APK path/name, APK size, and SHA-256 when an APK is produced.
+Current workflow coverage is partial. New workflows should be added in small steps after inspecting the existing scripts and avoiding duplicate/conflicting jobs. The milestone-by-milestone coverage plan is tracked in `docs/MILESTONE-CI-MATRIX.md`.
 
 ## Real Android Verification
 
