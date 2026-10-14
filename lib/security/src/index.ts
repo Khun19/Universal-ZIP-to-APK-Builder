@@ -6,7 +6,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import AdmZip from "adm-zip";
 
-const exec = promisify(exec);
+const exec = promisify(execFile);
 
 export interface ZipSecurityLimits {
   maxBytes: number;
