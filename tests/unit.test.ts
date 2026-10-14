@@ -36,3 +36,12 @@ test("calculates SHA-256 from persisted bytes", async () => {
   await writeFile(file, "real bytes are not an APK");
   assert.equal(await sha256(file), "523aca63ab80892725541720d74771b00bd0f0e67bfa280312628d03f53455ca");
 });
+
+
+test("detects Flutter projects with the structured analyzer", () => {
+  const result = analyzeProject({
+    files: ["pubspec.yaml", "lib/main.dart", "android/settings.gradle", "android/app/build.gradle"],
+  });
+  assert.equal(result.framework, "Flutter");
+  assert.match(result.recommendedStrategy, /flutter/i);
+});

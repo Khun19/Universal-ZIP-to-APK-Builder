@@ -41,3 +41,18 @@ test('Determines Capacitor strategy for Capacitor projects', () => {
   assert.strictEqual(strategy.strategyName, 'capacitor');
   assert.ok(strategy.buildSteps.some((step) => step.includes('Capacitor sync')));
 });
+
+
+test('Determines Flutter strategy for Flutter projects', () => {
+  const analysis: AnalysisResult = {
+    projectType: 'Flutter',
+    confidence: 99,
+    evidence: ['pubspec.yaml detected', 'lib/main.dart detected'],
+    warnings: []
+  };
+
+  const strategy = determineBuildStrategy(analysis);
+  assert.strictEqual(strategy.strategyName, 'flutter');
+  assert.strictEqual(strategy.outputArtifact, 'app-debug.apk');
+  assert.ok(strategy.buildSteps.some((step) => step.includes('flutter build apk')));
+});

@@ -7,6 +7,24 @@ const ext = (files: string[], suffix: string) => files.some((file) => file.endsW
 
 const detectors: Detector[] = [
   (s) => {
+    const flutter = has(s.files, "pubspec.yaml") && has(s.files, "lib/main.dart");
+    if (!flutter) return null;
+    const android =
+      has(s.files, "android/settings.gradle") ||
+      has(s.files, "android/settings.gradle.kts") ||
+      s.files.some((file) => /(^|\/)android\/app(?:\/|$)/.test(file));
+    return {
+      framework: "Flutter",
+      buildTool: "Flutter CLI",
+      language: "Dart",
+      projectType: "Flutter application",
+      confidence: android ? 99 : 94,
+      compatibilityScore: android ? 96 : 86,
+      recommendedStrategy: "Resolve a runnable Flutter SDK, generate/update Android, then use flutter pub get and flutter build apk",
+      evidence: ["pubspec.yaml", "lib/main.dart", ...(android ? ["Flutter Android platform"] : [])],
+    };
+  },
+  (s) => {
     const native = has(s.files, "settings.gradle") || has(s.files, "settings.gradle.kts") || has(s.files, "gradlew") || s.files.some((f) => f.endsWith("AndroidManifest.xml"));
     if (!native) return null;
     const kotlin = ext(s.files, ".kt") || s.files.some((f) => f.includes("kotlin"));

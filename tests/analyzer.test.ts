@@ -36,3 +36,17 @@ test('Detects Capacitor projects that still need the Android platform', () => {
   assert.strictEqual(result.projectType, 'Capacitor');
   assert.ok(result.warnings.some((warning) => warning.includes('platform')));
 });
+
+
+test('Detects Flutter application with Android platform', () => {
+  const result = analyzeProjectFiles(['pubspec.yaml', 'lib/main.dart', 'android/settings.gradle', 'android/app/build.gradle']);
+  assert.strictEqual(result.projectType, 'Flutter');
+  assert.strictEqual(result.confidence, 99);
+});
+
+test('Detects Flutter application without Android platform', () => {
+  const result = analyzeProjectFiles(['pubspec.yaml', 'lib/main.dart', 'lib/app.dart']);
+  assert.strictEqual(result.projectType, 'Flutter');
+  assert.strictEqual(result.confidence, 94);
+  assert.ok(result.warnings.some((warning) => warning.includes('Flutter Android platform')));
+});
