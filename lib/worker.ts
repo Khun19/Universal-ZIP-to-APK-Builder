@@ -85,6 +85,35 @@ export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
 
 export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
   const workspaceRoot = findPnpmWorkspaceRoot(projectPath);
+
+  // Builder pipeline projects are extracted into the repository-local .workspace
+  // directory during CI/integration tests. They are arbitrary user projects, not
+  // declared pnpm workspace packages, so installing from the repository root
+  // leaves their own node_modules empty and breaks relative Gradle includeBuild()
+  // paths such as android/../node_modules/@react-native/gradle-plugin.
+  const resolvedProjectPath = path.resolve(projectPath);
+  const stagedWorkspaceRoot = workspaceRoot
+    ? path.join(workspaceRoot, '.workspace') + path.sep
+    : undefined;
+  const isStagedProject = Boolean(
+    stagedWorkspaceRoot && resolvedProjectPath.startsWith(stagedWorkspaceRoot),
+  );
+
+  if (isStagedProject) {
+    if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
+      return {
+        command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+        cwd: projectPath,
+      };
+    }
+    if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) {
+      return { command: 'yarn install --frozen-lockfile', cwd: projectPath };
+    }
+    if (fs.existsSync(path.join(projectPath, 'bun.lockb')) || fs.existsSync(path.join(projectPath, 'bun.lock'))) {
+      return { command: 'bun install', cwd: projectPath };
+    }
+    return { command: 'npm install --no-audit --no-fund', cwd: projectPath };
+  }
   const workspaceLockfile = workspaceRoot
     ? path.join(workspaceRoot, 'pnpm-lock.yaml')
     : undefined;
