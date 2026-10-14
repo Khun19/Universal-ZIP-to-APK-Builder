@@ -52,7 +52,13 @@ export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
   // fixture/package workspaces must not shadow the repository workspace that
   // owns the lockfile and shared dependency graph.
   for (let depth = 0; depth <= 4; depth += 1) {
-    if (fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))) {
+    // A workspace marker without its own lockfile is not a complete
+    // install root. Prefer the outer project directory that owns both files;
+    // this avoids generated/nested fixture markers shadowing the repository.
+    if (
+      fs.existsSync(path.join(current, 'pnpm-workspace.yaml')) &&
+      fs.existsSync(path.join(current, 'pnpm-lock.yaml'))
+    ) {
       workspaceRoot = current;
     }
 
