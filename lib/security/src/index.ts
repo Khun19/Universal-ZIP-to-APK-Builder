@@ -1,5 +1,5 @@
-import { createReadStream, mkdirSync, realpathSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createReadStream, existsSync, mkdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -63,7 +63,7 @@ export interface SecureZipResult {
   extractedPath: string;
 }
 
-function isSymlinkOrSpecialFile(entry: AdmZip.IZipEntry): boolean {
+function isSymlinkOrSpecialFile(entry: { attr?: number }): boolean {
   const attr = Number(entry.attr ?? 0);
   const unixMode = (attr >>> 16) & 0xffff;
   const fileType = unixMode & 0xf000;
@@ -86,7 +86,8 @@ export function inspectAdmZip(
   const files: string[] = [];
 
   for (const entry of entries) {
-    const name = entry.entryName.replace(/\\/g, "/");
+    const rawName = entry.entryName.replace(/\\/g, "/");
+    const name = entry.isDirectory ? rawName.replace(/\\/+$/, "") : rawName;
     validateZipName(name, limits);
 
     const collisionKey = name.normalize("NFC").toLocaleLowerCase("en-US");
@@ -159,7 +160,7 @@ export function safeExtractAdmZip(
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
 
-      const relativePath = entry.entryName.replace(/\\/g, "/");
+      const relativePath = entry.entryName.replace(/\\/g, "/").replace(/\\/+$/, "");
       const targetPath = path.resolve(canonicalStaging, relativePath);
       if (!targetPath.startsWith(canonicalStaging + path.sep)) {
         throw new Error(`Blocked ZIP path breakout: ${relativePath}`);
@@ -180,13 +181,11 @@ export function safeExtractAdmZip(
     }
 
     // Never merge untrusted archive contents into an existing build workspace.
-    try {
-      awaitDestinationAbsent(resolvedDestination);
-    } catch (error) {
-      throw error;
+    if (existsSync(resolvedDestination)) {
+      throw new Error("Extraction destination already exists; use a fresh isolated workspace");
     }
     // The destination must be absent; rename is an atomic publication step on the same filesystem.
-    renameSyncSafe(stagingPath, resolvedDestination);
+    renameSync(stagingPath, resolvedDestination);
     return { filePaths, extractedPath: resolvedDestination };
   } catch (error) {
     // A failed extraction must not leave a partial trusted workspace.
@@ -194,25 +193,6 @@ export function safeExtractAdmZip(
     throw error;
   }
 }
-
-function awaitDestinationAbsent(destination: string): void {
-  try {
-    statSyncSafe(destination);
-    throw new Error("Extraction destination already exists; use a fresh isolated workspace");
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("already exists")) throw error;
-    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
-  }
-}
-
-function statSyncSafe(file: string): void {
-  // Imported lazily through the module namespace to keep all filesystem behavior explicit.
-  const fs = requireFs();
-  fs.statSync(file);
-}
-function renameSyncSafe(from: string, to: string): void { requireFs().renameSync(from, to); }
-function rmSyncSafe(target: string): void { requireFs().rmSync(target, { recursive: true, force: true }); }
-function requireFs(): typeof import("node:fs") { return require("node:fs") as typeof import("node:fs"); }
 
 export async function inspectZip(
   archive: string,
