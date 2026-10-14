@@ -32,6 +32,28 @@ test('Uses the pnpm workspace root and hoisted linker for React Native installs'
   assert.doesNotMatch(plan.command, /--ignore-workspace/);
 });
 
+test('Installs extracted projects inside .workspace locally, not at the repository workspace root', () => {
+  const workspaceRoot = path.resolve('.');
+  const projectPath = path.join(workspaceRoot, '.workspace', 'staged-rn-install-test');
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(projectPath, 'package.json'),
+    JSON.stringify({
+      name: 'staged-rn-install-test',
+      private: true,
+      dependencies: { 'react-native': '0.76.9' },
+    }),
+  );
+
+  try {
+    const plan = nodeInstallCommand(projectPath);
+    assert.strictEqual(plan.cwd, projectPath);
+    assert.match(plan.command, /npm install --no-audit --no-fund/);
+  } finally {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('Keeps standalone pnpm projects outside a workspace', () => {
   const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-standalone-pnpm-'));
   fs.mkdirSync(projectPath, { recursive: true });
