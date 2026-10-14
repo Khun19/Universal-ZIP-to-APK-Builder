@@ -82,3 +82,74 @@ jobs:
 
       - name: Build workspace packages
         run: pnpm run build
+
+      - name: Write quality-gate provenance
+        if: always()
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p .ci-evidence
+          python3 - <<'PY'
+          import hashlib, json, os, platform, subprocess
+          from pathlib import Path
+
+          def command(*args):
+              try:
+                  return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+              except Exception as exc:
+                  return f"unavailable: {exc}"
+
+          def sha256(path):
+              p = Path(path)
+              if not p.is_file():
+                  return None
+              h = hashlib.sha256()
+              with p.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          record = {
+              "schemaVersion": 1,
+              "evidenceType": "common-quality-gates",
+              "repository": os.getenv("GITHUB_REPOSITORY"),
+              "commit": os.getenv("GITHUB_SHA"),
+              "ref": os.getenv("GITHUB_REF"),
+              "event": os.getenv("GITHUB_EVENT_NAME"),
+              "workflow": os.getenv("GITHUB_WORKFLOW"),
+              "runId": os.getenv("GITHUB_RUN_ID"),
+              "runAttempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+              "jobStatusAtEvidenceStep": os.getenv("JOB_STATUS"),
+              "runner": {"os": platform.platform(), "python": platform.python_version()},
+              "toolchain": {
+                  "node": command("node", "--version"),
+                  "pnpm": command("pnpm", "--version"),
+                  "git": command("git", "--version"),
+              },
+              "inputs": {
+                  "pnpmLockSha256": sha256("pnpm-lock.yaml"),
+                  "packageJsonSha256": sha256("package.json"),
+                  "pnpmWorkspaceSha256": sha256("pnpm-workspace.yaml"),
+              },
+              "source": {"gitHead": command("git", "rev-parse", "HEAD")},
+          }
+          Path(".ci-evidence/quality-gate-provenance.json").write_text(
+              json.dumps(record, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload quality-gate provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-evidence/quality-gate-provenance.json
+          if-no-files-found: error
+          retention-days: 30
