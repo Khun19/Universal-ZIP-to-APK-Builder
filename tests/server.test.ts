@@ -9,24 +9,37 @@ test(
   { skip: process.env.RUN_ANDROID_INTEGRATION !== '1' },
   async () => {
   const projectPath = path.resolve('./.tmp-server-test');
-  fs.mkdirSync(path.join(projectPath, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(projectPath, 'package.json'), '{"name":"test"}');
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(projectPath, 'package.json'),
+    JSON.stringify({
+      name: 'test',
+      private: true,
+      scripts: { build: 'vite build' },
+      devDependencies: { vite: '^7.3.2' },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(projectPath, 'index.html'),
+    '<!doctype html><html><body><h1>Integration fixture</h1></body></html>',
+  );
   fs.writeFileSync(path.join(projectPath, 'vite.config.ts'), '');
-  fs.writeFileSync(path.join(projectPath, 'src/index.tsx'), '');
 
   const payload = {
     projectPath,
-    filePaths: ['package.json', 'vite.config.ts', 'src/index.tsx']
+    filePaths: ['package.json', 'index.html', 'vite.config.ts']
   };
 
-  const response = await handleBuildRequest(payload);
-  assert.strictEqual(response.success, true);
-  assert.strictEqual(response.projectType, 'React/Vite Web App');
-  assert.strictEqual(response.strategyName, 'web-wrapper');
-  assert.ok(response.logs.length > 0);
-
-  if (fs.existsSync(projectPath)) {
-    fs.rmSync(projectPath, { recursive: true, force: true });
+  try {
+    const response = await handleBuildRequest(payload);
+    assert.strictEqual(response.success, true, response.error || response.logs.join('\n'));
+    assert.strictEqual(response.projectType, 'React/Vite Web App');
+    assert.strictEqual(response.strategyName, 'web-wrapper');
+    assert.ok(response.logs.length > 0);
+  } finally {
+    if (fs.existsSync(projectPath)) {
+      fs.rmSync(projectPath, { recursive: true, force: true });
+    }
   }
   },
 );
