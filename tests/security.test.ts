@@ -81,7 +81,7 @@ test("symlink entries are rejected", () => {
   assert.throws(() => inspectAdmZip(zip), /Symbolic links and special files/);
 });
 
-test("entry CRC mismatch is rejected before extraction is published", () => {
+test("entry CRC mismatch is rejected before extraction is published", async () => {
   const zip = archive([["file.txt", "content"]]);
   const entry = zip.getEntry("file.txt");
   assert.ok(entry);
@@ -90,6 +90,7 @@ test("entry CRC mismatch is rejected before extraction is published", () => {
     () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-crc-should-not-publish-" + Date.now())),
     /CRC mismatch/,
   );
+  await assert.rejects(() => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-crc-should-not-publish-" + Date.now())), /CRC mismatch/);
 });
 
 test("malformed ZIP bytes are rejected", async () => {
@@ -115,20 +116,20 @@ test("extraction publishes exact bytes into a fresh destination", async () => {
   await withTempDir(async (directory) => {
     const zip = archive([["nested/hello.txt", "hello"]]);
     const destination = path.join(directory, "output");
-    const result = safeExtractAdmZip(zip, destination, { maxEntryBytes: 5, maxUncompressedBytes: 5 });
+    const result = await safeExtractAdmZip(zip, destination, { maxEntryBytes: 5, maxUncompressedBytes: 5 });
     assert.deepEqual(result.filePaths, ["nested/hello.txt"]);
     assert.equal(await readFile(path.join(destination, "nested", "hello.txt"), "utf8"), "hello");
   });
 });
 
-test("understated ZIP size metadata fails closed during extraction", () => {
+test("understated ZIP size metadata fails closed during extraction", async () => {
   const zip = archive([["file.txt", "123456"]]);
   const entry = zip.getEntry("file.txt");
   assert.ok(entry);
   entry.header.size = 1;
-  assert.throws(
+  await assert.rejects(
     () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-should-not-publish-" + Date.now()), { maxEntryBytes: 5, maxUncompressedBytes: 5 }),
-    /per-entry size|Actual extracted bytes|Cannot create a Buffer larger than/,
+    /per-entry size|Actual extracted bytes|CRC mismatch/,
   );
 });
 
@@ -137,7 +138,7 @@ test("failed extraction leaves no staging directory or partial published destina
     const zip = archive([["file.txt", "content"]]);
     const destination = path.join(directory, "already-exists");
     await mkdir(destination);
-    await assert.throws(
+    await assert.rejects(
       () => safeExtractAdmZip(zip, destination),
       /destination already exists/,
     );
