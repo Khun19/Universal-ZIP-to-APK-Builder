@@ -84,17 +84,23 @@ export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
 }
 
 export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
+  const workspaceRoot = findPnpmWorkspaceRoot(projectPath);
+  const workspaceLockfile = workspaceRoot
+    ? path.join(workspaceRoot, 'pnpm-lock.yaml')
+    : undefined;
+
+  // A workspace package/fixture does not need its own lockfile. When the
+  // owning pnpm workspace has a lockfile, install from that root so workspace
+  // dependencies and hoisted Metro resolution remain consistent.
+  if (workspaceRoot && workspaceLockfile && fs.existsSync(workspaceLockfile)) {
+    return {
+      command:
+        'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+      cwd: workspaceRoot,
+    };
+  }
+
   if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
-    const workspaceRoot = findPnpmWorkspaceRoot(projectPath);
-
-    if (workspaceRoot) {
-      return {
-        command:
-          'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
-        cwd: workspaceRoot,
-      };
-    }
-
     return {
       command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
       cwd: projectPath,
