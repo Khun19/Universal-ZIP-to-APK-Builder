@@ -5,6 +5,7 @@ on:
     branches:
       - fix/m6-g10-theme
       - fix/m6-runtime-interaction
+      - feat/main-m2-m6-framework-integration
   pull_request:
     branches:
       - main
