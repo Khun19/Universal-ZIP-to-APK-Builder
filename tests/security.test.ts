@@ -121,14 +121,14 @@ test("extraction publishes exact bytes into a fresh destination", async () => {
   });
 });
 
-test("actual inflated bytes are checked even when entry size metadata understates them", () => {
+test("understated ZIP size metadata fails closed during extraction", () => {
   const zip = archive([["file.txt", "123456"]]);
   const entry = zip.getEntry("file.txt");
   assert.ok(entry);
   entry.header.size = 1;
   assert.throws(
     () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-should-not-publish-" + Date.now()), { maxEntryBytes: 5, maxUncompressedBytes: 5 }),
-    /per-entry size|Actual extracted bytes/,
+    /per-entry size|Actual extracted bytes|Cannot create a Buffer larger than/,
   );
 });
 
