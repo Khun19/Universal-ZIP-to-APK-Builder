@@ -284,6 +284,7 @@ Keep one source of truth per concern:
 - `docs/FRAMEWORK-SOURCE-ZIP-CONTRACT.md` — framework-specific source ZIP inputs, required files, exclusions, generators, and acceptance evidence
 - `docs/BUILD-QUALITY-SECURITY-STANDARDS.md` — enforceable ZIP security, build provenance, APK validation levels, diagnostics, and support-status definitions
 - `docs/M6-ACCEPTANCE-REPORT.md` — recorded M6 React Native device acceptance
+- `docs/REPOSITORY-OVERALL-AUDIT-2026-10-15.md` — current repository, milestone, PR, and priority audit snapshot
 - `docs/VALIDATION-WORKFLOW.md` — validation loop
 - `docs/ADR/` — architectural decisions
 
