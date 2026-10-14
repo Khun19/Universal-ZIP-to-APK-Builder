@@ -1,0 +1,7 @@
+{
+  "name": "Field Survey PWA",
+  "short_name": "FieldSurvey",
+  "start_url": "/",
+  "display": "standalone",
+  "scope": "/"
+}

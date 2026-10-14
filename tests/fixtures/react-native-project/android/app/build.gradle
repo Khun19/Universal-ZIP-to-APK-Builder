@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application'
+    id 'com.facebook.react'
+}
+
+react {
+    autolinkLibrariesWithApp()
+    debuggableVariants = []
+}
+
+android {
+    namespace 'com.builder.m6reactnative'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.builder.m6reactnative'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+}
+
+dependencies {
+    implementation('com.facebook.react:react-android')
+    if (hermesEnabled.toBoolean()) {
+        implementation('com.facebook.react:hermes-android')
+    }
+}

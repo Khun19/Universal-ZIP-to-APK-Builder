@@ -40,6 +40,7 @@ packages:
   - lib/integrations/*
   - worker
   - scripts
+  - tests/fixtures/react-native-project
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.21

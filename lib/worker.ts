@@ -33,6 +33,120 @@ function findApks(directory: string): string[] {
   return results;
 }
 
+export interface NodeInstallPlan {
+  command: string;
+  cwd: string;
+}
+
+/**
+ * Resolve a pnpm workspace root for extracted projects. React Native projects
+ * can be nested inside a workspace fixture, so installing with --ignore-workspace
+ * breaks the dependency topology that Metro expects. Limit the upward search to
+ * avoid accidentally adopting an unrelated parent workspace.
+ */
+export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
+  let current = path.resolve(projectPath);
+  let workspaceRoot: string | undefined;
+
+  // Walk the bounded ancestry and prefer the outermost workspace root. Nested
+  // fixture/package workspaces must not shadow the repository workspace that
+  // owns the lockfile and shared dependency graph.
+  for (let depth = 0; depth <= 4; depth += 1) {
+    // Only treat a directory as an owning workspace when its package.json
+    // declares workspaces. Extracted fixtures may gain generated lockfiles or
+    // workspace markers during tests; those must not shadow the repository root.
+    const packageJsonPath = path.join(current, 'package.json');
+    let declaresWorkspaces = false;
+    if (fs.existsSync(packageJsonPath)) {
+      try {
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+          workspaces?: unknown;
+        };
+        declaresWorkspaces = Boolean(packageJson.workspaces);
+      } catch {
+        declaresWorkspaces = false;
+      }
+    }
+
+    if (
+      declaresWorkspaces &&
+      fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))
+    ) {
+      workspaceRoot = current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return workspaceRoot;
+}
+
+export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
+  const workspaceRoot = findPnpmWorkspaceRoot(projectPath);
+
+  // Builder pipeline projects are extracted into the repository-local .workspace
+  // directory during CI/integration tests. They are arbitrary user projects, not
+  // declared pnpm workspace packages, so installing from the repository root
+  // leaves their own node_modules empty and breaks relative Gradle includeBuild()
+  // paths such as android/../node_modules/@react-native/gradle-plugin.
+  const resolvedProjectPath = path.resolve(projectPath);
+  const stagedWorkspaceRoot = workspaceRoot
+    ? path.join(workspaceRoot, '.workspace') + path.sep
+    : undefined;
+  const isStagedProject = Boolean(
+    stagedWorkspaceRoot && resolvedProjectPath.startsWith(stagedWorkspaceRoot),
+  );
+
+  if (isStagedProject) {
+    if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
+      return {
+        command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+        cwd: projectPath,
+      };
+    }
+    if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) {
+      return { command: 'yarn install --frozen-lockfile', cwd: projectPath };
+    }
+    if (fs.existsSync(path.join(projectPath, 'bun.lockb')) || fs.existsSync(path.join(projectPath, 'bun.lock'))) {
+      return { command: 'bun install', cwd: projectPath };
+    }
+    return { command: 'npm install --no-audit --no-fund', cwd: projectPath };
+  }
+  const workspaceLockfile = workspaceRoot
+    ? path.join(workspaceRoot, 'pnpm-lock.yaml')
+    : undefined;
+
+  // A workspace package/fixture does not need its own lockfile. When the
+  // owning pnpm workspace has a lockfile, install from that root so workspace
+  // dependencies and hoisted Metro resolution remain consistent.
+  if (workspaceRoot && workspaceLockfile && fs.existsSync(workspaceLockfile)) {
+    return {
+      command:
+        'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+      cwd: workspaceRoot,
+    };
+  }
+
+  if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
+    return {
+      command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+      cwd: projectPath,
+    };
+  }
+
+  if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) {
+    return { command: 'yarn install --frozen-lockfile', cwd: projectPath };
+  }
+
+  if (fs.existsSync(path.join(projectPath, 'bun.lockb')) || fs.existsSync(path.join(projectPath, 'bun.lock'))) {
+    return { command: 'bun install', cwd: projectPath };
+  }
+
+  return { command: 'npm install --no-audit --no-fund', cwd: projectPath };
+}
+
 function isAndroidProject(directory: string): boolean {
   return (
     fs.existsSync(path.join(directory, 'app')) &&
@@ -156,11 +270,42 @@ export function ensureReferencedDebugKeystore(
  * (a real zip archive containing AndroidManifest.xml) rather than a
  * placeholder. Throws if validation fails.
  */
+/**
+ * React Native 0.76+ uses native-library merging. A Hermes APK must ship
+ * the merged RN runtime libraries rather than the legacy libjscexecutor.so
+ * layout used by older React Native releases.
+ *
+ * This is an artifact-level guard only; device launch/runtime still requires
+ * the real Termux/device validation gate.
+ */
+export async function validateReactNativeApkNativeRuntime(
+  filePath: string,
+  hermesEnabled: boolean,
+): Promise<string[]> {
+  const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, {
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  const entries = stdout.split(/\r?\n/).filter(Boolean);
+  const arm64 = (name: string) => entries.includes(`lib/arm64-v8a/${name}`);
+
+  const required = hermesEnabled
+    ? ['libreactnative.so', 'libjsi.so', 'libhermes.so']
+    : ['libreactnative.so', 'libjsi.so', 'libjsc.so', 'libjsctooling.so'];
+
+  const missing = required.filter((name) => !arm64(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `React Native Android native runtime libraries are incomplete for ${hermesEnabled ? 'Hermes' : 'JSC'}: missing ${missing.join(', ')} in arm64-v8a.`,
+    );
+  }
+
+  return required;
+}
+
 async function assertRealApk(filePath: string): Promise<{ size: number; sha256: string }> {
   const info = fs.statSync(filePath);
   if (!info.isFile() || info.size <= 0) {
-    throw new Error(`APK artifact at ${filePath} is missing or empty`);
-  }
+    throw new Error(`APK artifact at ${filePath} is missing or empty`);  }
 
   const { stdout } = await execAsync(`unzip -Z1 "${filePath}"`, { maxBuffer: 2 * 1024 * 1024 });
   if (!stdout.split(/\r?\n/).includes('AndroidManifest.xml')) {
@@ -287,6 +432,299 @@ function detectProjectJavaVersion(androidProjectPath: string): 17 | 21 {
   return highestRequired;
 }
 
+/**
+ * Detect the modern Flutter Gradle plugin structure before building. Older
+ * or hand-authored android/ trees can be rejected by newer Flutter releases.
+ */
+function isFlutterAndroidProjectCompatible(androidProjectPath: string): boolean {
+  const settingsCandidates = [
+    path.join(androidProjectPath, 'settings.gradle'),
+    path.join(androidProjectPath, 'settings.gradle.kts'),
+  ];
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+
+  const settings = settingsCandidates.find((filePath) => fs.existsSync(filePath));
+  const appBuild = appBuildCandidates.find((filePath) => fs.existsSync(filePath));
+  if (!settings || !appBuild) return false;
+
+  let settingsText = '';
+  let appBuildText = '';
+  try {
+    settingsText = fs.readFileSync(settings, 'utf8');
+    appBuildText = fs.readFileSync(appBuild, 'utf8');
+  } catch {
+    return false;
+  }
+
+  return /dev\.flutter\.flutter-plugin-loader/.test(settingsText) &&
+    /dev\.flutter\.flutter-gradle-plugin/.test(appBuildText);
+}
+
+/**
+ * Regenerate only android/ using a temporary Flutter scaffold.
+ * The original pubspec.yaml, lib/, assets and other project files are not
+ * passed through flutter create and therefore cannot be overwritten by it.
+ */
+async function regenerateFlutterAndroidPlatform(
+  projectPath: string,
+  logs: string[],
+  flutterExecutor: FlutterExecutor,
+): Promise<void> {
+  const existingAndroidPath = path.join(projectPath, 'android');
+  const parentDir = path.dirname(projectPath);
+  const scaffoldPath = path.join(
+    parentDir,
+    '.flutter-android-scaffold-' + path.basename(projectPath),
+  );
+  const backupRoot = path.join(projectPath, '.builder');
+  const backupPath = path.join(backupRoot, 'flutter-android-backup');
+
+  fs.rmSync(scaffoldPath, { recursive: true, force: true });
+  fs.mkdirSync(backupRoot, { recursive: true });
+  if (fs.existsSync(backupPath)) {
+    fs.rmSync(backupPath, { recursive: true, force: true });
+  }
+
+  if (fs.existsSync(existingAndroidPath)) {
+    fs.renameSync(existingAndroidPath, backupPath);
+    logs.push('Backed up unsupported Flutter Android platform to ' + backupPath + '.');
+  }
+
+  try {
+    logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
+    await execAsync(
+      flutterCommand(
+        flutterExecutor,
+        'create -t app --project-name builder_android_scaffold --platforms=android ' + scaffoldPath,
+      ),
+      { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
+    );
+
+    const generatedAndroidPath = path.join(scaffoldPath, 'android');
+    if (!fs.existsSync(path.join(generatedAndroidPath, 'app'))) {
+      throw new Error(
+        'Flutter generated an Android scaffold without an android/app module.',
+      );
+    }
+
+    fs.cpSync(generatedAndroidPath, existingAndroidPath, {
+      recursive: true,
+      force: true,
+    });
+    logs.push('Replaced unsupported android/ with the Flutter SDK-generated Android platform.');
+  } catch (error) {
+    fs.rmSync(existingAndroidPath, { recursive: true, force: true });
+    if (fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, existingAndroidPath);
+      logs.push('Restored the original android/ platform after regeneration failure.');
+    }
+    throw error;
+  } finally {
+    fs.rmSync(scaffoldPath, { recursive: true, force: true });
+  }
+}
+export function ensureReactNativeHermesCommand(
+  projectPath: string,
+  androidProjectPath: string,
+  logs?: string[],
+): boolean {
+  const prefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
+  const qemu = path.join(prefix, 'bin', 'qemu-x86_64');
+  if (!fs.existsSync(qemu)) return false;
+
+  const scriptPath = path.join(projectPath, 'hermesc-termux.sh');
+  const script = `#!/bin/sh
+set -eu
+
+PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+QEMU_X86_64="\${PREFIX:-/data/data/com.termux/files/usr}/bin/qemu-x86_64"
+
+if [ ! -x "$QEMU_X86_64" ]; then
+  echo "qemu-x86_64 is required to run the React Native Linux x86-64 Hermes compiler on ARM64 Termux." >&2
+  exit 1
+fi
+
+RN_PACKAGE_JSON="$(node -p "require.resolve('react-native/package.json', {paths: [process.argv[1]]})" "$PROJECT_ROOT")"
+RN_ROOT="$(dirname "$RN_PACKAGE_JSON")"
+HERMESC="$RN_ROOT/sdks/hermesc/linux64-bin/hermesc"
+
+if [ ! -x "$HERMESC" ]; then
+  echo "React Native bundled Linux x86-64 hermesc was not found at $HERMESC." >&2
+  exit 1
+fi
+exec "$QEMU_X86_64" "$HERMESC" "$@"
+`;
+  fs.writeFileSync(scriptPath, script);
+  fs.chmodSync(scriptPath, 0o755);
+
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+  const appBuildPath = appBuildCandidates.find((candidate) => fs.existsSync(candidate));
+  if (!appBuildPath) return false;
+
+  let content = fs.readFileSync(appBuildPath, 'utf8');
+  const hermesLine = "    hermesCommand = file('../../hermesc-termux.sh').absolutePath";
+  if (content.includes('hermesCommand =')) {
+    content = content.replace(/^\s*hermesCommand\s*=.*$/m, hermesLine);
+  } else {
+    const reactBlock = content.match(/react\s*\{[\s\S]*?\n\}/m);
+    if (reactBlock) {
+      content = content.replace(reactBlock[0], reactBlock[0].replace(/\n\}/, `\n${hermesLine}\n}`));
+    } else {
+      content = content.replace(/^(plugins\s*\{[\s\S]*?\n\})/m, `\$1\n\nreact {\n${hermesLine}\n}\n`);
+    }
+  }
+  fs.writeFileSync(appBuildPath, content);
+  logs?.push(`Using Termux QEMU Hermes compiler wrapper: ${scriptPath}`);
+  return true;
+}
+
+
+/**
+ * Android Gradle Plugin invokes the SDK's Linux x86-64 CMake/Ninja binaries
+ * directly. On ARM64 Termux those ELF files are not executable by the host
+ * shell, but they are usable inside the x86_64 PRoot/QEMU Debian environment.
+ *
+ * Use local.properties' supported cmake.dir hook to point AGP at thin host
+ * wrappers. The wrappers enter the x86_64 guest and execute the real SDK
+ * CMake/Ninja there.
+ */
+export function ensureReactNativeTermuxCmakeTooling(
+  projectPath: string,
+  androidProjectPath: string,
+  logs?: string[],
+): boolean {
+  const prefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
+  const qemu = process.env.BUILDER_QEMU_X86_64 || path.join(prefix, 'bin', 'qemu-x86_64');
+  const prootDistro = process.env.BUILDER_PROOT_DISTRO_BIN || path.join(prefix, 'bin', 'proot-distro');
+  const distro = process.env.BUILDER_X86_64_PROOT_DISTRO || 'm6-x86_64';
+  const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+  if (!fs.existsSync(qemu) || !fs.existsSync(prootDistro) || !sdkPath) return false;
+
+  const cmakeRoot = path.join(sdkPath, 'cmake');
+  if (!fs.existsSync(cmakeRoot)) return false;
+
+  let cmakeDirs: string[] = [];
+  try {
+    cmakeDirs = fs
+      .readdirSync(cmakeRoot, { withFileTypes: true })
+      .filter((entry) =>
+        entry.isDirectory() &&
+        fs.existsSync(path.join(cmakeRoot, entry.name, 'bin', 'cmake')) &&
+        fs.existsSync(path.join(cmakeRoot, entry.name, 'bin', 'ninja')),
+      )
+      .map((entry) => entry.name);
+  } catch {
+    return false;
+  }
+
+  if (!cmakeDirs.length) return false;
+
+  const appBuildCandidates = [
+    path.join(androidProjectPath, 'app', 'build.gradle'),
+    path.join(androidProjectPath, 'app', 'build.gradle.kts'),
+  ];
+  const appBuildPath = appBuildCandidates.find((candidate) => fs.existsSync(candidate));
+  let appBuild = '';
+  if (appBuildPath) {
+    try {
+      appBuild = fs.readFileSync(appBuildPath, 'utf8');
+    } catch {
+      appBuild = '';
+    }
+  }
+
+  const requestedVersion =
+    appBuild.match(/externalNativeBuild[\s\S]*?cmake[\s\S]*?version\s*[=(]?\s*['"]([^'"]+)['"]/i)?.[1] ??
+    process.env.BUILDER_CMAKE_VERSION;
+
+  const preferred = requestedVersion
+    ? cmakeDirs.find((dir) => dir === requestedVersion || dir.startsWith(requestedVersion + '.'))
+    : undefined;
+  const realCmakeDir =
+    (preferred ? path.join(cmakeRoot, preferred) : undefined) ??
+    (cmakeDirs.includes('3.22.1-2') ? path.join(cmakeRoot, '3.22.1-2') : undefined);
+
+  if (!realCmakeDir) return false;
+
+  const wrapperDir = path.join(androidProjectPath, '.builder', 'termux-x86_64-cmake');
+  const binDir = path.join(wrapperDir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+
+  const quoteForShell = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+  const realCmake = path.join(realCmakeDir, 'bin', 'cmake');
+  const realNinja = path.join(realCmakeDir, 'bin', 'ninja');
+  const wrapperCmake = path.join(binDir, 'cmake');
+  const wrapperNinja = path.join(binDir, 'ninja');
+
+  const common = [
+    '#!/bin/sh',
+    'set -eu',
+    `PROOT_DISTRO=${quoteForShell(prootDistro)}`,
+    `DISTRO=${quoteForShell(distro)}`,
+    `REAL_CMAKE=${quoteForShell(realCmake)}`,
+    `REAL_NINJA=${quoteForShell(realNinja)}`,
+    `WRAPPER_DIR=${quoteForShell(wrapperDir)}`,
+    'HOST_HOME="\${HOME:-/data/data/com.termux/files/home}"',
+    'HOST_CWD="$PWD"',
+    '',
+  ].join('\n');
+
+  const cmakeScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  --bind "$HOST_HOME:$HOST_HOME" \\
+  --bind ${quoteForShell(projectPath)}:${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:${quoteForShell(sdkPath)} \\
+  --work-dir "$HOST_CWD" -- bash -lc '
+set -eu
+cd "$1"
+shift
+REAL_CMAKE="$1"
+REAL_NINJA="$2"
+WRAPPER_DIR="$3"
+shift 3
+args=()
+for arg in "$@"; do
+  if [ "$arg" = "-DCMAKE_MAKE_PROGRAM=$WRAPPER_DIR/bin/ninja" ]; then
+    args+=("-DCMAKE_MAKE_PROGRAM=$REAL_NINJA")
+  else
+    args+=("$arg")
+  fi
+done
+exec "$REAL_CMAKE" "\${args[@]}"
+' -- "$HOST_CWD" "$REAL_CMAKE" "$REAL_NINJA" "$WRAPPER_DIR" "$@"
+`;
+
+  const ninjaScript = `${common}exec "$PROOT_DISTRO" login "$DISTRO" \\
+  --bind "$HOST_HOME:$HOST_HOME" \\
+  --bind ${quoteForShell(projectPath)}:${quoteForShell(projectPath)} \\
+  --bind ${quoteForShell(sdkPath)}:${quoteForShell(sdkPath)} \\
+  --work-dir "$HOST_CWD" -- "$REAL_NINJA" "$@"
+`;
+
+  fs.writeFileSync(wrapperCmake, cmakeScript);
+  fs.writeFileSync(wrapperNinja, ninjaScript);
+  fs.chmodSync(wrapperCmake, 0o755);
+  fs.chmodSync(wrapperNinja, 0o755);
+
+  const propertiesPath = path.join(androidProjectPath, 'local.properties');
+  const current = fs.existsSync(propertiesPath)
+    ? fs.readFileSync(propertiesPath, 'utf8')
+    : '';
+  const lines = current.split(/\r?\n/).filter((line) => !line.trim().startsWith('cmake.dir='));
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  lines.push(`cmake.dir=${wrapperDir}`);
+  fs.writeFileSync(propertiesPath, `${lines.join('\n')}\n`);
+
+  logs?.push(`Using x86_64 PRoot CMake/Ninja wrappers: ${wrapperDir}`);
+  logs?.push(`CMake guest toolchain: ${realCmakeDir}`);
+  return true;
+}
+
 function getGradleEnvironment(androidProjectPath: string): NodeJS.ProcessEnv {
   const requiredVersion = detectProjectJavaVersion(androidProjectPath);
 
@@ -309,6 +747,85 @@ export function isGradleJavaCompatibilityFailure(error: unknown): boolean {
   const text = commandErrorText(error);
   return /Unsupported class file major version|requires Java .* to run|Could not determine java version/i.test(text);
 }
+
+function shellQuote(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+interface FlutterExecutor {
+  mode: 'native' | 'ubuntu-proot';
+  commandPrefix: string;
+  displayCommand: string;
+}
+
+/**
+ * Resolve a Flutter executable that can actually run in the current Termux
+ * environment. A Flutter checkout can exist on the Termux filesystem while
+ * its bundled Dart ELF cannot execute there. In that case use the working
+ * Ubuntu PRoot Flutter SDK instead of repeatedly invoking the broken host
+ * SDK.
+ */
+async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecutor> {
+  const prootDistro = process.env.FLUTTER_PROOT_DISTRO || 'ubuntu';
+  const prootFlutter = process.env.FLUTTER_PROOT_PATH || '/opt/flutter/bin/flutter';
+
+  try {
+    await execAsync('command -v flutter', { cwd: projectPath, timeout: 5_000, maxBuffer: 64 * 1024 });
+    const dartPath = path.join(process.env.HOME || '', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart');
+
+    // Termux Flutter commonly leaves a script on PATH even when the bundled
+    // Dart ELF is not executable. Prefer the known-good Ubuntu PRoot SDK when
+    // that broken-Dart signature is present.
+    if (dartPath && fs.existsSync(dartPath)) {
+      try {
+        await execAsync('timeout 12s flutter --version', {
+          cwd: projectPath,
+          timeout: 15_000,
+          maxBuffer: 128 * 1024,
+        });
+        return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
+      } catch {
+        // Fall through to the Ubuntu PRoot Flutter SDK.
+      }
+    } else {
+      return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
+    }
+  } catch {
+    // No native Flutter command; try the configured Ubuntu PRoot SDK.
+  }
+
+  try {
+    await execAsync(
+      'proot-distro login ' + shellQuote(prootDistro) + ' -- ' + shellQuote(prootFlutter) + ' --version',
+      { cwd: projectPath, timeout: 30_000, maxBuffer: 128 * 1024 },
+    );
+  } catch (error) {
+    throw new Error(
+      'No runnable Flutter SDK found. Native Termux Flutter is unavailable/broken and ' +
+      prootDistro + ':' + prootFlutter + ' could not be executed: ' + commandErrorText(error),
+    );
+  }
+
+  const inner = [
+    'export ANDROID_HOME=/opt/android-sdk',
+    'export ANDROID_SDK_ROOT=/opt/android-sdk',
+    'if command -v java >/dev/null 2>&1; then export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"; fi',
+    'cd ' + shellQuote(projectPath),
+    shellQuote(prootFlutter) + ' "$@"',
+  ].join('; ');
+
+  return {
+    mode: 'ubuntu-proot',
+    commandPrefix: 'proot-distro login ' + shellQuote(prootDistro) + ' -- sh -lc ' + shellQuote(inner) + ' --',
+    displayCommand: 'proot-distro login ' + prootDistro + ' -- ' + prootFlutter,
+  };
+}
+
+function flutterCommand(executor: FlutterExecutor, command: string): string {
+  if (executor.mode === 'native') return executor.commandPrefix + ' ' + command;
+  return executor.commandPrefix + ' ' + command.split(' ').map(shellQuote).join(' ');
+}
+
 export async function executeBuildJob(
   projectPath: string,
   strategy: BuildStrategy,
@@ -388,6 +905,206 @@ export async function executeBuildJob(
       }
     }
 
+    if (strategy.strategyName === 'react-native') {
+      const packageJsonPath = path.join(projectPath, 'package.json');
+      let packageJson: Record<string, unknown> = {};
+      try {
+        packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
+      } catch (error: any) {
+        const message = `React Native dependency setup failed: ${error.message}`;
+        logs.push(`Error: ${message}`);
+        return { success: false, logs, error: message };
+      }
+
+      const dependencies = {
+        ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
+        ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
+      };
+      // app.json is also used by plain React Native projects and is not
+      // sufficient evidence that Expo is installed. Only invoke Expo prebuild
+      // when the project explicitly declares the Expo runtime dependency.
+      const usesExpo = typeof dependencies.expo === 'string';
+
+      const installPlan = nodeInstallCommand(projectPath);
+      logs.push(
+        `Installing React Native dependencies from ${installPlan.cwd}: ${installPlan.command}`,
+      );
+      try {
+        const installResult = await execAsync(installPlan.command, {
+          cwd: installPlan.cwd,
+          timeout: BUILD_TIMEOUT_MS,
+          env: process.env,
+        });
+        if (installResult.stdout) logs.push(`[Dependency stdout]: ${installResult.stdout.slice(-4000)}`);
+        if (installResult.stderr) logs.push(`[Dependency stderr]: ${installResult.stderr.slice(-2000)}`);
+      } catch (installError: any) {
+        const message = `React Native dependency installation failed: ${commandErrorText(installError)}`;
+        logs.push(`Error: ${message}`);
+        return { success: false, logs, error: message };
+      }
+
+      if (!findAndroidProjectRoot(projectPath) && usesExpo) {
+        logs.push('Expo Android project missing; running local Expo prebuild.');
+        try {
+          const prebuild = await execAsync('npx expo prebuild --platform android --no-install --non-interactive', {
+            cwd: projectPath,
+            timeout: BUILD_TIMEOUT_MS,
+            env: process.env,
+          });
+          if (prebuild.stdout) logs.push(`[Expo prebuild stdout]: ${prebuild.stdout.slice(-4000)}`);
+          if (prebuild.stderr) logs.push(`[Expo prebuild stderr]: ${prebuild.stderr.slice(-2000)}`);
+        } catch (prebuildError: any) {
+          const message = `Expo Android prebuild failed: ${commandErrorText(prebuildError)}`;
+          logs.push(`Error: ${message}`);
+          return { success: false, logs, error: message };
+        }
+      }
+
+      if (!findAndroidProjectRoot(projectPath)) {
+        const message = usesExpo
+          ? 'Expo prebuild completed without producing an Android Gradle project.'
+          : 'Bare React Native ZIP has no Android Gradle project. This Builder version does not yet generate a native Android scaffold for bare React Native; include a valid android/ project or use a project that explicitly declares Expo.';
+        logs.push(`Error: ${message}`);
+        return { success: false, logs, error: message };
+      }
+
+      const reactNativeAndroidProject = findAndroidProjectRoot(projectPath);
+      if (reactNativeAndroidProject) {
+        ensureReactNativeHermesCommand(projectPath, reactNativeAndroidProject, logs);
+        ensureReactNativeTermuxCmakeTooling(projectPath, reactNativeAndroidProject, logs);
+      }
+      if (reactNativeAndroidProject && !fs.existsSync(path.join(reactNativeAndroidProject, 'gradlew'))) {
+        const reactNativePluginRoot = path.join(projectPath, 'node_modules', '@react-native', 'gradle-plugin');
+        const pluginWrapper = path.join(reactNativePluginRoot, 'gradlew');
+        const pluginWrapperDir = path.join(reactNativePluginRoot, 'gradle');
+        if (fs.existsSync(pluginWrapper) && fs.existsSync(pluginWrapperDir)) {
+          fs.copyFileSync(pluginWrapper, path.join(reactNativeAndroidProject, 'gradlew'));
+          fs.cpSync(pluginWrapperDir, path.join(reactNativeAndroidProject, 'gradle'), { recursive: true, force: true });
+          fs.chmodSync(path.join(reactNativeAndroidProject, 'gradlew'), 0o755);
+          logs.push('Using the React Native Gradle plugin wrapper for a compatible Gradle toolchain.');
+        }
+      }
+      logs.push('React Native project dependencies are ready for the Android Gradle build.');
+    }
+
+    // Flutter projects must be built through the Flutter CLI so Flutter owns
+    // Android project configuration, plugin resolution, and the Gradle invocation.
+    // Do not route Flutter through the generic Gradle strategy.
+    if (strategy.strategyName === 'flutter') {
+      const flutterAndroidPath = path.join(projectPath, 'android');
+
+      let flutterExecutor: FlutterExecutor;
+      try {
+        flutterExecutor = await resolveFlutterExecutor(projectPath);
+      } catch (resolveErr: any) {
+        const error = resolveErr.message || 'Flutter SDK could not be resolved.';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      if (flutterExecutor.mode === 'ubuntu-proot') {
+        logs.push('Native Termux Flutter is not runnable; using Ubuntu PRoot Flutter SDK.');
+        logs.push('Flutter PRoot SDK: /opt/flutter/bin/flutter');
+        logs.push('Flutter Android SDK: /opt/android-sdk');
+      } else {
+        logs.push('Using the native Flutter SDK.');
+      }
+
+      try {
+        if (!fs.existsSync(flutterAndroidPath)) {
+          logs.push(
+            'Flutter Android platform missing; generating it with flutter create --platforms=android.',
+          );
+          await regenerateFlutterAndroidPlatform(projectPath, logs, flutterExecutor);
+        } else if (!isFlutterAndroidProjectCompatible(flutterAndroidPath)) {
+          logs.push(
+            'Existing Flutter Android platform is unsupported by the installed Flutter SDK.',
+          );
+          await regenerateFlutterAndroidPlatform(projectPath, logs, flutterExecutor);
+        } else {
+          logs.push('Existing Flutter Android platform is Flutter-compatible.');
+        }
+      } catch (flutterCreateErr: any) {
+        const error = 'Flutter Android platform generation/recovery failed: ' + flutterCreateErr.message;
+        logs.push('Error: ' + error);
+        return { success: false, logs, error };
+      }
+
+      if (!fs.existsSync(path.join(projectPath, 'android', 'app'))) {
+        const error = 'Flutter Android platform is not available after compatibility recovery: android/app is missing.';
+        logs.push('Error: ' + error);
+        return { success: false, logs, error };
+      }
+      const flutterAndroidProjectPath = path.join(projectPath, 'android');
+      const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+      const localPropertiesPath = path.join(flutterAndroidProjectPath, 'local.properties');
+
+      if (sdkPath) {
+        fs.writeFileSync(localPropertiesPath, `sdk.dir=${sdkPath}\n`);
+        logs.push('Generated local.properties from ANDROID_HOME.');
+      }
+
+      if (ensureAapt2Override(flutterAndroidProjectPath)) {
+        logs.push(
+          `Using AAPT2 override: ${process.env.AAPT2_PATH || '/data/data/com.termux/files/usr/bin/aapt2'}`,
+        );
+      }
+
+      const flutterEnvironment = getGradleEnvironment(flutterAndroidProjectPath);
+      logs.push(`Flutter Android build environment: JAVA_HOME=${flutterEnvironment.JAVA_HOME || 'default'}`);
+
+      const flutterPubGetCommand = flutterCommand(flutterExecutor, 'pub get');
+      const flutterBuildCommand = flutterCommand(flutterExecutor, 'build apk --debug');
+      logs.push(`Executing Flutter command: ${flutterExecutor.displayCommand} pub get && ${flutterExecutor.displayCommand} build apk --debug`);
+
+      try {
+        const { stdout, stderr } = await execAsync(flutterPubGetCommand + ' && ' + flutterBuildCommand, {
+          cwd: projectPath,
+          timeout: BUILD_TIMEOUT_MS,
+          env: flutterEnvironment,
+        });
+        if (stdout) logs.push(`[Flutter Output]: ${stdout.slice(-4000)}`);
+        if (stderr) logs.push(`[Flutter Stderr]: ${stderr.slice(-2000)}`);
+      } catch (flutterErr: any) {
+        const stdout = flutterErr.stdout ? String(flutterErr.stdout).slice(-4000) : '';
+        const stderr = flutterErr.stderr ? String(flutterErr.stderr).slice(-4000) : '';
+        logs.push(`[Flutter Failure]: ${flutterErr.message}`);
+        if (stdout) logs.push(`[Flutter Output]: ${stdout}`);
+        if (stderr) logs.push(`[Flutter Stderr]: ${stderr}`);
+        return {
+          success: false,
+          logs,
+          error: `Flutter APK build failed: ${flutterErr.message}`,
+        };
+      }
+
+      const flutterApks = findApks(path.join(projectPath, 'build', 'app', 'outputs', 'flutter-apk'));
+      if (!flutterApks.length) {
+        const error = 'Flutter completed without errors but no APK was found in build/app/outputs/flutter-apk/.';
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
+
+      const apkPath = flutterApks.find(p => p.endsWith('app-debug.apk')) ?? flutterApks.find(p => p.includes('debug')) ?? flutterApks[0];
+
+      let validated: { size: number; sha256: string };
+      try {
+        validated = await assertRealApk(apkPath);
+      } catch (validationErr: any) {
+        logs.push(`Error: ${validationErr.message}`);
+        return { success: false, logs, error: validationErr.message };
+      }
+
+      logs.push(
+        `Build finished. Verified real Flutter APK at ${apkPath} (${validated.size} bytes, SHA-256 ${validated.sha256}).`,
+      );
+
+      return {
+        success: true,
+        logs,
+        outputPath: apkPath,
+      };
+    }
     const androidProjectPath =
       syncedAndroidProjectPath && fs.existsSync(path.join(syncedAndroidProjectPath, 'app'))
         ? syncedAndroidProjectPath
@@ -475,13 +1192,12 @@ export async function executeBuildJob(
     const command = `${gradleCommand} assembleDebug --no-daemon --stacktrace`;
     logs.push(`Executing Gradle command: ${command}`);
     const gradleEnvironment =
-      gradleCommand === 'bash ./gradlew'
+      strategy.strategyName === 'react-native' || gradleCommand === 'bash ./gradlew'
         ? getGradleEnvironment(androidProjectPath)
         : process.env;
     if (gradleEnvironment.JAVA_HOME !== process.env.JAVA_HOME) {
       logs.push(`Using Gradle Java runtime: ${gradleEnvironment.JAVA_HOME}`);
     }
-
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd: androidProjectPath,
@@ -578,6 +1294,28 @@ export async function executeBuildJob(
     } catch (validationErr: any) {
       logs.push(`Error: ${validationErr.message}`);
       return { success: false, logs, error: validationErr.message };
+    }
+
+    if (strategy.strategyName === 'react-native') {
+      const propertiesPath = path.join(androidProjectPath, 'gradle.properties');
+      const properties = fs.existsSync(propertiesPath)
+        ? fs.readFileSync(propertiesPath, 'utf8')
+        : '';
+      const hermesEnabled = /^hermesEnabled\s*=\s*true\s*$/im.test(properties);
+
+      try {
+        const nativeLibraries = await validateReactNativeApkNativeRuntime(
+          apkPath,
+          hermesEnabled,
+        );
+        logs.push(
+          `React Native native runtime artifact check passed: ${nativeLibraries.join(', ')} (arm64-v8a).`,
+        );
+      } catch (runtimeArtifactError: any) {
+        const error = runtimeArtifactError.message || String(runtimeArtifactError);
+        logs.push(`Error: ${error}`);
+        return { success: false, logs, error };
+      }
     }
 
     logs.push(

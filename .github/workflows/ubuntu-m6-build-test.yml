@@ -1,0 +1,99 @@
+name: Ubuntu M6 Build Test
+
+on:
+  push:
+    branches:
+      - fix/m6-g10-theme
+      - fix/m6-runtime-interaction
+      - feat/main-m2-m6-framework-integration
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  m6-build-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Verify pnpm
+        run: |
+          pnpm --version
+          which pnpm
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+          packages: platform-tools
+
+      - name: Export Android env vars
+        run: |
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> $GITHUB_ENV
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> $GITHUB_ENV
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
+
+      - name: Add Android build-tools to PATH
+        run: |
+          if [ -n "${ANDROID_SDK_ROOT:-}" ]; then echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH; fi
+
+      - name: Show resolved toolchain
+        run: |
+          java -version
+          node --version
+          pnpm --version
+          sdkmanager --list_installed
+          find . -path '*/gradle/wrapper/gradle-wrapper.properties' -print
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Run M6 React Native pipeline test
+        run: |
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
+
+      - name: Find APK
+        run: |
+          find . -name "*.apk" -type f
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: m6-build-apk
+          path: ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: SHA256 APK
+        run: |
+          find . -name "*.apk" -type f -exec sha256sum {} \;

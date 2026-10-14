@@ -1,0 +1,14 @@
+{
+  "name": "m4-vite-pwa-fixture",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "6.2.2",
+    "vite-plugin-pwa": "1.0.0",
+    "workbox-window": "7.3.0"
+  }
+}
