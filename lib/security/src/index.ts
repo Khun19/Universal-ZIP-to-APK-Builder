@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream, existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { mkdtemp, stat, writeFile } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -160,6 +160,7 @@ async function streamEntry(
   targetPath: string,
   limits: ZipSecurityLimits,
   totals: { bytes: number },
+  expectedCrc: number,
 ): Promise<void> {
   const child = spawn("unzip", ["-p", archivePath, entryName], { stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
@@ -198,9 +199,7 @@ async function streamEntry(
   if (rejected) throw rejected;
   if (exitCode !== 0) throw new Error(`ZIP streaming extraction failed for ${entryName}: ${stderr.trim()}`);
   const actualCrc = (crc ^ 0xffffffff) >>> 0;
-  const zip = new AdmZip(archivePath);
-  const entry = zip.getEntry(entryName);
-  if (!entry || actualCrc !== (Number(entry.header.crc) >>> 0)) {
+  if (actualCrc !== (Number(expectedCrc) >>> 0)) {
     throw new Error(`ZIP entry CRC mismatch: ${entryName}`);
   }
 }
@@ -230,7 +229,7 @@ async function streamExtractArchive(
         throw new Error(`Blocked ZIP path breakout: ${relativePath}`);
       }
       mkdirSync(path.dirname(targetPath), { recursive: true });
-      await streamEntry(archivePath, entry.entryName, targetPath, limits, totals);
+      await streamEntry(archivePath, entry.entryName, targetPath, limits, totals, entry.header.crc);
     }
     if (existsSync(resolvedDestination)) {
       throw new Error("Extraction destination already exists; use a fresh isolated workspace");
