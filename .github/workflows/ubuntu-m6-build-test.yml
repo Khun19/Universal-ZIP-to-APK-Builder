@@ -147,11 +147,11 @@ jobs:
               "runtimeValidation": "not-performed-by-ubuntu-build-workflow",
           }
           Path(".ci-evidence/m6-apk-provenance.json").write_text(
-              json.dumps(record, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+              json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
           )
           if apk_hash:
               Path(".ci-evidence/app-debug.apk.sha256").write_text(
-                  f"{apk_hash}  app-debug.apk\\n", encoding="utf-8"
+                  f"{apk_hash}  app-debug.apk\n", encoding="utf-8"
               )
           PY
 
