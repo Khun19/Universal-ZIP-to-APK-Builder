@@ -7,6 +7,7 @@ import AdmZip from "adm-zip";
 import {
   inspectAdmZip,
   inspectZip,
+  safeExtract,
   safeExtractAdmZip,
   validateApk,
   ZIP_LIMITS,
@@ -132,15 +133,23 @@ test("extraction publishes exact bytes into a fresh destination", async () => {
   });
 });
 
-test("understated ZIP size metadata fails closed during extraction", async () => {
-  const zip = archive([["file.txt", "123456"]]);
-  const entry = zip.getEntry("file.txt");
-  assert.ok(entry);
-  entry.header.size = 1;
-  await assert.rejects(
-    () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-should-not-publish-" + Date.now()), { maxEntryBytes: 5, maxUncompressedBytes: 5 }),
-    /per-entry size|Actual extracted bytes|CRC mismatch/,
-  );
+test("actual streamed extraction bytes enforce limits when central-directory size is understated", async () => {
+  await withTempDir(async (directory) => {
+    const zipBytes = archive([["file.txt", "123456"]]).toBuffer();
+    const centralDirectoryOffset = zipBytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    assert.notEqual(centralDirectoryOffset, -1, "fixture must contain a ZIP central-directory entry");
+    // Change only the central-directory uncompressed size. The local file header and
+    // compressed payload still describe six bytes, while preflight metadata says one.
+    zipBytes.writeUInt32LE(1, centralDirectoryOffset + 24);
+    const archivePath = path.join(directory, "understated-size.zip");
+    const destination = path.join(directory, "extracted");
+    await writeFile(archivePath, zipBytes);
+    await assert.rejects(
+      () => safeExtract(archivePath, destination, { maxEntryBytes: 5, maxUncompressedBytes: 5 }),
+      /Extracted entry exceeds per-entry size limit|Actual extracted bytes exceed archive safety limit/,
+    );
+    await assert.rejects(() => readFile(path.join(destination, "file.txt")), /ENOENT/);
+  });
 });
 
 test("failed extraction leaves no staging directory or partial published destination", async () => {
