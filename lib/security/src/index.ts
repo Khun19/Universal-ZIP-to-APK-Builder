@@ -63,6 +63,19 @@ export interface SecureZipResult {
   extractedPath: string;
 }
 
+const CRC32_TABLE = new Uint32Array(256);
+for (let i = 0; i < CRC32_TABLE.length; i++) {
+  let value = i;
+  for (let bit = 0; bit < 8; bit++) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+  CRC32_TABLE[i] = value >>> 0;
+}
+
+function crc32(data: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of data) crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 function isSymlinkOrSpecialFile(entry: { attr?: number }): boolean {
   const attr = Number(entry.attr ?? 0);
   const unixMode = (attr >>> 16) & 0xffff;
@@ -171,6 +184,10 @@ export function safeExtractAdmZip(
 
       // Verify runtime data size instead of trusting central-directory metadata.
       const data = entry.getData();
+      const expectedCrc = Number(entry.header.crc) >>> 0;
+      if (crc32(data) !== expectedCrc) {
+        throw new Error(`ZIP entry CRC mismatch: ${relativePath}`);
+      }
       if (data.byteLength > limits.maxEntryBytes) {
         throw new Error(`Extracted entry exceeds per-entry size limit: ${relativePath}`);
       }
