@@ -8,6 +8,20 @@ The existing `.github/workflows/builder-quality-gates.yml` is the common Ubuntu 
 
 The existing `.github/workflows/ubuntu-m6-build-test.yml` remains the targeted M6 workflow. It now attempts to publish `m6-build-apk-<run>-<attempt>` with the APK, SHA-256 sidecar, and `m6-apk-provenance.json`. A missing APK remains a failure. Its provenance explicitly says Android runtime validation was not performed by the Ubuntu build workflow.
 
+## Current workflow inventory from canonical `main`
+
+This is the workflow inventory identified in the current `main` snapshot; it is not a claim that all are suitable as required PR gates.
+
+| Existing workflow | Current trigger/role observed | Milestone connection | Provenance/gating disposition |
+|---|---|---|---|
+| `.github/workflows/builder-quality-gates.yml` | Pull requests to `main` and pushes to `main` for listed shared code/test/workflow/docs paths | Shared common gate for relevant M1–M12 source, tests, and workflow changes | This PR adds run/commit/toolchain/input-hash provenance artifact. |
+| `.github/workflows/ubuntu-m6-build-test.yml` | Pull requests to `main`, manual dispatch, and pushes on three named M6/feature branches | M6 only | This PR adds a separate provenance record and APK checksum artifact; device/runtime validation remains outside this workflow. |
+| `.github/workflows/codeql.yml` | CodeQL security analysis workflow | Cross-cutting security signal, especially M1/M11; not a framework build gate | Keep as a separate security check. Its success does not replace unit tests, artifact provenance, or runtime acceptance. |
+| `.github/workflows/fix-test-a-runtime-final.yml` | Push on `fix/test-a-runtime-final`; applies SAF patch, tests, then can commit/push generated source | Test A / static-web and Android directory-picker path, likely relevant to M3; branch-specific only | Not a general `main` acceptance gate. Has `contents: write` and self-committing behavior; audit separately before promoting or reusing it. |
+| `.github/workflows/one-time-test-a-directory-picker.yml` | Push on `fix/test-a-directory-picker`; applies SAF patch, then can commit/push generated source | Test A / directory-picker behavior, likely relevant to M3; branch-specific only | Not a general `main` acceptance gate. Has `contents: write` and self-committing behavior; audit separately before promoting or reusing it. |
+
+**Important coverage boundary:** the inventory currently confirms a shared gate and one specialized APK workflow, not twelve independent framework-build workflows. For M2–M5 and M7–M12, the common gate can test shared code but does not prove the corresponding framework can build. Targeted workflow/fixture coverage and artifact provenance for those milestones remain gaps until existing files are inspected and the missing evidence is added in focused PRs.
+
 ## Provenance contract
 
 For each relevant CI run, record:
