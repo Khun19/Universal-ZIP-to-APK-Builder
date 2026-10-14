@@ -81,7 +81,7 @@ test("exact duplicate ZIP entry names are rejected", () => {
   bytes.copy(bytes, second + 46, first + 46, first + 46 + firstNameLength);
   assert.throws(
     () => inspectAdmZip(new AdmZip(bytes)),
-    /duplicate or case-colliding/,
+    /ADM-ZIP: Duplicate entry name|duplicate or case-colliding/,
   );
 });
 
