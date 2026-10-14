@@ -210,5 +210,6 @@ jobs:
             .workspace/**/*.apk
             .workspace/**/*.apk.sha256
             .ci-evidence/m4-apk-sha256.txt
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
