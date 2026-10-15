@@ -1,0 +1,159 @@
+name: M6 Isolated Community Chat Demo ZIP to APK
+
+on:
+  push:
+    branches:
+      - feat/m6-community-chat-demo-mainline
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/community-chat-demo-builder-apk.yml"
+      - "examples/react-native-chat-demo/**"
+      - "lib/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  builder-zip-to-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          accept-android-sdk-licenses: true
+
+      - name: Install Android build toolchain
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;26.1.10909125" \
+            "cmake;3.22.1"
+          yes | sdkmanager --licenses >/dev/null
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
+          java -version
+          sdkmanager --list_installed
+
+      - name: Install Builder workspace dependencies
+        run: pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds
+
+      - name: Generate matching React Native Android platform for the demo ZIP
+        run: |
+          set -euo pipefail
+          SCAFFOLD_DIR="$RUNNER_TEMP/community-chat-native-scaffold"
+          rm -rf "$SCAFFOLD_DIR"
+          cd "$RUNNER_TEMP"
+          npx --yes @react-native-community/cli@15.0.1 init CommunityChatDemo --version 0.76.9 --directory "$SCAFFOLD_DIR" --skip-install
+          test -s "$SCAFFOLD_DIR/android/gradlew"
+          test -s "$SCAFFOLD_DIR/android/app/build.gradle"
+          rm -rf "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
+          cp -a "$SCAFFOLD_DIR/android" "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
+          python3 - <<'PY'
+          from pathlib import Path
+          gradle_file = Path(__import__("os").environ["GITHUB_WORKSPACE"]) / "examples/react-native-chat-demo/android/app/build.gradle"
+          text = gradle_file.read_text()
+          marker = 'react {'
+          if text.count(marker) != 1:
+              raise SystemExit("Expected exactly one React Gradle configuration block")
+          text = text.replace(marker, marker + '\n    // This APK must run without Metro; embed the JS bundle in every variant.\n    debuggableVariants = []', 1)
+          gradle_file.write_text(text)
+          if 'debuggableVariants = []' not in gradle_file.read_text():
+              raise SystemExit("Failed to enable embedded React Native bundle")
+          PY
+          echo "Generated Android scaffold with embedded React Native JS bundle enabled"
+
+      - name: Package clean Community Chat Demo ZIP
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/examples/react-native-chat-demo"
+          test -s index.js
+          zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
+            -x "node_modules/*" "ios/*" ".gradle/*" "build/*"
+          unzip -t "$GITHUB_WORKSPACE/community-chat-demo.zip"
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'package.json'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'App.js'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'index.js'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'metro.config.js'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/gradlew'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/app/build.gradle'
+
+      - name: Build APK through the actual Builder CLI
+        env:
+          BUILD_TIMEOUT_MS: "3600000"
+        run: |
+          set -o pipefail
+          pnpm exec tsx lib/cli.ts community-chat-demo.zip 2>&1 | tee community-chat-builder-build.log
+
+      - name: Validate APK, package ID, and SHA-256
+        run: |
+          set -euo pipefail
+          APK="$(find output -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test -s "$APK"
+          unzip -t "$APK"
+          unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          unzip -Z1 "$APK" | grep -qx 'assets/index.android.bundle'
+          aapt dump badging "$APK" | tee apk-badging.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+          stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
+          printf 'APK_PATH=%s\n' "$APK" | tee apk-path.txt
+          {
+            echo "## Community Chat Demo — Builder APK"
+            echo
+            echo "- Commit: $GITHUB_SHA"
+            echo "- APK: $APK"
+            echo "- $(cat apk-size.txt)"
+            echo "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
+            PACKAGE_ID="$(awk -F "\047" '/^package:/ {print $2; exit}' apk-badging.txt)"
+            test -n "$PACKAGE_ID"
+            echo "- Package: $PACKAGE_ID"
+            echo "- Device install/launch/interaction: NOT RUN in cloud CI"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Builder APK and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-chat-demo-builder-apk
+          path: |
+            output/*.apk
+            community-chat-demo.zip
+            community-chat-builder-build.log
+            apk-badging.txt
+            apk-sha256.txt
+            apk-size.txt
+            apk-path.txt
+          if-no-files-found: error
+          retention-days: 14
