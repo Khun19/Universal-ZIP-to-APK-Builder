@@ -62,6 +62,31 @@ The project should distinguish these states:
 - `BLOCKED` — a required environment or device is unavailable.
 - `NOT RUN` — verification has not been executed.
 
+## Termux Procedure
+
+From the repository checkout:
+
+```sh
+cd ~/Universal-ZIP-to-APK-Builder-main
+
+git fetch origin --prune
+git checkout main
+git pull --ff-only origin main
+
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm test
+```
+
+For a build acceptance test, use a complete project ZIP and run the documented CLI entry point, for example:
+
+```sh
+pnpm run start:cli "/storage/emulated/0/Download/<project>.zip"
+```
+
+The build record must retain the command output needed to identify the phase, exit code, APK path/name, APK size, and SHA-256 when an APK is produced.
+
+
 ## GitHub Actions Procedure
 
 For each focused PR:
