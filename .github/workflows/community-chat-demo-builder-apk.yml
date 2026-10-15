@@ -106,6 +106,7 @@ jobs:
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'package.json'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'App.js'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'index.js'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'metro.config.js'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/gradlew'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/app/build.gradle'
 
