@@ -111,7 +111,7 @@ jobs:
           BUILD_TIMEOUT_MS: "3600000"
         run: |
           set -o pipefail
-          pnpm run start:cli -- community-chat-demo.zip 2>&1 | tee community-chat-builder-build.log
+          pnpm exec tsx lib/cli.ts community-chat-demo.zip 2>&1 | tee community-chat-builder-build.log
 
       - name: Validate APK, package ID, and SHA-256
         run: |
