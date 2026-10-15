@@ -42,7 +42,7 @@ test('ZIP entry-count limit rejects one entry over the boundary', () => {
   );
   assert.throws(
     () => inspectAdmZip(fakeZip(entries)),
-    /too many files/i,
+    /too many (files|entries)/i,
   );
 });
 
