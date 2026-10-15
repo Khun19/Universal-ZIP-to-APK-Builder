@@ -18,7 +18,7 @@ A green workflow is not equivalent to a milestone PASS. Device/runtime criteria 
 
 | Milestone | Approved scope from `ROADMAP.md` | GitHub Actions coverage target | Additional acceptance evidence | Initial coverage assessment |
 |---|---|---|---|---|
-| M1 | Foundation, ZIP security, artifact integrity | Typecheck; focused ZIP-security tests; adversarial boundary/collision/path/symlink tests; extraction cleanup; security checks | Exact-limit and limit-plus-one results; actual streamed bytes; malformed archive handling; APK validation/hash tests where applicable | Present / partial; active PR #54 has a CI typecheck failure to resolve |
+| M1 | Foundation, ZIP security, artifact integrity | Typecheck; focused ZIP-security tests; adversarial boundary/collision/path/symlink tests; extraction cleanup; security checks | Exact-limit and limit-plus-one results; actual streamed bytes; malformed archive handling; APK validation/hash tests where applicable | Present / partial; PR #54 CI passes, but the PR is currently not mergeable and ZIP-limit boundary coverage still needs review with PR #51 |
 | M2 | Universal analyzer and strategy registry | Unit tests for each detection signal, nested roots, confidence/ambiguity, deterministic strategy selection, unsupported-project diagnostics | Fixture-to-detection report and selected strategy evidence | Planned; inventory existing tests before adding jobs |
 | M3 | Static Web → APK | Static web fixture build on Ubuntu; APK discovery/structure/hash checks; upload artifact | Install/launch evidence when required by the gate | Planned / needs coverage audit |
 | M4 | React/Vite/PWA → APK | Representative React/Vite/PWA fixtures; pinned Node/package manager; native wrapper build; artifact checks | Fixture matrix and device/runtime result where required | Planned / needs coverage audit |
@@ -34,7 +34,7 @@ A green workflow is not equivalent to a milestone PASS. Device/runtime criteria 
 ## Incremental implementation order
 
 1. **Baseline and workflow inventory:** inspect `.github/workflows/`, root/package scripts, test fixtures, and the current `main` commit. Do not delete or replace workflows during inventory.
-2. **M1 first:** resolve PR #54 failures, run all ZIP-security tests and adversarial cases on its exact head, and review the streaming extraction implementation before accepting the gate.
+2. **M1 first:** resolve the current PR #54 merge conflict, review the streaming extraction/resource-limit implementation against PR #51 boundary tests, and require both exact-head CI evidence and below/equal/above-limit tests before accepting the gate.
 3. **Shared quality checks:** establish one non-duplicated Ubuntu workflow for lockfile install, typecheck, unit tests, and workspace build, reusing existing scripts and preserving specialized workflows.
 4. **Artifact contract:** for build workflows, require the expected artifact, record the exact source SHA and toolchain, and publish SHA-256. Missing mandatory artifacts fail the job.
 5. **M2 tests:** make analyzer/strategy behavior deterministic before widening framework jobs.
