@@ -256,11 +256,17 @@ export async function safeExtractAdmZip(
   destination: string,
   overrides: ZipSecurityLimitOverrides = {},
 ): Promise<SecureZipResult> {
+  const limits = effectiveLimits(overrides);
+  const archiveBytes = zip.toBuffer();
+  if (archiveBytes.byteLength > limits.maxBytes) {
+    throw new Error("Archive exceeds upload limit");
+  }
+
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "m1-zip-stream-"));
   const archivePath = path.join(tempDir, "input.zip");
   try {
-    await writeFile(archivePath, zip.toBuffer(), { flag: "wx" });
-    return await streamExtractArchive(archivePath, destination, zip, overrides);
+    await writeFile(archivePath, archiveBytes, { flag: "wx" });
+    return await streamExtractArchive(archivePath, destination, zip, limits);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
