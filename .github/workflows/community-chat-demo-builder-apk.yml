@@ -137,7 +137,9 @@ jobs:
             echo "- APK: $APK"
             echo "- $(cat apk-size.txt)"
             echo "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
-            echo "- Package: $(grep -o \"package: name='[^']*'\" apk-badging.txt | head -n1)"
+            PACKAGE_ID="$(awk -F "\047" '/^package:/ {print $2; exit}' apk-badging.txt)"
+            test -n "$PACKAGE_ID"
+            echo "- Package: $PACKAGE_ID"
             echo "- Device install/launch/interaction: NOT RUN in cloud CI"
           } >> "$GITHUB_STEP_SUMMARY"
 
