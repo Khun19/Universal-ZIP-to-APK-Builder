@@ -97,12 +97,15 @@ jobs:
 
       - name: Package clean Community Chat Demo ZIP
         run: |
+          set -euo pipefail
           cd "$GITHUB_WORKSPACE/examples/react-native-chat-demo"
+          test -s index.js
           zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
             -x "node_modules/*" "ios/*" ".gradle/*" "build/*"
           unzip -t "$GITHUB_WORKSPACE/community-chat-demo.zip"
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'package.json'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'App.js'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'index.js'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/gradlew'
           unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/app/build.gradle'
 
