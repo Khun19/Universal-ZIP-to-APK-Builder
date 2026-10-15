@@ -133,11 +133,11 @@ jobs:
           {
             echo "## Community Chat Demo — Builder APK"
             echo
-            echo "- Commit: `$GITHUB_SHA`"
-            echo "- APK: `$APK`"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- APK: $APK"
             echo "- $(cat apk-size.txt)"
-            echo "- SHA-256: `$(awk '{print $1}' apk-sha256.txt)`"
-            echo "- Package: `$(sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" apk-badging.txt | head -n1)`"
+            echo "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
+            echo "- Package: $(grep -o \"package: name='[^']*'\" apk-badging.txt | head -n1)"
             echo "- Device install/launch/interaction: NOT RUN in cloud CI"
           } >> "$GITHUB_STEP_SUMMARY"
 
