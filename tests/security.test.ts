@@ -140,6 +140,15 @@ test("archive file-size limit accepts the exact boundary and rejects an over-lim
   });
 });
 
+test("in-memory extraction enforces the compressed archive byte limit", async () => {
+  const zip = archive([["file.txt", "payload"]]);
+  const archiveSize = zip.toBuffer().byteLength;
+  await assert.rejects(
+    () => safeExtractAdmZip(zip, path.join(tmpdir(), "m1-over-byte-limit-" + Date.now()), { maxBytes: archiveSize - 1 }),
+    /upload limit/,
+  );
+});
+
 test("extraction publishes exact bytes into a fresh destination", async () => {
   await withTempDir(async (directory) => {
     const zip = archive([["nested/hello.txt", "hello"]]);
