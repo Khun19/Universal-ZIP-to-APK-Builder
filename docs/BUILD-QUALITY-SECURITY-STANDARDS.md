@@ -156,3 +156,8 @@ For the current work sequence:
 6. Review the compatibility evidence before any separate M7/Expo decision.
 
 Do not begin a later fixture while the current fixture has an unresolved mandatory failure. A CI-only pass does not satisfy a device gate.
+
+
+## 12. APK identity and device-test eligibility
+
+Before distributing an APK for real-device testing, validate the actual APK bytes against provenance and compare its SHA-256 with `docs/tested-apk-registry.json`. A matching hash is the same byte-for-byte APK and must not be offered as a new candidate. A changed hash alone does not establish an app-code or behavior change. Device acceptance records must bind exact APK SHA-256, source commit, workflow run ID, target behavior and observed result. CI PASS and `real_device_acceptance: NOT_RUN` must remain distinct. The implementation and acceptance checklist are maintained in `docs/APK-IDENTITY-GATE.md`.
