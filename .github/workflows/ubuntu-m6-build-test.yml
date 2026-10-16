@@ -142,6 +142,7 @@ jobs:
             --provenance "$PROVENANCE_PATH" \
             --expected-commit "$GITHUB_SHA" \
             --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-application-id "com.builder.m6reactnative" \
             --registry docs/tested-apk-registry.json \
             --output apk-identity-gate-report.json
 
