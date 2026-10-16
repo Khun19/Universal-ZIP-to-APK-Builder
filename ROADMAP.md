@@ -37,10 +37,10 @@ One milestone at a time. GitHub Actions is the default build/test environment; l
 10. For runtime-sensitive criteria, download that exact artifact and install/test it on a real Android device. Do not substitute a prior run's APK.
 11. Use local Termux execution only when the task specifically requires local diagnosis/recovery or the relevant CI path is unavailable; record why it was needed.
 12. Record evidence: branch, commit SHA, fixture SHA-256, runner/toolchain, workflow/run ID, result, APK size/SHA-256, device/runtime result, and limitations.
-12. **PASS** only when every mandatory criterion passes and the goal-alignment audit is **ALIGNED**.
-13. **FAIL** stays on the same milestone and requires a root-cause fix and re-test.
-14. **BLOCKED** stays on the same milestone and records the missing environment/device prerequisite.
-15. Never convert build success, CI success, source inspection, or technical correctness into a runtime PASS or a goal-alignment PASS.
+13. **PASS** only when every mandatory criterion passes and the goal-alignment audit is **ALIGNED**.
+14. **FAIL** stays on the same milestone and requires a root-cause fix and re-test.
+15. **BLOCKED** stays on the same milestone and records the missing environment/device prerequisite.
+16. Never convert build success, CI success, source inspection, or technical correctness into a runtime PASS or a goal-alignment PASS.
 
 ## Canonical Architecture Order
 
