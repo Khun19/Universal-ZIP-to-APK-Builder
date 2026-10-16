@@ -49,6 +49,46 @@ function readInstalledReactNativeVersion(projectPath: string, declared: unknown)
 }
 
 /**
+ * Resolve the bare React Native JavaScript entry point deterministically.
+ * package.json "main" is authoritative when present; otherwise accept exactly
+ * one conventional index entry. Never silently bundle a different entry file.
+ */
+export function resolveReactNativeEntryFile(projectPath: string): string {
+  const projectRoot = path.resolve(projectPath);
+  const packagePath = path.join(projectRoot, 'package.json');
+  let declaredMain: unknown;
+  if (fs.existsSync(packagePath)) {
+    const parsed = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { main?: unknown };
+    declaredMain = parsed.main;
+  }
+
+  if (declaredMain !== undefined) {
+    if (typeof declaredMain !== 'string' || declaredMain.trim() === '') {
+      throw new Error('React Native package.json main must be a non-empty relative entry path.');
+    }
+    const entryPath = path.resolve(projectRoot, declaredMain);
+    const relativePath = path.relative(projectRoot, entryPath);
+    if (!relativePath || relativePath.startsWith('..' + path.sep) || relativePath === '..' || path.isAbsolute(relativePath)) {
+      throw new Error('React Native package.json main must resolve inside the project directory.');
+    }
+    if (!fs.existsSync(entryPath) || !fs.statSync(entryPath).isFile()) {
+      throw new Error(`Configured React Native entry point does not exist: ${declaredMain}`);
+    }
+    return relativePath.split(path.sep).join('/');
+  }
+
+  const candidates = ['index.js', 'index.ts', 'index.tsx'].filter((candidate) =>
+    fs.existsSync(path.join(projectRoot, candidate)) &&
+    fs.statSync(path.join(projectRoot, candidate)).isFile(),
+  );
+  if (candidates.length === 1) return candidates[0];
+  if (candidates.length === 0) {
+    throw new Error('No React Native entry point found; set package.json main or provide exactly one of index.js, index.ts, or index.tsx.');
+  }
+  throw new Error(`Ambiguous React Native entry points (${candidates.join(', ')}); set package.json main explicitly.`);
+}
+
+/**
  * Generate the native platform in a temporary CLI project, validate it, then
  * copy only android/ into the user's project. The user's JS/TS source, package
  * manifest, assets and app configuration are never replaced.
@@ -178,6 +218,7 @@ export async function generateReactNativeAndroidScaffold(
     if (!fs.existsSync(reactNativeCli)) {
       throw new Error('React Native CLI executable is missing; cannot create a self-contained Android JavaScript bundle.');
     }
+    const entryFile = resolveReactNativeEntryFile(projectRoot);
     const androidAssetsPath = path.join(androidPath, 'app', 'src', 'main', 'assets');
     const jsBundlePath = path.join(androidAssetsPath, 'index.android.bundle');
     fs.mkdirSync(androidAssetsPath, { recursive: true });
@@ -187,7 +228,7 @@ export async function generateReactNativeAndroidScaffold(
         'bundle',
         '--platform', 'android',
         '--dev', 'true',
-        '--entry-file', 'index.js',
+        '--entry-file', entryFile,
         '--bundle-output', jsBundlePath,
         '--assets-dest', path.join(androidPath, 'app', 'src', 'main', 'res'),
       ],
