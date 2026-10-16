@@ -59,6 +59,7 @@ async function main() {
     provenancePath: arg("--provenance"),
     expectedCommit: arg("--expected-commit"),
     expectedRunId: arg("--expected-run-id"),
+    expectedApplicationId: arg("--expected-application-id"),
     registryPath: arg("--registry") ?? "docs/tested-apk-registry.json"
   });
   const output = arg("--output");
