@@ -228,6 +228,9 @@ Use the repository's current setup/diagnostic scripts rather than assuming a spe
 
 ## Development
 
+> [!NOTE]
+> Development commands are workspace-oriented. `pnpm run build` validates and builds repository packages, but does not by itself mean that an Android APK has been produced. For exact CI parity, refer to the repository’s current GitHub Actions workflow toolchain settings.
+
 Install dependencies:
 
 ```bash
