@@ -10,6 +10,15 @@ Universal ZIP-to-APK Builder is a framework-aware, developer-focused build orche
 
 **Not:** A no-code consumer app creator, fake APK generator, or magic converter that makes arbitrary ZIPs into working apps; nor a default full Android SDK-on-phone build system. Detecting a framework alone does not establish support.
 
+![Builder](https://img.shields.io/badge/Builder-Framework--Aware-111827)
+![Build Path](https://img.shields.io/badge/Canonical-GitHub%20Actions%20on%20Ubuntu-1f6feb)
+![Validation](https://img.shields.io/badge/Validation-Evidence--Based-7c3aed)
+![Runtime](https://img.shields.io/badge/Runtime-Device%20Proof%20When%20Required-2da44e)
+
+> [!NOTE]
+> **Support status is evidence-based.**  
+> Roadmap coverage, framework detection, or workflow-file presence do not by themselves mean a framework is supported. Support exists only when the required real fixture, build, artifact validation, and milestone-specific runtime/device evidence are present.
+
 ## Official build priority
 
 1. **Primary — GitHub Actions / Ubuntu:** run the applicable workflow against an exact commit, build the APK, validate its structure and provenance, and publish the artifact plus SHA-256 evidence.
