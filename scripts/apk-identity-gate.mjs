@@ -6,7 +6,7 @@ export function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-export function evaluateCandidate({ candidateSha256, provenance, expectedCommit, expectedRunId, registry, targetBehavior, behaviorChanged }) {
+export function evaluateCandidate({ candidateSha256, provenance, expectedCommit, expectedRunId, expectedApplicationId, registry, targetBehavior, behaviorChanged }) {
   const blockers = [];
   if (!provenance || typeof provenance !== "object") blockers.push("PROVENANCE_MISSING");
   if (!candidateSha256 || !/^[a-f0-9]{64}$/i.test(candidateSha256)) blockers.push("APK_SHA256_INVALID");
