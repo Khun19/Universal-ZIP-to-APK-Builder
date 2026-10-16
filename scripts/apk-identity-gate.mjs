@@ -12,6 +12,7 @@ export function evaluateCandidate({ candidateSha256, provenance, expectedCommit,
   if (!candidateSha256 || !/^[a-f0-9]{64}$/i.test(candidateSha256)) blockers.push("APK_SHA256_INVALID");
   if (!provenance?.source_commit || provenance.source_commit !== expectedCommit) blockers.push("SOURCE_COMMIT_MISMATCH");
   if (!provenance?.run_id || String(provenance.run_id) !== String(expectedRunId)) blockers.push("WORKFLOW_RUN_MISMATCH");
+  if (expectedApplicationId && provenance?.application_id !== expectedApplicationId) blockers.push("APPLICATION_ID_MISMATCH");
   if (!targetBehavior || !targetBehavior.trim()) blockers.push("TARGET_BEHAVIOR_MISSING");
   if (behaviorChanged !== true) blockers.push("NO_VERIFIED_BEHAVIOR_CHANGE");
   const prior = (registry?.tested_apks ?? []).find((entry) => entry.sha256?.toLowerCase() === candidateSha256?.toLowerCase());
