@@ -1,7 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import AdmZip from 'adm-zip';
-import { safeExtractAdmZip } from './security/src/index.ts';
+import { safeExtract } from './security/src/index.ts';
 import { handleBuildRequest } from './server.ts';
 import { listTemplates } from './template-registry';
 import { generateFromTemplate } from './template-generator';
@@ -100,9 +99,8 @@ async function main() {
   // 1. Secure ZIP extraction
   let filePaths: string[];
   try {
-    const zip = new AdmZip(zipPath);
-    const extraction = safeExtractAdmZip(zip, workDir);
-    filePaths = extraction.filePaths;
+    // Check the archive's on-disk size before AdmZip reads it into memory.
+    filePaths = await safeExtract(zipPath, workDir);
   } catch (e: any) {
     console.error(`Blocked ZIP: ${e.message}`);
     process.exit(1);
