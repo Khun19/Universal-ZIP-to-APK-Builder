@@ -9,7 +9,9 @@
       "source_commit": "c4db5d481d28f633c1e9791f8f4da0fefc48106b",
       "workflow_run_id": "38906997677",
       "device_result": "PASS",
-      "evidence": "User-reported install, launch, UI and interaction acceptance in conversation on 2026-10-16; preserve exact hash/commit/run association."
+      "evidence": "User-reported install, launch, UI and interaction acceptance in conversation on 2026-10-16; preserve exact hash/commit/run association.",
+      "target_behavior": "Install and launch React Native app; verify UI renders and core interaction responds.",
+      "device_tested_at": "2026-10-16"
     }
   ]
 }
