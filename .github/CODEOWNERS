@@ -1,0 +1,22 @@
+# Default owner for all files.
+* @Khun19
+
+# Repository governance and documentation.
+/.github/ @Khun19
+/.github/workflows/ @Khun19
+/docs/ @Khun19
+/README.md @Khun19
+/ROADMAP.md @Khun19
+/SECURITY.md @Khun19
+/CONTRIBUTING.md @Khun19
+/LICENSE @Khun19
+/AGENTS.md @Khun19
+
+# Package and build metadata.
+package.json @Khun19
+pnpm-lock.yaml @Khun19
+pnpm-workspace.yaml @Khun19
+**/build.gradle* @Khun19
+**/settings.gradle* @Khun19
+**/gradle.properties @Khun19
+**/pubspec.yaml @Khun19
