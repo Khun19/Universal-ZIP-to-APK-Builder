@@ -129,11 +129,11 @@ jobs:
               "apk_sha256": apk_hash,
           }
           Path("m5-provenance.json").write_text(
-              json.dumps(record, indent=2, sort_keys=True) + "\\n",
+              json.dumps(record, indent=2, sort_keys=True) + "\n",
               encoding="utf-8",
           )
           Path("m5-apk.sha256").write_text(
-              f"{apk_hash}  {apk_path}\\n", encoding="utf-8"
+              f"{apk_hash}  {apk_path}\n", encoding="utf-8"
           )
           PY
 
