@@ -1,8 +1,16 @@
 # Universal ZIP-to-APK Builder
 
-**Phone-first Android Builder: ZIP → Analyze → Real Build → APK → Install/Runtime**
+**GitHub Actions-first ZIP-to-APK Builder: ZIP → Validate → Build on Ubuntu → APK → Verify**
 
-Universal ZIP-to-APK Builder is a developer-focused build orchestrator for turning structured project ZIPs into real Android APKs. The project prioritizes truthful build evidence, deterministic strategy selection, and local phone/Termux execution.
+Universal ZIP-to-APK Builder is a developer-focused build orchestrator for turning supported project ZIPs into real Android APKs. The canonical build execution path is GitHub Actions on Ubuntu runners. Phone-side installation and runtime checks remain separate acceptance steps; local Termux builds are an optional recovery/development path, not the default build requirement.
+
+## Official build priority
+
+1. **Primary — GitHub Actions / Ubuntu:** run the applicable workflow against an exact commit, build the APK, validate its structure and provenance, and publish the artifact plus SHA-256 evidence.
+2. **Required when the milestone calls for it — Android device:** download the artifact from that exact workflow run, verify its recorded hash/provenance, then install and exercise it on a real device. CI success alone is not device acceptance.
+3. **Optional — local Node.js / Termux restore path:** use only for explicitly needed local diagnosis, development, or recovery. Keep a minimal restore plan documented; do not require a large local Android SDK for routine builds.
+
+Each result must be tied to the exact source commit and workflow run. Never use an older APK as evidence for a newer commit, and never describe a framework as supported based on detection or workflow-file presence alone.
 
 > **Important:** Build/CI success is not runtime success. A runtime-sensitive milestone is PASS only after the required install/launch/runtime evidence exists.
 
@@ -33,9 +41,9 @@ The audit asks:
 
 This is a **development/governance gate**, not a replacement for build or runtime validation.
 
-### GitHub-Gated Milestone Development & Termux Validation Loop
+### GitHub Actions Build and Acceptance Loop
 
-`Goal Alignment Audit → implement one milestone → GitHub → pull exact commit in Termux → build/test → record evidence → PASS/FAIL/BLOCKED`
+`Goal Alignment Audit → implement one milestone → focused PR → GitHub Actions on exact commit → inspect logs/artifact/provenance → device acceptance when required → record evidence → PASS/FAIL/BLOCKED`
 
 Do not advance a failed, blocked, or goal-misaligned milestone.
 
@@ -74,7 +82,7 @@ When a framework has an established official/native Android build flow, Builder 
 ```text
 Official Framework Flow
         ↓
-Phone/Termux-Compatible Environment
+Ubuntu CI-Compatible Environment
         ↓
 Real Native Build
         ↓
@@ -93,7 +101,7 @@ Initial priority:
 4. Capacitor
 5. Native Android
 
-The Builder may adapt the execution environment for Android phone/ARM64/Termux constraints, but it must preserve the framework's real native build semantics.
+The primary execution environment is a pinned/reproducible Ubuntu GitHub Actions runner. Adapters must preserve each framework's real native build semantics. A minimal Termux/local restore path may be maintained for exceptional diagnosis or recovery, but is not the default build path.
 
 The Builder must not:
 
@@ -166,13 +174,13 @@ The following are **not canonical architecture layers**:
 
 If such files remain in the repository for compatibility, history, CI, or cleanup purposes, they are **Secondary/Legacy**, not part of the three-layer product architecture. New development must not treat them as required product layers unless an explicit ADR changes the architecture.
 
-Do not create a competing backend, database, queue, Docker, or hosted architecture and present it as the phone-first Builder architecture.
+Do not create a competing backend, database, queue, Docker, or hosted architecture and present it as the canonical Builder architecture. GitHub Actions is the primary build executor, not a new product/backend layer.
 
-## Phone / Termux
+## Optional local / Termux restore path
 
-The primary development target is a local Android phone environment such as Termux.
+Routine APK builds run through GitHub Actions on Ubuntu; a full local Android SDK is not required on the phone. Retain only the minimal Node.js/package-manager tools needed for source inspection or recovery, and install the larger Android toolchain only when a documented local task genuinely requires it. This path is secondary and must not replace the canonical CI artifact/provenance flow.
 
-Typical prerequisites include:
+Typical prerequisites when a local Android build is explicitly required include:
 
 - Android SDK
 - Android build-tools
@@ -182,9 +190,9 @@ Typical prerequisites include:
 - framework-specific native toolchains where required
 - AAPT2 and related Android tools
 
-Tool paths must be detected from the environment rather than hard-coded.
+Tool paths must be detected from the environment rather than hard-coded. Prefer the repository's current setup/diagnostic scripts and avoid keeping large SDK/build caches on the phone when they are not needed.
 
-A typical environment may use:
+A typical restored environment may use:
 
 ```bash
 export ANDROID_HOME="$HOME/android-sdk"
