@@ -102,3 +102,8 @@ For important acceptance tests record:
 ## CI coverage and limitations
 
 CI coverage varies by workflow and fixture. Before claiming a framework is CI-verified, confirm that the applicable workflow actually ran successfully for the exact source commit and produced a validated artifact. Do not infer full framework coverage from workflow filenames or from a successful unrelated workflow. Device-only behavior remains a separate acceptance gate when the roadmap requires it. If the required workflow or evidence is missing, report `BLOCKED` or `NOT RUN`; do not make a local Termux build the default substitute.
+
+
+## APK identity and real-device eligibility gate
+
+Before sharing any APK for device testing, verify the actual APK SHA-256 (not the artifact ZIP digest), source commit, workflow run ID, package identity, provenance, and tested-APK registry. Same-hash APKs must not be offered as new device-test candidates. A different hash alone is not a behavior change. Record device results against the exact APK SHA-256 + source commit + run ID. See [`docs/APK-IDENTITY-GATE.md`](APK-IDENTITY-GATE.md) and [`docs/tested-apk-registry.json`](tested-apk-registry.json).
