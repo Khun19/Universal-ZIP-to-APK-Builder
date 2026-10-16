@@ -20,7 +20,7 @@ export function evaluateCandidate({ candidateSha256, provenance, expectedCommit,
   return { eligible: blockers.length === 0, blockers, priorDeviceRecord: prior ?? null };
 }
 
-export async function validateArtifact({ apkPath, provenancePath, expectedCommit, expectedRunId, expectedApplicationId, registryPath }) {
+export async function validateArtifact({ apkPath, provenancePath, expectedCommit, expectedRunId, expectedApplicationId, registryPath, targetBehavior, behaviorChanged }) {
   const apk = await readFile(apkPath);
   const apkStat = await stat(apkPath);
   const provenance = JSON.parse(await readFile(provenancePath, "utf8"));
@@ -45,8 +45,8 @@ export async function validateArtifact({ apkPath, provenancePath, expectedCommit
     application_id: provenance.application_id,
     previously_device_tested: Boolean(prior),
     prior_device_record: prior ?? null,
-    device_test_eligible: errors.length === 0 && !prior,
-    note: prior ? "Same APK SHA-256 already has a device-test record; do not request a reinstall/retest as a new candidate." : "A new device-test request still requires a specific verified behavior change."
+    device_test_eligible: errors.length === 0 && !prior && behaviorChanged === true && Boolean(targetBehavior?.trim()),
+    note: prior ? "Same APK SHA-256 already has a device-test record; do not request a reinstall/retest as a new candidate." : behaviorChanged === true && Boolean(targetBehavior?.trim()) ? "Identity is valid and a behavior-change claim was supplied; human source-diff review is still required before sharing a device-test link." : "Identity validation does not prove behavior changed. A specific test target and human-verified app-code/behavior change are required before device testing."
   };
 }
 
@@ -62,6 +62,8 @@ async function main() {
     expectedCommit: arg("--expected-commit"),
     expectedRunId: arg("--expected-run-id"),
     expectedApplicationId: arg("--expected-application-id"),
+    targetBehavior: arg("--target-behavior"),
+    behaviorChanged: arg("--behavior-change-verified") === "true",
     registryPath: arg("--registry") ?? "docs/tested-apk-registry.json"
   });
   const output = arg("--output");
