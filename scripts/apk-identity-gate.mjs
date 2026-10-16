@@ -62,7 +62,7 @@ async function main() {
       registryPath: arg("--registry") ?? "docs/tested-apk-registry.json"
     });
     const output = arg("--output");
-    if (output) await writeFile(output, JSON.stringify(result, null, 2) + "\\n");
+    if (output) await writeFile(output, JSON.stringify(result, null, 2) + "\n");
     console.log(JSON.stringify(result, null, 2));
     if (!result.valid) process.exitCode = 1;
   } catch (error) {
