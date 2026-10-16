@@ -32,19 +32,20 @@ export async function validateArtifact({ apkPath, provenancePath, expectedCommit
   if (Number(provenance.artifact?.size_bytes) !== apkStat.size) errors.push("APK_SIZE_MISMATCH");
   if (typeof provenance.application_id !== "string" || !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(provenance.application_id)) errors.push("APPLICATION_ID_MISSING_OR_INVALID");
   const registry = JSON.parse(await readFile(registryPath, "utf8"));
+  if (!Array.isArray(registry.tested_apks)) errors.push("REGISTRY_SCHEMA_INVALID");
   const prior = (registry.tested_apks ?? []).find((entry) => entry.sha256?.toLowerCase() === actualSha.toLowerCase());
-  const result = {
+  return {
     valid: errors.length === 0,
     errors,
     apk: { path: apkPath, size_bytes: apkStat.size, sha256: actualSha },
     source_commit: provenance.source_commit,
     run_id: String(provenance.run_id),
+    application_id: provenance.application_id,
     previously_device_tested: Boolean(prior),
     prior_device_record: prior ?? null,
     device_test_eligible: errors.length === 0 && !prior,
     note: prior ? "Same APK SHA-256 already has a device-test record; do not request a reinstall/retest as a new candidate." : "A new device-test request still requires a specific verified behavior change."
   };
-  return result;
 }
 
 function arg(name) {
@@ -53,26 +54,17 @@ function arg(name) {
 }
 
 async function main() {
-  try {
-    const result = await validateArtifact({
-      apkPath: arg("--apk"),
-      provenancePath: arg("--provenance"),
-      expectedCommit: arg("--expected-commit"),
-      expectedRunId: arg("--expected-run-id"),
-      registryPath: arg("--registry") ?? "docs/tested-apk-registry.json"
-    });
-    const output = arg("--output");
-    if (output) await writeFile(output, JSON.stringify(result, null, 2) + "\n");
-    console.log(JSON.stringify(result, null, 2));
-    if (!result.valid) process.exitCode = 1;
-  } catch (error) {
-    console.error("APK_IDENTITY_GATE_FAILED:", error.message);
-    process.exitCode = 1;
-  }
-}
-
-async function main() {
-  void main();
+  const result = await validateArtifact({
+    apkPath: arg("--apk"),
+    provenancePath: arg("--provenance"),
+    expectedCommit: arg("--expected-commit"),
+    expectedRunId: arg("--expected-run-id"),
+    registryPath: arg("--registry") ?? "docs/tested-apk-registry.json"
+  });
+  const output = arg("--output");
+  if (output) await writeFile(output, JSON.stringify(result, null, 2) + "\n");
+  console.log(JSON.stringify(result, null, 2));
+  if (!result.valid) process.exitCode = 1;
 }
 
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
