@@ -72,7 +72,7 @@ async function main() {
   if (!result.valid) process.exitCode = 1;
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+if (process.argv[1]?.endsWith("apk-identity-gate.mjs")) {
   main().catch((error) => {
     console.error("APK_IDENTITY_GATE_FAILED:", error.message);
     process.exitCode = 1;
