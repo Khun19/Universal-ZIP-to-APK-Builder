@@ -29,6 +29,16 @@ Each result must be tied to the exact source commit and workflow run. Never use 
 
 > **Important:** Build/CI success is not runtime success. A runtime-sensitive milestone is PASS only after the required install/launch/runtime evidence exists.
 
+## Where to start
+
+For a quick, source-of-truth reading path:
+
+1. **[README.md](README.md)** — understand the project identity, build path, boundaries, and evidence expectations.
+2. **[ROADMAP.md](ROADMAP.md)** — review milestone scope and current priorities.
+3. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — understand the canonical architecture and design boundaries.
+4. **[docs/VALIDATION-WORKFLOW.md](docs/VALIDATION-WORKFLOW.md)** — follow the build and acceptance process.
+5. **[docs/TEST-MATRIX.md](docs/TEST-MATRIX.md)** — check the required tests and evidence for acceptance.
+
 ## Canonical project rules
 
 The canonical development contract is defined by these repository documents:
