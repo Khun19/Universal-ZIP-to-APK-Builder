@@ -294,6 +294,8 @@ Keep one source of truth per concern:
 - `docs/M6-ACCEPTANCE-REPORT.md` — recorded M6 React Native device acceptance
 - `docs/REPOSITORY-OVERALL-AUDIT-2026-10-15.md` — current repository, milestone, PR, and priority audit snapshot
 - `docs/VALIDATION-WORKFLOW.md` — validation loop
+- `docs/APK-IDENTITY-GATE.md` — pre-download APK identity and real-device eligibility gate
+- `docs/tested-apk-registry.json` — exact hashes and provenance for previously device-tested APKs
 - `docs/ADR/` — architectural decisions
 
 Do not recreate competing roadmap or architecture documents.
