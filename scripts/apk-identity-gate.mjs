@@ -19,7 +19,7 @@ export function evaluateCandidate({ candidateSha256, provenance, expectedCommit,
   return { eligible: blockers.length === 0, blockers, priorDeviceRecord: prior ?? null };
 }
 
-export async function validateArtifact({ apkPath, provenancePath, expectedCommit, expectedRunId, registryPath }) {
+export async function validateArtifact({ apkPath, provenancePath, expectedCommit, expectedRunId, expectedApplicationId, registryPath }) {
   const apk = await readFile(apkPath);
   const apkStat = await stat(apkPath);
   const provenance = JSON.parse(await readFile(provenancePath, "utf8"));
