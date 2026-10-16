@@ -13,7 +13,16 @@ test(
   const buildInput = {
     buildId: 'test-build-101',
     files: [
-      { relativePath: 'package.json', content: '{"name": "react-app"}' },
+      {
+        relativePath: 'package.json',
+        content: JSON.stringify({
+          name: 'react-app',
+          version: '1.0.0',
+          type: 'module',
+          scripts: { build: 'vite build' },
+          dependencies: { vite: '^7.3.2' },
+        }),
+      },
       { relativePath: 'vite.config.ts', content: 'export default {}' },
       { relativePath: 'index.html', content: '<h1>App</h1>' }
     ]

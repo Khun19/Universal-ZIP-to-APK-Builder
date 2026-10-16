@@ -1,0 +1,215 @@
+name: Ubuntu M4 Vite PWA APK Build Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'scripts/**'
+      - 'tests/pipeline.test.ts'
+      - 'tests/fixtures/vite-pwa-project/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ubuntu-m4-vite-pwa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  m4-vite-pwa-apk:
+    name: Build and validate real M4 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+          packages: platform-tools
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Export Android environment
+        run: |
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> "$GITHUB_ENV"
+          echo "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools/34.0.0" >> "$GITHUB_PATH"
+
+      - name: Record resolved toolchain
+        run: |
+          java -version
+          node --version
+          pnpm --version
+          sdkmanager --list_installed
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Run real M4 Android integration tests
+        env:
+          RUN_ANDROID_INTEGRATION: '1'
+        run: pnpm exec tsx --test tests/pipeline.test.ts
+
+      - name: Validate APK outputs
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find .workspace -type f -name '*.apk' -print | sort)
+          test "${#apks[@]}" -ge 1
+          for apk in "${apks[@]}"; do
+            test -s "$apk"
+            unzip -Z1 "$apk" | grep -Fxq 'AndroidManifest.xml'
+            aapt dump badging "$apk" | grep -q "^package: name="
+          done
+          printf 'Validated %s APK artifact(s).\n' "${#apks[@]}"
+
+      - name: Write M4 APK provenance and checksums
+        if: always()
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          mkdir -p .ci-evidence
+          python3 - <<'PY'
+          import hashlib, json, os, platform, re, subprocess, zipfile
+          from pathlib import Path
+
+          def command(*args):
+              try:
+                  return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+              except Exception as exc:
+                  return f"unavailable: {exc}"
+
+          event = {}
+          event_path = os.getenv("GITHUB_EVENT_PATH")
+          if event_path and Path(event_path).is_file():
+              try:
+                  event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+              except Exception:
+                  event = {}
+          pull_request = event.get("pull_request") or {}
+
+          artifacts = []
+          checksum_lines = []
+          for apk in sorted(Path(".workspace").rglob("*.apk")) if Path(".workspace").exists() else []:
+              h = hashlib.sha256()
+              with apk.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(chunk)
+              digest = h.hexdigest()
+              try:
+                  with zipfile.ZipFile(apk) as archive:
+                      has_manifest = "AndroidManifest.xml" in archive.namelist()
+              except Exception:
+                  has_manifest = False
+              badging = command("aapt", "dump", "badging", str(apk))
+              match = re.search(r"package: name='([^']+)'", badging)
+              artifacts.append({
+                  "path": str(apk),
+                  "found": True,
+                  "sizeBytes": apk.stat().st_size,
+                  "sha256": digest,
+                  "containsAndroidManifest": has_manifest,
+                  "applicationId": match.group(1) if match else None,
+              })
+              apk.with_suffix(apk.suffix + ".sha256").write_text(
+                  f"{digest}  {apk.name}\n", encoding="utf-8"
+              )
+              checksum_lines.append(f"{digest}  {apk.as_posix()}")
+
+          def sha256_file(name):
+              p = Path(name)
+              return hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
+
+          record = {
+              "schemaVersion": 1,
+              "evidenceType": "android-apk-build",
+              "milestone": "M4",
+              "fixture": "tests/fixtures/vite-pwa-project",
+              "repository": os.getenv("GITHUB_REPOSITORY"),
+              "commit": os.getenv("GITHUB_SHA"),
+              "ref": os.getenv("GITHUB_REF"),
+              "runId": os.getenv("GITHUB_RUN_ID"),
+              "runAttempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+              "source": {
+                  "gitHead": command("git", "rev-parse", "HEAD"),
+                  "checkoutSha": os.getenv("GITHUB_SHA"),
+                  "pullRequestHeadSha": (pull_request.get("head") or {}).get("sha"),
+                  "pullRequestBaseSha": (pull_request.get("base") or {}).get("sha"),
+              },
+              "runner": {"os": platform.platform()},
+              "toolchain": {
+                  "java": command("java", "-version"),
+                  "node": command("node", "--version"),
+                  "pnpm": command("pnpm", "--version"),
+                  "sdkmanager": command("sdkmanager", "--version"),
+              },
+              "inputs": {"pnpmLockSha256": sha256_file("pnpm-lock.yaml")},
+              "artifacts": artifacts,
+              "runtimeValidation": "not-performed-by-ubuntu-build-workflow",
+          }
+          Path(".ci-evidence/m4-apk-provenance.json").write_text(
+              json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          Path(".ci-evidence/m4-apk-sha256.txt").write_text(
+              "\n".join(checksum_lines) + ("\n" if checksum_lines else ""), encoding="utf-8"
+          )
+          PY
+
+      - name: Upload M4 provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m4-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-evidence/m4-apk-provenance.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload M4 APKs and SHA-256 checksums
+        if: always() && hashFiles('.workspace/**/*.apk') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: m4-vite-pwa-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .workspace/**/*.apk
+            .workspace/**/*.apk.sha256
+            .ci-evidence/m4-apk-sha256.txt
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
