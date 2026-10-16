@@ -34,7 +34,7 @@ test(
             "import App from '../App';",
             "AppRegistry.registerComponent('BareReactNativeScaffoldTest', () => App);",
             '',
-          ].join('\\n'),
+          ].join('\n'),
         },
         {
           relativePath: 'App.js',
@@ -49,12 +49,12 @@ test(
             '  );',
             '}',
             '',
-          ].join('\\n'),
+          ].join('\n'),
         },
       ],
     });
 
-    assert.equal(result.success, true, result.error || result.logs.join('\\n'));
+    assert.equal(result.success, true, result.error || result.logs.join('\n'));
     assert.equal(result.projectType, 'React Native');
     assert.equal(result.strategyName, 'react-native');
     assert.ok(result.outputPath?.endsWith('.apk'));
@@ -71,9 +71,9 @@ test(
     const apkPath = result.outputPath as string;
     assert.ok(fs.statSync(apkPath).size > 0);
     const entries = execFileSync('unzip', ['-Z1', apkPath], { encoding: 'utf8' });
-    assert.match(entries, /^AndroidManifest\\.xml$/m);
-    assert.match(entries, /^assets\\/index\\.android\\.bundle$/m);
-    assert.match(entries, /^lib\\/arm64-v8a\\/libreactnative\\.so$/m);
+    assert.match(entries, /^AndroidManifest\.xml$/m);
+    assert.match(entries, /^assets\/index\.android\.bundle$/m);
+    assert.match(entries, /^lib\/arm64-v8a\/libreactnative\.so$/m);
     const bundle = execFileSync('unzip', ['-p', apkPath, 'assets/index.android.bundle'], {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
