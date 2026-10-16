@@ -1,16 +1,7 @@
 {
   "schema_version": 1,
-  "description": "Append-only evidence index for APKs actually tested on a physical Android device. A record applies only to its exact APK SHA-256.",
+  "description": "Append-only evidence index for APKs actually tested on a physical Android device. Records must contain the SHA-256 of the APK bytes themselves, never the provenance JSON digest. Historical records without an independently confirmed APK hash are intentionally omitted.",
   "tested_apks": [
-    {
-      "fixture": "M6 React Native baseline",
-      "application_id": "com.builder.m6reactnative",
-      "sha256": "05c864b61fec5ce89077323ae52627d87db9fc1972f12e87b507f2c1357f8688",
-      "source_commit": "52e550907cb8da345c4d19b74611d7b9945479ef",
-      "workflow_run_id": "38656253893",
-      "device_result": "PASS",
-      "evidence": "User-confirmed install, launch, React Native UI render, and core interaction; recorded in docs/M6-ACCEPTANCE-REPORT.md and Issue #62."
-    },
     {
       "fixture": "M6 React Native current device-tested candidate",
       "application_id": "com.builder.m6reactnative",
@@ -21,4 +12,4 @@
       "evidence": "User-reported install, launch, UI and interaction acceptance in conversation on 2026-10-16; preserve exact hash/commit/run association."
     }
   ]
-}\n
+}
