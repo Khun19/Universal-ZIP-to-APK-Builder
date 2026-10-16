@@ -71,6 +71,13 @@ async function main() {
   }
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+async function main() {
   void main();
+}
+
+if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+  main().catch((error) => {
+    console.error("APK_IDENTITY_GATE_FAILED:", error.message);
+    process.exitCode = 1;
+  });
 }
