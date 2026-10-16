@@ -95,26 +95,71 @@ jobs:
         env:
           APK_PATH: ${{ steps.apk.outputs.path }}
           COMMIT_SHA: ${{ github.sha }}
+        shell: bash
         run: |
           set -euo pipefail
-          apk_sha="$(sha256sum "$APK_PATH" | awk '{print $1}')"
-          apk_size="$(stat -c '%s' "$APK_PATH")"
-          cat > m5-provenance.json <<EOF
-          {
-            "milestone": "M5",
-            "framework": "Flutter",
-            "workflow": "${GITHUB_WORKFLOW}",
-            "run_id": "${GITHUB_RUN_ID}",
-            "commit_sha": "${COMMIT_SHA}",
-            "flutter_version": "$(flutter --version | head -n 1)",
-            "java_version": "$(java -version 2>&1 | head -n 1)",
-            "apk_path": "${APK_PATH}",
-            "apk_size_bytes": ${apk_size},
-            "apk_sha256": "${apk_sha}"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          apk_path = Path(os.environ["APK_PATH"])
+          apk_hash = hashlib.sha256(apk_path.read_bytes()).hexdigest()
+          apk_size = apk_path.stat().st_size
+          java_version = subprocess.check_output(
+              ["java", "-version"], text=True, stderr=subprocess.STDOUT
+          ).splitlines()[0]
+          flutter_version = subprocess.check_output(
+              ["flutter", "--version"], text=True, stderr=subprocess.STDOUT
+          ).splitlines()[0]
+
+          record = {
+              "schema_version": 1,
+              "milestone": "M5",
+              "framework": "Flutter",
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "commit_sha": os.environ["COMMIT_SHA"],
+              "flutter_version": flutter_version,
+              "java_version": java_version,
+              "apk_path": str(apk_path),
+              "apk_size_bytes": apk_size,
+              "apk_sha256": apk_hash,
           }
-          EOF
-          cat m5-provenance.json
-          printf '%s  %s\n' "$apk_sha" "$APK_PATH" > m5-apk.sha256
+          Path("m5-provenance.json").write_text(
+              json.dumps(record, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          Path("m5-apk.sha256").write_text(
+              f"{apk_hash}  {apk_path}\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Validate M5 provenance and checksum
+        env:
+          APK_PATH: ${{ steps.apk.outputs.path }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 -m json.tool m5-provenance.json >/dev/null
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          record = json.loads(Path("m5-provenance.json").read_text(encoding="utf-8"))
+          apk = Path(os.environ["APK_PATH"])
+          actual_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert record["commit_sha"] == os.environ["COMMIT_SHA"], "provenance commit mismatch"
+          assert record["apk_size_bytes"] == apk.stat().st_size, "APK size mismatch"
+          assert record["apk_sha256"] == actual_hash, "APK SHA-256 mismatch"
+          sidecar = Path("m5-apk.sha256").read_text(encoding="utf-8").split()
+          assert sidecar[0] == actual_hash, "checksum sidecar mismatch"
+          print("M5 provenance JSON, exact commit, APK size, and SHA-256 validated")
+          PY
 
       - name: Upload M5 APK and provenance
         uses: actions/upload-artifact@v4
