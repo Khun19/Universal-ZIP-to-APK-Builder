@@ -164,7 +164,7 @@ jobs:
           apk = Path(".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk")
           sdk = os.environ.get("ANDROID_HOME", os.environ.get("ANDROID_SDK_ROOT", ""))
           badging = subprocess.check_output([os.path.join(sdk, "build-tools", "34.0.0", "aapt"), "dump", "badging", str(apk)], text=True)
-          app_id = next((line.split("name=\\x27", 1)[1].split("\\x27", 1)[0] for line in badging.splitlines() if line.startswith("package: name=\\x27")), None)
+          app_id = next((line.split("name=\x27", 1)[1].split("\x27", 1)[0] for line in badging.splitlines() if line.startswith("package: name=\x27")), None)
           if not app_id:
               raise SystemExit("Could not read application ID from bare-scaffold APK")
           provenance = {
@@ -179,7 +179,7 @@ jobs:
               "real_device_acceptance": "NOT_RUN",
               "fixture": "bare-react-native-custom-main-entrypoint"
           }
-          apk.with_name("provenance.json").write_text(json.dumps(provenance, indent=2) + "\\n", encoding="utf-8")
+          apk.with_name("provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
           print(json.dumps(provenance, indent=2))
           PY
           node scripts/apk-identity-gate.mjs \\
