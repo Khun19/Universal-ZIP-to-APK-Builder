@@ -1,7 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import AdmZip from 'adm-zip';
-import { safeExtractAdmZip } from './security/src/index.ts';
+import { safeExtract } from './security/src/index.ts';
 import { handleBuildRequest } from './server.ts';
 import { listTemplates } from './template-registry';
 import { generateFromTemplate } from './template-generator';
@@ -100,17 +99,8 @@ async function main() {
   // 1. Secure ZIP extraction
   let filePaths: string[];
   try {
-    const zip = new AdmZip(zipPath);
-    const extraction = await safeExtractAdmZip(zip, workDir);
-    // Keep the CLI resilient to legacy extractor return shapes during branch
-    // transitions, while requiring a concrete validated file list.
-    if (Array.isArray(extraction)) {
-      filePaths = extraction;
-    } else if (extraction && Array.isArray(extraction.filePaths)) {
-      filePaths = extraction.filePaths;
-    } else {
-      throw new Error("ZIP extractor returned no validated file list");
-    }
+    // Check the archive's on-disk size before AdmZip reads it into memory.
+    filePaths = await safeExtract(zipPath, workDir);
   } catch (e: any) {
     console.error(`Blocked ZIP: ${e.message}`);
     process.exit(1);
