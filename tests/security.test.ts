@@ -137,6 +137,10 @@ test("archive file-size limit accepts the exact boundary and rejects an over-lim
     const { size } = await import("node:fs/promises").then((fs) => fs.stat(file));
     assert.equal((await inspectZip(file, { maxBytes: size })).length, 1);
     await assert.rejects(() => inspectZip(file, { maxBytes: size - 1 }), /upload limit/);
+    await assert.rejects(
+      () => safeExtract(file, path.join(directory, "too-large"), { maxBytes: size - 1 }),
+      /upload limit/,
+    );
   });
 });
 
