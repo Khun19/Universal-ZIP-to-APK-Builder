@@ -65,22 +65,21 @@ test('ZIP compression-ratio limit rejects one unit over the boundary', () => {
 });
 
 test('ZIP total extracted-size limit accepts the exact boundary', () => {
-  const half = ZIP_LIMITS.maxUncompressedBytes / 2;
-  const compressedHalf = Math.ceil(half / ZIP_LIMITS.maxCompressionRatio);
-  const entries = [
-    entry('part-a.bin', half, compressedHalf),
-    entry('part-b.bin', half, compressedHalf),
-  ];
-  assert.equal(inspectAdmZip(fakeZip(entries)).length, 2);
+  const perEntry = ZIP_LIMITS.maxEntryBytes;
+  assert.equal(perEntry * 4, ZIP_LIMITS.maxUncompressedBytes);
+  const entries = Array.from({ length: 4 }, (_, index) =>
+    entry(`part-${index}.bin`, perEntry, Math.ceil(perEntry / ZIP_LIMITS.maxCompressionRatio)),
+  );
+  assert.equal(inspectAdmZip(fakeZip(entries)).length, 4);
 });
 
 test('ZIP total extracted-size limit rejects one byte over the boundary', () => {
-  const half = ZIP_LIMITS.maxUncompressedBytes / 2;
-  const compressedHalf = Math.ceil((half + 1) / ZIP_LIMITS.maxCompressionRatio);
-  const entries = [
-    entry('part-a.bin', half, compressedHalf),
-    entry('part-b.bin', half + 1, compressedHalf),
-  ];
+  const perEntry = ZIP_LIMITS.maxEntryBytes;
+  assert.equal(perEntry * 4, ZIP_LIMITS.maxUncompressedBytes);
+  const entries = Array.from({ length: 4 }, (_, index) =>
+    entry(`part-${index}.bin`, perEntry, Math.ceil(perEntry / ZIP_LIMITS.maxCompressionRatio)),
+  );
+  entries.push(entry('one-byte-over.bin', 1, 1));
   assert.throws(
     () => inspectAdmZip(fakeZip(entries)),
     /uncompressed size exceeds safety limit/i,
