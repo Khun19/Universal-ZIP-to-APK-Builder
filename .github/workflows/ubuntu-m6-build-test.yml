@@ -182,12 +182,12 @@ jobs:
           apk.with_name("provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
           print(json.dumps(provenance, indent=2))
           PY
-          node scripts/apk-identity-gate.mjs \\
-            --apk "$APK_PATH" \\
-            --provenance "$OUT_DIR/provenance.json" \\
-            --expected-commit "$GITHUB_SHA" \\
-            --expected-run-id "$GITHUB_RUN_ID" \\
-            --registry docs/tested-apk-registry.json \\
+          node scripts/apk-identity-gate.mjs \
+            --apk "$APK_PATH" \
+            --provenance "$OUT_DIR/provenance.json" \
+            --expected-commit "$GITHUB_SHA" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --registry docs/tested-apk-registry.json \
             --output bare-scaffold-apk-identity-gate-report.json
 
       - name: Upload APK checksum and provenance
