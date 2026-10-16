@@ -81,6 +81,7 @@ jobs:
 
       - name: Run M6 React Native pipeline test
         run: |
+          pnpm exec tsx --test tests/apk-identity-gate.test.ts
           RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
 
       - name: Find APK
@@ -124,6 +125,20 @@ jobs:
           print(json.dumps(provenance, indent=2))
           PY
 
+      - name: Enforce APK identity and provenance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
+          PROVENANCE_PATH="$(dirname "$APK_PATH")/provenance.json"
+          node scripts/apk-identity-gate.mjs \\
+            --apk "$APK_PATH" \\
+            --provenance "$PROVENANCE_PATH" \\
+            --expected-commit "$GITHUB_SHA" \\
+            --expected-run-id "$GITHUB_RUN_ID" \\
+            --registry docs/tested-apk-registry.json \\
+            --output apk-identity-gate-report.json
+
       - name: Upload APK checksum and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -132,5 +147,6 @@ jobs:
             .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk
             .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/SHA256SUMS.txt
             .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json
+            apk-identity-gate-report.json
           if-no-files-found: error
           retention-days: 14
