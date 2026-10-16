@@ -5,7 +5,8 @@ import { evaluateCandidate } from "../scripts/apk-identity-gate.mjs";
 const sha = "a".repeat(64);
 const base = {
   candidateSha256: sha,
-  provenance: { source_commit: "commit-new", run_id: "123", artifact: { sha256: sha } },
+  provenance: { source_commit: "commit-new", run_id: "123", application_id: "com.example.app", artifact: { sha256: sha } },
+  expectedApplicationId: "com.example.app",
   expectedCommit: "commit-new",
   expectedRunId: "123",
   registry: { tested_apks: [] },
@@ -46,4 +47,9 @@ test("blocks a different hash when no behavior change is verified", () => {
 test("blocks a missing test target", () => {
   const result = evaluateCandidate({ ...base, targetBehavior: " " });
   assert.ok(result.blockers.includes("TARGET_BEHAVIOR_MISSING"));
+});
+
+test("blocks an unexpected application ID", () => {
+  const result = evaluateCandidate({ ...base, provenance: { ...base.provenance, application_id: "com.unexpected.app" } });
+  assert.ok(result.blockers.includes("APPLICATION_ID_MISMATCH"));
 });
