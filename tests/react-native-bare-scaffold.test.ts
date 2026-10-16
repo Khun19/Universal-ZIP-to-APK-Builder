@@ -25,7 +25,19 @@ test(
               react: '18.3.1',
               'react-native': '0.76.9',
             },
+            devDependencies: {
+              '@react-native/babel-preset': '0.76.9',
+              '@react-native/metro-config': '0.76.9',
+            },
           }, null, 2),
+        },
+        {
+          relativePath: 'metro.config.js',
+          content: [
+            "const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');",
+            'module.exports = mergeConfig(getDefaultConfig(__dirname), {});',
+            '',
+          ].join('\\n'),
         },
         {
           relativePath: 'src/bootstrap.js',
