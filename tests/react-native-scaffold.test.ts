@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { communityCliVersionForReactNative, generateReactNativeAndroidScaffold } from '../lib/react-native-scaffold.ts';
+import { communityCliVersionForReactNative, generateReactNativeAndroidScaffold, resolveReactNativeEntryFile } from '../lib/react-native-scaffold.ts';
 
 test('pins React Native Community CLI to the verified framework minor', () => {
   assert.equal(communityCliVersionForReactNative('0.76.9'), '15.0.1');
@@ -40,6 +40,47 @@ test('refuses an unknown React Native CLI compatibility mapping', async () => {
       /No verified React Native Community CLI compatibility mapping/,
     );
     assert.equal(fs.existsSync(path.join(root, 'android')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resolves conventional JavaScript and TypeScript entry points deterministically', () => {
+  for (const entry of ['index.js', 'index.ts', 'index.tsx']) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rn-entry-test-'));
+    try {
+      fs.writeFileSync(path.join(root, entry), '// entry');
+      assert.equal(resolveReactNativeEntryFile(root), entry);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('honors a custom package.json main entry point', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rn-entry-test-'));
+  try {
+    fs.mkdirSync(path.join(root, 'src'));
+    fs.writeFileSync(path.join(root, 'src', 'bootstrap.ts'), '// custom entry');
+    fs.writeFileSync(path.join(root, 'index.js'), '// ignored fallback');
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ main: 'src/bootstrap.ts' }));
+    assert.equal(resolveReactNativeEntryFile(root), 'src/bootstrap.ts');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fails closed for missing, ambiguous, or escaping entry points', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rn-entry-test-'));
+  try {
+    assert.throws(() => resolveReactNativeEntryFile(root), /No React Native entry point found/);
+    fs.writeFileSync(path.join(root, 'index.js'), '// js');
+    fs.writeFileSync(path.join(root, 'index.ts'), '// ts');
+    assert.throws(() => resolveReactNativeEntryFile(root), /Ambiguous React Native entry points/);
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ main: '../outside.js' }));
+    assert.throws(() => resolveReactNativeEntryFile(root), /must resolve inside the project directory/);
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ main: 'missing.ts' }));
+    assert.throws(() => resolveReactNativeEntryFile(root), /Configured React Native entry point does not exist/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
