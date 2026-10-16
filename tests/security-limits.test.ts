@@ -85,3 +85,25 @@ test('ZIP total extracted-size limit rejects one byte over the boundary', () => 
     /uncompressed size exceeds safety limit/i,
   );
 });
+
+test('ZIP entry names with unzip pattern metacharacters are rejected', () => {
+  for (const name of ['wild*.txt', 'wild?.txt', 'wild[1].txt', 'wild].txt']) {
+    assert.throws(
+      () => inspectAdmZip(fakeZip([entry(name, 1, 1)])),
+      /Unsafe archive path/,
+      `expected pattern-like entry name to be rejected: ${name}`,
+    );
+  }
+});
+
+test('ZIP entries that could match the same unzip pattern cannot be extracted ambiguously', () => {
+  const entries = [
+    entry('assets/a.txt', 1, 1),
+    entry('assets/b.txt', 1, 1),
+    entry('assets/*.txt', 1, 1),
+  ];
+  assert.throws(
+    () => inspectAdmZip(fakeZip(entries)),
+    /Unsafe archive path/,
+  );
+});
