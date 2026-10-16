@@ -137,12 +137,12 @@ jobs:
           set -euo pipefail
           APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
           PROVENANCE_PATH="$(dirname "$APK_PATH")/provenance.json"
-          node scripts/apk-identity-gate.mjs \\
-            --apk "$APK_PATH" \\
-            --provenance "$PROVENANCE_PATH" \\
-            --expected-commit "$GITHUB_SHA" \\
-            --expected-run-id "$GITHUB_RUN_ID" \\
-            --registry docs/tested-apk-registry.json \\
+          node scripts/apk-identity-gate.mjs \
+            --apk "$APK_PATH" \
+            --provenance "$PROVENANCE_PATH" \
+            --expected-commit "$GITHUB_SHA" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --registry docs/tested-apk-registry.json \
             --output apk-identity-gate-report.json
 
       - name: Upload APK checksum and provenance
