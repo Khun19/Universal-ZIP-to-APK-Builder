@@ -101,8 +101,16 @@ async function main() {
   let filePaths: string[];
   try {
     const zip = new AdmZip(zipPath);
-    const extraction = safeExtractAdmZip(zip, workDir);
-    filePaths = extraction.filePaths;
+    const extraction = await safeExtractAdmZip(zip, workDir);
+    // Keep the CLI resilient to legacy extractor return shapes during branch
+    // transitions, while requiring a concrete validated file list.
+    if (Array.isArray(extraction)) {
+      filePaths = extraction;
+    } else if (extraction && Array.isArray(extraction.filePaths)) {
+      filePaths = extraction.filePaths;
+    } else {
+      throw new Error("ZIP extractor returned no validated file list");
+    }
   } catch (e: any) {
     console.error(`Blocked ZIP: ${e.message}`);
     process.exit(1);
