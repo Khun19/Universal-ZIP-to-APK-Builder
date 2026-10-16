@@ -82,7 +82,7 @@ jobs:
       - name: Run M6 React Native pipeline test
         run: |
           pnpm exec tsx --test tests/apk-identity-gate.test.ts
-          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts tests/react-native-bare-scaffold.test.ts
 
       - name: Find APK
         run: |
