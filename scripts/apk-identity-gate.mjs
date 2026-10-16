@@ -32,6 +32,7 @@ export async function validateArtifact({ apkPath, provenancePath, expectedCommit
   if (provenance.artifact?.sha256 !== actualSha) errors.push("APK_SHA256_MISMATCH");
   if (Number(provenance.artifact?.size_bytes) !== apkStat.size) errors.push("APK_SIZE_MISMATCH");
   if (typeof provenance.application_id !== "string" || !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(provenance.application_id)) errors.push("APPLICATION_ID_MISSING_OR_INVALID");
+  if (expectedApplicationId && provenance.application_id !== expectedApplicationId) errors.push("APPLICATION_ID_MISMATCH");
   const registry = JSON.parse(await readFile(registryPath, "utf8"));
   if (!Array.isArray(registry.tested_apks)) errors.push("REGISTRY_SCHEMA_INVALID");
   const prior = (registry.tested_apks ?? []).find((entry) => entry.sha256?.toLowerCase() === actualSha.toLowerCase());
