@@ -4,11 +4,11 @@ This document defines the project-wide verification loop for the Universal ZIP-t
 
 ## Source-of-Truth Loop
 
-`Repository guidance/specs → Goal Alignment Audit → GitHub change → CI verification → Termux execution → real APK/device verification → evidence → milestone gate`
+`Repository guidance/specs → Goal Alignment Audit → focused GitHub PR → GitHub Actions Ubuntu build/test → exact-commit artifact/provenance verification → real-device acceptance when required → evidence → milestone gate`
 
 Repository documentation is part of the development contract. When guidance conflicts, use the current explicit project requirements and the most specific applicable repository rule, and document unresolved conflicts rather than silently choosing a legacy path.
 
-GitHub is the source of truth for source, tests, workflow definitions, and recorded engineering decisions. Termux is the primary local execution environment for phone-first builds. Real Android behavior is verified separately from CI.
+GitHub is the source of truth for source, tests, workflow definitions, CI runs, artifacts, and recorded engineering decisions. GitHub Actions on Ubuntu is the primary build/test environment. Termux is an optional local recovery/diagnostic path, not a routine build prerequisite. Real Android behavior is verified separately from CI.
 
 ## Milestone Rule
 
@@ -20,11 +20,11 @@ Work is gated one milestone at a time:
 4. Run applicable automated checks.
 5. Run the Goal Alignment & Deviation Audit again after implementation.
 6. Push the focused branch and open a pull request against `main`.
-7. Review CI results and the changed files.
-8. Merge only the milestone currently under validation.
-9. Pull the resulting `main` commit in Termux.
-10. Run the milestone's required local build/tests.
-11. When runtime behavior matters, install and verify the generated APK on a real Android device.
+7. Review the applicable GitHub Actions results and changed files for the exact candidate commit.
+8. Confirm artifact provenance ties the APK to that exact commit, workflow run, and fixture; record its SHA-256.
+9. Merge only the milestone currently under validation after required review and checks pass.
+10. When runtime behavior matters, download the artifact from the recorded run, verify its hash/provenance, then install and verify it on a real Android device.
+11. Run local Termux builds/tests only when explicitly required for recovery, diagnosis, or a check unavailable in CI; record why.
 12. Record evidence in the test matrix or an associated test record.
 13. A milestone is complete only when its applicable acceptance criteria have evidence **and the goal-alignment audit is ALIGNED**.
 14. Stop at the gate and do not start the next milestone until the current milestone is explicitly accepted.
@@ -53,39 +53,31 @@ A DEVIATION FOUND or BLOCKED result keeps the work at the current milestone.
 
 ## CI Responsibilities
 
-GitHub Actions provides reproducible repository-level checks and workflow-specific regression checks. Current workflows include CodeQL and targeted Test A/Test A-directory-picker validation. CI success is not treated as proof of Android installation, launch, permissions, camera access, QR scanning, or other device-only behavior.
+GitHub Actions on Ubuntu is the primary environment for reproducible repository checks and framework-specific APK builds. Select the workflow that actually covers the target fixture; a workflow file existing is not proof that it ran or passed. For each candidate commit, inspect the run conclusion, job logs, uploaded artifact, APK validation output, and provenance. CI success is not proof of Android installation, launch, permissions, camera access, QR scanning, or other device-only behavior.
 
 The project should distinguish these states:
 
 - `CI PASS` — the applicable GitHub Actions checks passed.
-- `TERMUX PASS` — the applicable local Termux checks passed.
+- `LOCAL RECOVERY PASS` — an explicitly required local/Termux diagnostic or build check passed. This is not a substitute for the canonical CI run.
 - `REAL DEVICE PASS` — the applicable Android runtime checks passed on a device/emulator.
 - `BLOCKED` — a required environment or device is unavailable.
 - `NOT RUN` — verification has not been executed.
 
-## Termux Procedure
+## Optional Termux / local recovery procedure
 
-From the repository checkout:
+Do not install or retain a full Android SDK on the phone just to perform routine APK builds. Use GitHub Actions for the normal build path. Enter the local path only when diagnosing a CI gap, developing a local-only change, or restoring the environment for an explicitly approved task.
+
+When local execution is required, first inspect available scripts and current setup instructions. Install only the required Node.js/package-manager dependencies; restore Android SDK/build tools and framework toolchains only for the specific local test. Detect tool paths rather than hard-coding them.
+
+Example repository checks when dependencies are already available:
 
 ```sh
-cd ~/Universal-ZIP-to-APK-Builder-main
-
-git fetch origin --prune
-git checkout main
-git pull --ff-only origin main
-
 pnpm install --frozen-lockfile
 pnpm run typecheck
 pnpm test
 ```
 
-For a build acceptance test, use a complete project ZIP and run the documented CLI entry point, for example:
-
-```sh
-pnpm run start:cli "/storage/emulated/0/Download/<project>.zip"
-```
-
-The build record must retain the command output needed to identify the phase, exit code, APK path/name, APK size, and SHA-256 when an APK is produced.
+A local APK, if produced, must be labelled as a local build and recorded separately from CI artifacts. Capture the source commit, environment/toolchain, command, exit code, APK path/size, and SHA-256.
 
 ## Real Android Verification
 
@@ -107,6 +99,6 @@ For important acceptance tests record:
 - Device/emulator information, when applicable
 - Relevant failure logs, when failed
 
-## Current CI Limitation
+## CI coverage and limitations
 
-The current CI configuration is intentionally documented as partial verification. It does not replace the Termux and real-device gates required by the roadmap. Broad Android build/device coverage remains future work under the later reliability/CI milestones.
+CI coverage varies by workflow and fixture. Before claiming a framework is CI-verified, confirm that the applicable workflow actually ran successfully for the exact source commit and produced a validated artifact. Do not infer full framework coverage from workflow filenames or from a successful unrelated workflow. Device-only behavior remains a separate acceptance gate when the roadmap requires it. If the required workflow or evidence is missing, report `BLOCKED` or `NOT RUN`; do not make a local Termux build the default substitute.

@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-The Builder is a phone-first ZIP-to-APK orchestration system. It accepts an untrusted project ZIP, determines what kind of Android-buildable project it contains, invokes the correct real build flow, validates the resulting APK, and reports truthful evidence.
+The Builder is a GitHub Actions-first ZIP-to-APK orchestration system. It accepts an untrusted project ZIP, determines what kind of Android-buildable project it contains, invokes the correct real build flow on an Ubuntu runner, validates the resulting APK, and reports truthful evidence. Real-device acceptance remains a separate gate when required.
 
 ### Canonical three-layer product architecture
 
@@ -12,7 +12,7 @@ The product has exactly three canonical development layers:
 2. **Layer 2 — Termux Environment Setup**
 3. **Layer 3 — GitHub Builder Code**
 
-These layers define the current product architecture. They must not be expanded by treating legacy server, database, queue, worker, Docker/container, hosted-backend, or Replit infrastructure as additional product layers.
+These layers define the product architecture, not the execution priority. GitHub Actions on Ubuntu is the primary build executor. Layer 2 supports optional local recovery/diagnostics and must not make a large phone-side SDK a routine prerequisite. Do not expand the layers by treating legacy server, database, queue, worker, Docker/container, hosted-backend, or Replit infrastructure as additional product layers.
 
 ### Secondary / Legacy boundary
 
@@ -53,9 +53,9 @@ An architecture change that creates material deviation requires correction or an
 
 Frameworks with an established official/native Android build flow use an **Official Flow Adapter**.
 
-`Official Framework Flow → Phone-Compatible Execution Environment → Real Native Build → Real APK → Install/Launch → Runtime Validation`
+`Official Framework Flow → GitHub Actions Ubuntu Environment → Real Native Build → Validated APK + SHA-256 → Artifact Delivery → Install/Launch → Runtime Validation`
 
-The Builder adapts the execution environment for phone/Termux/ARM64 constraints where necessary. It does not replace the framework's native build semantics with a mock compiler, fake APK, unrelated wrapper, or silent fallback.
+The primary adapter target is a reproducible Ubuntu GitHub Actions runner with explicit toolchain versions. A secondary local/Termux path may be documented for exceptional recovery or diagnosis, but it must preserve the framework's native build semantics and must not become the default build requirement. Never use a mock compiler, fake APK, unrelated wrapper, or silent fallback.
 
 Initial priority:
 
@@ -75,7 +75,7 @@ A framework is not considered supported merely because a detector recognizes it.
 
 ### Layer 2 — Termux Environment Setup
 
-Termux setup and diagnostic tooling prepares/detects the phone-local Android build environment. It must not become a second implementation of the Builder pipeline.
+Termux setup and diagnostic tooling prepares/detects a phone-local environment only when a specific local task requires it. Keep a minimal restore procedure for exceptional diagnosis/recovery; routine APK builds use GitHub Actions Ubuntu and should not require a full local Android SDK.
 
 ### Layer 3 — GitHub Builder Code
 
@@ -182,13 +182,13 @@ Do not hard-code SDK, Java, Node, package-manager, NDK, or build-tool paths.
 
 Environment detection reports tool availability and versions.
 
-The same orchestration model can run in:
+The orchestration model separates build logic from environment-specific setup. Execution priority is:
 
-- Termux/local Android phone;
-- Docker Android builder;
-- CI/GitHub Actions.
+1. **Primary:** GitHub Actions on Ubuntu, tied to the exact source commit and workflow run.
+2. **Secondary:** Termux/local Android phone for explicitly required recovery, diagnosis, or local-only checks.
+3. **Legacy/exceptional:** other environments only when a documented requirement and ADR justify them.
 
-Environment-specific adaptations belong at the environment boundary.
+Environment-specific adaptations belong at the environment boundary. CI artifact, local build, and real-device runtime evidence must remain distinct.
 
 ## 9. Web and Hybrid Strategies
 
@@ -297,7 +297,7 @@ Avoid:
 - `/ROADMAP.md` — milestone scope and gates.
 - `docs/ARCHITECTURE.md` — this architecture.
 - `docs/TEST-MATRIX.md` — test/evidence requirements.
-- `docs/VALIDATION-WORKFLOW.md` — GitHub → Termux → real-device validation procedure.
+- `docs/VALIDATION-WORKFLOW.md` — GitHub Actions-first build, artifact provenance, optional Termux recovery, and real-device validation procedure.
 - `docs/ADR/` — long-term architectural decisions.
 
 Do not create a second roadmap or a second architecture document with competing rules.

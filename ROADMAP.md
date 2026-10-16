@@ -6,15 +6,24 @@ This file is the only roadmap for the project. Milestone numbering is fixed unle
 
 ## Product Goal
 
-Build a dependable, phone-first Universal ZIP-to-APK Builder:
+Build a dependable Universal ZIP-to-APK Builder with **GitHub Actions on Ubuntu as the primary build executor**:
 
-`ZIP → Security → Analyze → Select Strategy → Prepare Environment → Build → Validate APK → Hash → Deliver → Install/Launch when required`
+`ZIP → Security → Analyze → Select Strategy → Prepare Ubuntu Toolchain → Build → Validate APK → Hash/Provenance → Artifact Delivery → Install/Launch when required`
+
+### Approved build-execution priority — 2026-10-16
+
+- **Primary build path:** GitHub Actions Ubuntu runners. Build and test against the exact commit under review, retain workflow logs, validate APK structure, and publish artifact provenance plus SHA-256.
+- **Device acceptance:** when required by a milestone, download the APK from the corresponding workflow run and verify its identity/hash before installing and testing it on a real Android device. CI success is not runtime success.
+- **Secondary recovery path:** local Node.js/Termux execution is optional for targeted diagnosis, development, or recovery. Keep documented minimal restore instructions, but do not make a large phone-side Android SDK a routine prerequisite.
+- **Evidence binding:** CI run, source commit, fixture, APK, checksum, and device result must refer to the same build lineage. An older APK or unrelated fixture cannot prove acceptance of a newer commit.
+
+This changes the execution priority, not milestone numbering, support claims, or runtime acceptance gates.
 
 The Builder must prefer truthful diagnostics over false success. “Universal” means broad, deterministic compatibility through explicit supported strategies—not a promise that every arbitrary project can build.
 
 ## Core Development and Validation Rule
 
-One milestone at a time.
+One milestone at a time. GitHub Actions is the default build/test environment; local Termux builds are exceptional and must be explicitly justified.
 
 1. Start from the latest validated `main` commit.
 2. Inspect the applicable repository instructions and specifications before modifying code.
@@ -22,23 +31,26 @@ One milestone at a time.
 4. Implement only the current milestone.
 5. Run applicable automated tests and real build tests.
 6. Run the Goal Alignment & Deviation Audit again after implementation to detect technically correct but goal-divergent changes, missing requirements, false progress, or scope drift.
-7. Push a focused branch/commit to GitHub.
-8. Pull the exact commit in Termux.
-9. Run the prescribed fixture(s).
-10. For runtime-sensitive criteria, install and test on a real Android device.
-11. Record evidence: branch, commit SHA, fixture SHA-256, environment, commands, result, APK path/size/SHA-256, runtime result, and limitations.
-12. **PASS** only when every mandatory criterion passes and the goal-alignment audit is **ALIGNED**.
-13. **FAIL** stays on the same milestone and requires a root-cause fix and re-test.
-14. **BLOCKED** stays on the same milestone and records the missing environment/device prerequisite.
-15. Never convert build success, CI success, source inspection, or technical correctness into a runtime PASS or a goal-alignment PASS.
+7. Push a focused branch/commit to GitHub and open a pull request.
+8. Run and inspect the applicable GitHub Actions checks for the exact candidate commit; record the workflow/run IDs and relevant logs.
+9. Verify that the artifact came from that exact commit and fixture; record APK path/name, size, package identity where applicable, SHA-256, and provenance.
+10. For runtime-sensitive criteria, download that exact artifact and install/test it on a real Android device. Do not substitute a prior run's APK.
+11. Use local Termux execution only when the task specifically requires local diagnosis/recovery or the relevant CI path is unavailable; record why it was needed.
+12. Record evidence: branch, commit SHA, fixture SHA-256, runner/toolchain, workflow/run ID, result, APK size/SHA-256, device/runtime result, and limitations.
+13. **PASS** only when every mandatory criterion passes and the goal-alignment audit is **ALIGNED**.
+14. **FAIL** stays on the same milestone and requires a root-cause fix and re-test.
+15. **BLOCKED** stays on the same milestone and records the missing environment/device prerequisite.
+16. Never convert build success, CI success, source inspection, or technical correctness into a runtime PASS or a goal-alignment PASS.
 
 ## Canonical Architecture Order
 
-The product architecture has exactly three canonical layers:
+The product architecture has exactly three canonical layers. Build-execution priority is separate from layer naming: GitHub Actions on Ubuntu is the primary executor, while Termux setup is a secondary local recovery/diagnostic path.
 
 1. **Layer 1 — Android Builder UI**
 2. **Layer 2 — Termux Environment Setup**
 3. **Layer 3 — GitHub Builder Code**
+
+Layer 3 is built and validated primarily on GitHub Actions Ubuntu runners. Layer 2 remains available for documented local restore/diagnostics, not as the routine build prerequisite.
 
 The three layers are the product architecture. API-server, database, queue, worker, Docker/container, hosted-backend, and Replit-specific infrastructure are **Secondary/Legacy** unless a future ADR explicitly promotes a component.
 
@@ -56,13 +68,13 @@ Frameworks that have an established official/native Android build flow must be i
 
 The target architecture is:
 
-`Official Framework Flow → Phone-Compatible Execution Environment → Real Native Build → Real APK → Install/Launch → Runtime Validation`
+`Official Framework Flow → GitHub Actions Ubuntu Environment → Real Native Build → Validated APK + SHA-256 → Artifact Delivery → Install/Launch → Runtime Validation`
 
 The Builder's responsibility is to:
 
 1. Detect the framework/project type.
 2. Select the corresponding Official Flow Adapter.
-3. Prepare or validate a phone-compatible local environment (including Termux/ARM64 constraints where applicable).
+3. Prepare or validate the Ubuntu runner toolchain and pinned framework dependencies. Preserve a separate documented Termux restore path only for exceptional local execution where required.
 4. Invoke the framework's real tooling and preserve its native build semantics.
 5. Produce a real Android APK through the framework's actual native build path.
 6. Validate the APK structure, package identity, native contents where applicable, and SHA-256.
@@ -89,13 +101,13 @@ Initial priority for official-flow validation is:
 
 Additional frameworks may be added only when a deterministic Android build path exists and can be validated with a real fixture and runtime evidence.
 
-This decision does **not** require copying framework source code. It requires reproducing the documented/real build procedure through the Builder while adapting only the execution environment needed for phone/Termux operation.
+This decision does **not** require copying framework source code. It requires reproducing the documented/real build procedure through the Builder on the primary Ubuntu CI runner. Any optional local/Termux adaptation must preserve the same native build semantics and must not become a routine prerequisite.
 
 ---
 
-## Current audited implementation status — 2026-10-15
+## Historical implementation status snapshot — 2026-10-15
 
-This snapshot records what is currently evidenced on canonical `main` (HEAD at audit start: `12eca7d7c94fb31000a82a5bf8cf07773c05d17c`). It does not change milestone scope or acceptance gates. Re-check the exact commit, open PRs, CI artifacts, and device evidence before changing any state.
+This historical snapshot records evidence at canonical `main` HEAD `12eca7d7c94fb31000a82a5bf8cf07773c05d17c` as observed on 2026-10-15. It is not a statement of current HEAD or current milestone status. Re-check the exact current commit, open PRs, CI artifacts, and device evidence before changing any state; do not use this table as fresh acceptance evidence.
 
 | Milestone | Current status | Evidence-based disposition |
 |---|---|---|
