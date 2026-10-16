@@ -4,6 +4,12 @@
 
 Universal ZIP-to-APK Builder is a framework-aware, developer-focused build orchestrator for turning supported project ZIPs into real Android APKs. GitHub Actions on Ubuntu runners is the canonical build execution path. Phone-side installation and runtime checks remain separate acceptance steps when applicable; local Termux builds are an optional, secondary recovery/development path, not the default build requirement.
 
+## Project boundaries
+
+**For:** Developers building real Android APKs from supported, framework-aware project ZIPs. GitHub Actions on Ubuntu is the canonical build path; artifact checks and device/runtime validation remain necessary when required by the milestone. Termux/local builds are optional and secondary.
+
+**Not:** A no-code consumer app creator, fake APK generator, or magic converter that makes arbitrary ZIPs into working apps; nor a default full Android SDK-on-phone build system. Detecting a framework alone does not establish support.
+
 ## Official build priority
 
 1. **Primary — GitHub Actions / Ubuntu:** run the applicable workflow against an exact commit, build the APK, validate its structure and provenance, and publish the artifact plus SHA-256 evidence.
