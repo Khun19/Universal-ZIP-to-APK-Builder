@@ -51,6 +51,9 @@ export function validateZipName(name: string, limits: Readonly<ZipSecurityLimits
     !normalized ||
     normalized.startsWith("/") ||
     normalized.includes("\0") ||
+    // `unzip -p` treats its member operand as a pattern. Reject pattern
+    // metacharacters so each streamed extraction targets one literal entry.
+    /[*?\[\]]/.test(normalized) ||
     path.posix.normalize(normalized).startsWith("../") ||
     normalized === ".." ||
     /^[A-Za-z]:($|\/)/.test(normalized) ||
