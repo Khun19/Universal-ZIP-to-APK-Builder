@@ -1,0 +1,39 @@
+name: Automatic Copilot Pull Request Review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+concurrency:
+  group: auto-copilot-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  request-copilot-review:
+    name: Request Copilot review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request GitHub Copilot as a formal PR reviewer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pull_number = context.payload.pull_request.number;
+            const reviewer = "copilot-pull-request-reviewer[bot]";
+            try {
+              await github.rest.pulls.requestReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number,
+                reviewers: [reviewer],
+              });
+              core.info(`Requested ${reviewer} for PR #${pull_number}.`);
+            } catch (error) {
+              core.setFailed(
+                `Could not request GitHub Copilot review for PR #${pull_number}: ${error.message}. ` +
+                "Check that Copilot code review is enabled/available for this repository and account."
+              );
+            }
