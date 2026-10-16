@@ -1,7 +1,7 @@
 {
   "name": "workspace",
   "version": "0.0.0",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "pnpm --filter @workspace/zip-to-apk-builder run dev",
     "lint": "pnpm run typecheck",
