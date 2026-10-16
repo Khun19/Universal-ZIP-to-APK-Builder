@@ -105,7 +105,13 @@ jobs:
 
           apk = Path(".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk")
           digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          import subprocess
+          badging = subprocess.check_output([os.path.join(os.environ.get("ANDROID_HOME", os.environ.get("ANDROID_SDK_ROOT", "")), "build-tools", "34.0.0", "aapt"), "dump", "badging", str(apk)], text=True)
+          application_id = next((line.split("name=\x27", 1)[1].split("\x27", 1)[0] for line in badging.splitlines() if line.startswith("package: name=\x27")), None)
+          if not application_id:
+              raise SystemExit("Could not read application ID from APK manifest")
           provenance = {
+              "application_id": application_id,
               "source_commit": os.environ["GITHUB_SHA"],
               "ref": os.environ["GITHUB_REF"],
               "workflow": os.environ["GITHUB_WORKFLOW"],
