@@ -52,7 +52,7 @@ function arg(name) {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+async function main() {
   try {
     const result = await validateArtifact({
       apkPath: arg("--apk"),
@@ -62,11 +62,15 @@ if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
       registryPath: arg("--registry") ?? "docs/tested-apk-registry.json"
     });
     const output = arg("--output");
-    if (output) await writeFile(output, JSON.stringify(result, null, 2) + "\n");
+    if (output) await writeFile(output, JSON.stringify(result, null, 2) + "\\n");
     console.log(JSON.stringify(result, null, 2));
     if (!result.valid) process.exitCode = 1;
   } catch (error) {
     console.error("APK_IDENTITY_GATE_FAILED:", error.message);
     process.exitCode = 1;
   }
+}
+
+if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+  void main();
 }
