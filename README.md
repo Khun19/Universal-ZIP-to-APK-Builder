@@ -330,4 +330,4 @@ Do not recreate competing roadmap or architecture documents.
 
 ## License
 
-MIT. See `LICENSE`.
+Apache License 2.0. See LICENSE.
