@@ -53,7 +53,7 @@ jobs:
       - name: Install Android SDK components
         run: |
           set -euo pipefail
-          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
           echo "ANDROID_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> "$GITHUB_ENV"
           echo "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools/34.0.0" >> "$GITHUB_PATH"
