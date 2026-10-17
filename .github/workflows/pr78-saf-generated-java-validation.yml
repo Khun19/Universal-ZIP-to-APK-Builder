@@ -109,7 +109,7 @@ jobs:
               raise SystemExit("Missing generated Java SAF marker(s): " + ", ".join(missing_java))
           if "androidx.documentfile:documentfile:1.0.1" not in gradle:
               raise SystemExit("Generated Gradle file is missing androidx.documentfile dependency")
-          expected = r"String normalized = value.replace('\\\\', '/');"
+          expected = r"String normalized = value.replace('\\', '/');"
           if expected not in java:
               raise SystemExit("Generated Java has incorrect backslash escaping; expected: " + expected)
           print("GENERATED_JAVA_SAF_MARKERS=PASS")
