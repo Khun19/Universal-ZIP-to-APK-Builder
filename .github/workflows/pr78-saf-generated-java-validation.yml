@@ -109,8 +109,7 @@ jobs:
               raise SystemExit("Missing generated Java SAF marker(s): " + ", ".join(missing_java))
           if "androidx.documentfile:documentfile:1.0.1" not in gradle:
               raise SystemExit("Generated Gradle file is missing androidx.documentfile dependency")
-          # Two backslashes between single quotes are required in Java source.
-          expected = r"String normalized = value.replace('\\', '/');"
+          expected = r"String normalized = value.replace('\\\\', '/');"
           if expected not in java:
               raise SystemExit("Generated Java has incorrect backslash escaping; expected: " + expected)
           print("GENERATED_JAVA_SAF_MARKERS=PASS")
@@ -148,5 +147,6 @@ jobs:
         with:
           name: pr78-saf-generated-java-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ci-evidence/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
