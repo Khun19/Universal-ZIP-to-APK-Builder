@@ -512,6 +512,9 @@ public class MainActivity extends Activity {
         WebView webView = new WebView(this);
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
+        webView.getSettings().setAllowFileAccess(false);
+        webView.getSettings().setAllowContentAccess(false);
+        webView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         directoryWebView = webView;
         webView.addJavascriptInterface(new DirectoryBridge(), "AndroidDirectoryBridge");
 
@@ -543,6 +546,11 @@ public class MainActivity extends Activity {
 
                     try {
                         InputStream stream = assets.open("www/" + path);
+                        if (path.endsWith(".html")) {
+                            java.util.Map<String, String> headers = new java.util.HashMap<>();
+                            headers.put("Content-Security-Policy", "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https:; frame-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'");
+                            return new WebResourceResponse(mimeType(path), "UTF-8", 200, "OK", headers, stream);
+                        }
                         return new WebResourceResponse(mimeType(path), "UTF-8", stream);
                     } catch (Exception error) {
                         return null;
@@ -592,14 +600,40 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(
                     WebView view, WebResourceRequest request) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
+                return safeInterceptRequest(assetLoader, request.getUrl());
             }
 
             @Override
             @SuppressWarnings("deprecation")
             public WebResourceResponse shouldInterceptRequest(
                     WebView view, String url) {
-                return assetLoader.shouldInterceptRequest(Uri.parse(url));
+                return safeInterceptRequest(assetLoader, Uri.parse(url));
+            }
+
+            private WebResourceResponse safeInterceptRequest(WebViewAssetLoader loader, Uri uri) {
+                if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())
+                        || !"appassets.androidplatform.net".equalsIgnoreCase(uri.getHost())) {
+                    return new WebResourceResponse("text/plain", "UTF-8",
+                            new java.io.ByteArrayInputStream(new byte[0]));
+                }
+                WebResourceResponse response = loader.shouldInterceptRequest(uri);
+                return response != null ? response : new WebResourceResponse("text/plain", "UTF-8",
+                        new java.io.ByteArrayInputStream(new byte[0]));
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                return uri == null || !"https".equalsIgnoreCase(uri.getScheme())
+                        || !"appassets.androidplatform.net".equalsIgnoreCase(uri.getHost());
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                Uri uri = Uri.parse(url);
+                return !"https".equalsIgnoreCase(uri.getScheme())
+                        || !"appassets.androidplatform.net".equalsIgnoreCase(uri.getHost());
             }
 
             @Override
