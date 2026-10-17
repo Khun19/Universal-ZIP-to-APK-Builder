@@ -1,0 +1,152 @@
+name: PR78 SAF generated Java compile validation
+
+on:
+  push:
+    branches:
+      - validate/pr78-saf-template
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-and-compile:
+    name: Generate template project and compile Android Java
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout validation branch commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify checked-out commit
+        run: |
+          set -euo pipefail
+          echo "Workflow SHA: $GITHUB_SHA"
+          echo "Checked-out SHA: $(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+          packages: platform-tools
+
+      - name: Install Android SDK components
+        run: |
+          set -euo pipefail
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> "$GITHUB_ENV"
+          echo "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools/34.0.0" >> "$GITHUB_PATH"
+
+      - name: Set up Gradle 8.9 for AGP 8.7.3
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install locked repository dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Generate Android project by calling lib/template.ts directly
+        env:
+          PROJECT_DIR: ${{ runner.temp }}/pr78-saf-generated-project
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROJECT_DIR"
+          printf '<!doctype html><html><head><title>SAF Validation</title></head><body>SAF validation</body></html>\n' > "$PROJECT_DIR/index.html"
+          cat > "$PROJECT_DIR/package.json" <<'JSON'
+          {
+            "name": "pr78-saf-template-validation",
+            "version": "1.0.0",
+            "android": {
+              "applicationId": "com.builder.saftemplatevalidation"
+            }
+          }
+          JSON
+          pnpm exec tsx -e "import { injectAndroidWrapper } from './lib/template.ts'; injectAndroidWrapper(process.env.PROJECT_DIR!, undefined, 'SAF Template Validation');"
+          JAVA_FILE="$PROJECT_DIR/app/src/main/java/com/builder/saftemplatevalidation/MainActivity.java"
+          test -s "$JAVA_FILE"
+          mkdir -p .ci-evidence/generated
+          cp "$JAVA_FILE" .ci-evidence/generated/MainActivity.java
+          cp "$PROJECT_DIR/app/build.gradle" .ci-evidence/generated/app-build.gradle
+          cp "$PROJECT_DIR/build.gradle" .ci-evidence/generated/root-build.gradle
+          cp "$PROJECT_DIR/settings.gradle" .ci-evidence/generated/settings.gradle
+          cp "$PROJECT_DIR/app/src/main/AndroidManifest.xml" .ci-evidence/generated/AndroidManifest.xml
+          python3 - "$JAVA_FILE" "$PROJECT_DIR/app/build.gradle" <<'PY'
+          import sys
+          from pathlib import Path
+          java = Path(sys.argv[1]).read_text(encoding="utf-8")
+          gradle = Path(sys.argv[2]).read_text(encoding="utf-8")
+          required_java = [
+              "Intent.ACTION_OPEN_DOCUMENT_TREE",
+              "AndroidDirectoryBridge",
+              "DIRECTORY_PICKER_REQUEST_CODE",
+              "window.showDirectoryPicker",
+              "createWritable",
+              "DocumentFile.fromTreeUri",
+          ]
+          missing_java = [marker for marker in required_java if marker not in java]
+          if missing_java:
+              raise SystemExit("Missing generated Java SAF marker(s): " + ", ".join(missing_java))
+          if "androidx.documentfile:documentfile:1.0.1" not in gradle:
+              raise SystemExit("Generated Gradle file is missing androidx.documentfile dependency")
+          expected = r"String normalized = value.replace('\\', '/');"
+          if expected not in java:
+              raise SystemExit("Generated Java has incorrect backslash escaping; expected: " + expected)
+          print("GENERATED_JAVA_SAF_MARKERS=PASS")
+          print("GENERATED_GRADLE_DOCUMENTFILE_DEPENDENCY=PASS")
+          print("JAVA_BACKSLASH_CHAR_LITERAL=PASS")
+          print("EXPECTED_JAVA_LINE=" + expected)
+          PY
+
+      - name: Compile generated Android project
+        env:
+          PROJECT_DIR: ${{ runner.temp }}/pr78-saf-generated-project
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-evidence
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/.ci-evidence/gradle-build.log"
+
+      - name: Validate APK and record checksum
+        if: success()
+        env:
+          PROJECT_DIR: ${{ runner.temp }}/pr78-saf-generated-project
+        run: |
+          set -euo pipefail
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -Z1 "$APK" | grep -Fxq 'AndroidManifest.xml'
+          mkdir -p .ci-evidence
+          cp "$APK" .ci-evidence/pr78-saf-generated-debug.apk
+          sha256sum .ci-evidence/pr78-saf-generated-debug.apk | tee .ci-evidence/apk-sha256.txt
+          echo "APK_VALIDATION=PASS"
+
+      - name: Upload generated source and build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr78-saf-generated-java-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
