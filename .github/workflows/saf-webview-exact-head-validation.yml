@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 45
     env:
       TARGET_SOURCE_SHA: c0221b0fd642c4137109297e53eb4afe9723a0db
-      SAF_PROJECT_DIR: ${{ runner.temp }}/saf-generated-project
+      SAF_PROJECT_DIR: ${{ github.workspace }}/.saf-generated-project
     steps:
       - name: Checkout PR #82 exact source
         uses: actions/checkout@v4
@@ -93,20 +93,20 @@ jobs:
             pnpm exec tsx scripts/saf-generated-project-validation.ts
 
       - name: Compile generated SAF Android project
-        working-directory: ${{ runner.temp }}/saf-generated-project
         shell: bash
         run: |
           set -euo pipefail
+          cd "$SAF_PROJECT_DIR"
           gradle --no-daemon --stacktrace :app:assembleDebug
           test -s app/build/outputs/apk/debug/app-debug.apk
           unzip -t app/build/outputs/apk/debug/app-debug.apk
           "${ANDROID_HOME}/build-tools/34.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk
 
       - name: Create and verify exact-source provenance
-        working-directory: ${{ runner.temp }}/saf-generated-project
         shell: bash
         run: |
           set -euo pipefail
+          cd "$SAF_PROJECT_DIR"
           python3 - <<'PY'
           import hashlib, json, os
           from pathlib import Path
@@ -146,8 +146,8 @@ jobs:
         with:
           name: pr82-saf-webview-generated-apk
           path: |
-            ${{ runner.temp }}/saf-generated-project/app/build/outputs/apk/debug/app-debug.apk
-            ${{ runner.temp }}/saf-generated-project/saf-validation-provenance.json
-            ${{ runner.temp }}/saf-generated-project/saf-validation-apk.sha256
+            ${{ github.workspace }}/.saf-generated-project/app/build/outputs/apk/debug/app-debug.apk
+            ${{ github.workspace }}/.saf-generated-project/saf-validation-provenance.json
+            ${{ github.workspace }}/.saf-generated-project/saf-validation-apk.sha256
           if-no-files-found: error
           retention-days: 14
