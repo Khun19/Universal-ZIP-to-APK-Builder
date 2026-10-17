@@ -91,31 +91,33 @@ jobs:
           cp "$PROJECT_DIR/build.gradle" .ci-evidence/generated/root-build.gradle
           cp "$PROJECT_DIR/settings.gradle" .ci-evidence/generated/settings.gradle
           cp "$PROJECT_DIR/app/src/main/AndroidManifest.xml" .ci-evidence/generated/AndroidManifest.xml
-          python3 - "$JAVA_FILE" <<'PY'
+          python3 - "$JAVA_FILE" "$PROJECT_DIR/app/build.gradle" <<'PY'
           import sys
           from pathlib import Path
           java = Path(sys.argv[1]).read_text(encoding="utf-8")
-          required = [
+          gradle = Path(sys.argv[2]).read_text(encoding="utf-8")
+          required_java = [
               "Intent.ACTION_OPEN_DOCUMENT_TREE",
               "AndroidDirectoryBridge",
               "DIRECTORY_PICKER_REQUEST_CODE",
               "window.showDirectoryPicker",
               "createWritable",
               "DocumentFile.fromTreeUri",
-              "androidx.documentfile:documentfile:1.0.1",
           ]
-          missing = [marker for marker in required if marker not in java]
-          if missing:
-              raise SystemExit("Missing generated SAF marker(s): " + ", ".join(missing))
+          missing_java = [marker for marker in required_java if marker not in java]
+          if missing_java:
+              raise SystemExit("Missing generated Java SAF marker(s): " + ", ".join(missing_java))
+          if "androidx.documentfile:documentfile:1.0.1" not in gradle:
+              raise SystemExit("Generated Gradle file is missing androidx.documentfile dependency")
           # Two backslashes between single quotes are required in Java source.
           expected = r"String normalized = value.replace('\\', '/');"
           if expected not in java:
               raise SystemExit("Generated Java has incorrect backslash escaping; expected: " + expected)
-          print("SAF_MARKERS=PASS")
+          print("GENERATED_JAVA_SAF_MARKERS=PASS")
+          print("GENERATED_GRADLE_DOCUMENTFILE_DEPENDENCY=PASS")
           print("JAVA_BACKSLASH_CHAR_LITERAL=PASS")
           print("EXPECTED_JAVA_LINE=" + expected)
           PY
-          cp "$JAVA_FILE" .ci-evidence/generated/MainActivity.java
 
       - name: Compile generated Android project
         env:
