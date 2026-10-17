@@ -51,7 +51,7 @@ for (const [label, pattern] of [
 console.log(JSON.stringify({
   status: "GENERATED_SOURCE_VALIDATION_PASS",
   source_template: templatePath,
-  fixture: "tests/fixtures/saf-webview-validation (generated deterministically in CI)",
+  fixture: "temporary deterministic HTML fixture (generated in CI)",
   project_dir: projectDir,
   application_id: "com.builder.safvalidation",
   manifest: manifestPath,
