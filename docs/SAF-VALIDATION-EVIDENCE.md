@@ -1,0 +1,29 @@
+# PR #82 SAF WebView Validation Evidence
+
+## Exact source under validation
+
+- PR: #82 — `fix(security): harden SAF WebView against third-party content`
+- Exact source commit: `c0221b0fd642c4137109297e53eb4afe9723a0db`
+- Validation workflow: `.github/workflows/saf-webview-exact-head-validation.yml`
+- Generator harness: `scripts/saf-generated-project-validation.ts`
+
+The workflow explicitly checks out the PR #82 source commit and dynamically imports that commit's actual `lib/template.ts`. The validation harness is checked out separately. The generated APK provenance identifies both commits and the workflow run ID.
+
+## What this validation proves
+
+- The actual template function generates the Android wrapper from a deterministic minimal HTML fixture.
+- Generated manifest and Java source contain the expected launcher, bridge, CSP/navigation restrictions, WebView settings, and SAF operations.
+- The generated Android project compiles with JDK 17, Gradle 8.9, Android SDK 34, and produces a non-empty debug APK.
+- APK SHA-256, byte size, exact source commit, validation commit, workflow run ID, fixture identity, and build result are recorded in an artifact provenance JSON and checksum sidecar.
+
+## Explicit limitations
+
+This workflow does **not** claim runtime security acceptance. Source checks do not prove that an untrusted iframe cannot invoke `AndroidDirectoryBridge`, nor do they prove real WebView handling of external navigation or POST/form requests.
+
+The repository currently has no confirmed SAF-specific Android instrumentation test harness. Therefore these remain **NOT RUN** in the generated APK provenance and are still merge-blocking:
+- untrusted iframe/bridge isolation in a real Android WebView;
+- external navigation and POST/form behavior at runtime;
+- SAF directory selection and list/read/create/write/remove regression on Android;
+- physical-device install/launch and functional/security acceptance.
+
+Do not treat PR #79's old-source build or unrelated M4/M5/M6 artifacts as PR #82 evidence. Do not merge PR #82 based on this compile workflow alone. Record device results against the exact APK SHA-256 from this workflow artifact before reconsidering the gate.
