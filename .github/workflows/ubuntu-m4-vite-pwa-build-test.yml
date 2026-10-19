@@ -124,6 +124,7 @@ jobs:
               except Exception:
                   event = {}
           pull_request = event.get("pull_request") or {}
+          source_commit = (pull_request.get("head") or {}).get("sha") or os.getenv("GITHUB_SHA")
 
           artifacts = []
           checksum_lines = []
@@ -163,13 +164,15 @@ jobs:
               "milestone": "M4",
               "fixture": "tests/fixtures/vite-pwa-project",
               "repository": os.getenv("GITHUB_REPOSITORY"),
-              "commit": os.getenv("GITHUB_SHA"),
+              "commit": source_commit,
+              "workflowSha": os.getenv("GITHUB_SHA"),
               "ref": os.getenv("GITHUB_REF"),
               "runId": os.getenv("GITHUB_RUN_ID"),
               "runAttempt": os.getenv("GITHUB_RUN_ATTEMPT"),
               "source": {
                   "gitHead": command("git", "rev-parse", "HEAD"),
                   "checkoutSha": os.getenv("GITHUB_SHA"),
+                  "sourceCommit": source_commit,
                   "pullRequestHeadSha": (pull_request.get("head") or {}).get("sha"),
                   "pullRequestBaseSha": (pull_request.get("base") or {}).get("sha"),
               },
@@ -184,6 +187,9 @@ jobs:
               "artifacts": artifacts,
               "runtimeValidation": "not-performed-by-ubuntu-build-workflow",
           }
+          expected_source_commit = (pull_request.get("head") or {}).get("sha") or os.getenv("GITHUB_SHA")
+          assert record["commit"] == expected_source_commit, "M4 provenance source commit mismatch"
+          assert record["workflowSha"] == os.getenv("GITHUB_SHA"), "M4 workflow SHA mismatch"
           Path(".ci-evidence/m4-apk-provenance.json").write_text(
               json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
           )
