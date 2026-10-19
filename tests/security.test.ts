@@ -196,6 +196,48 @@ test("failed extraction leaves no staging directory or partial published destina
   });
 });
 
+test("ZIP adversarial paths reject traversal, absolute paths, drive roots, NUL and unzip patterns", () => {
+  for (const unsafe of [
+    "../outside.txt",
+    "nested/../../outside.txt",
+    "/absolute.txt",
+    "C:/outside.txt",
+    "C:\\outside.txt",
+    "nested\\..\\outside.txt",
+    "bad\\0name.txt",
+    "wild/*.txt",
+    "wild/[ab].txt",
+  ]) {
+    assert.throws(
+      () => inspectAdmZip(archive([[unsafe, "payload"]])),
+      /Unsafe archive path|duplicate or case-colliding/,
+      `expected unsafe ZIP member to be rejected: ${JSON.stringify(unsafe)}`,
+    );
+  }
+});
+
+test("NFC-normalized and case-insensitive ZIP path collisions are rejected", () => {
+  assert.throws(
+    () => inspectAdmZip(archive([["caf\\u00e9.txt", "a"], ["cafe\\u0301.txt", "b"]])),
+    /duplicate or case-colliding/,
+  );
+});
+
+test("failed streamed CRC validation removes staging output and does not publish destination", async () => {
+  await withTempDir(async (directory) => {
+    const zip = archive([["first.txt", "first"], ["second.txt", "second"]]);
+    const second = zip.getEntry("second.txt");
+    assert.ok(second);
+    second.header.crc = (second.header.crc ^ 0xffffffff) >>> 0;
+    const archivePath = path.join(directory, "bad-crc.zip");
+    const destination = path.join(directory, "published");
+    await writeFile(archivePath, zip.toBuffer());
+    await assert.rejects(() => safeExtract(archivePath, destination), /CRC mismatch|streaming extraction failed/i);
+    assert.deepEqual(await readdir(directory), ["bad-crc.zip"]);
+    await assert.rejects(() => readFile(path.join(destination, "first.txt")), /ENOENT/);
+  });
+});
+
 test("invalid configurable limits are rejected", () => {
   assert.throws(() => inspectAdmZip(archive([["file.txt", "x"]]), { maxFiles: 0 }), /positive safe integer/);
   assert.equal(ZIP_LIMITS.maxBytes > 0, true);
