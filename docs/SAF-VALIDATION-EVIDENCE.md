@@ -3,7 +3,7 @@
 ## Exact source under validation
 
 - PR: #82 — `fix(security): harden SAF WebView against third-party content`
-- Exact source commit: `c0221b0fd642c4137109297e53eb4afe9723a0db`
+- Exact source commit: `37b64e9f217daf78cfcb476dc1c0224ee8095937`
 - Validation workflow: `.github/workflows/saf-webview-exact-head-validation.yml`
 - Generator harness: `scripts/saf-generated-project-validation.ts`
 
@@ -32,7 +32,7 @@ Do not treat PR #79's old-source build or unrelated M4/M5/M6 artifacts as PR #82
 ## Revalidation ledger — 2026-10-19
 
 ### Run 39075880745 — FAIL before generation/compile
-- Exact PR #82 source SHA configured by the workflow: `c0221b0fd642c4137109297e53eb4afe9723a0db`.
+- Exact PR #82 source SHA configured by the workflow: `37b64e9f217daf78cfcb476dc1c0224ee8095937`.
 - Failed step: **Install Android SDK components**.
 - Observed log: `yes: standard output: Broken pipe`; the step used `yes | sdkmanager ...` while the shell had `set -euo pipefail`.
 - Consequence: the command's upstream `yes` process exited non-zero and pipefail made the step fail. Project generation, generated-source checks, Gradle compilation, APK creation, and provenance steps were skipped.
@@ -43,7 +43,7 @@ Do not treat PR #79's old-source build or unrelated M4/M5/M6 artifacts as PR #82
 
 ### Run 39281921683 — compile PASS, UI fixture limitation found
 - Validation branch commit used by the successful run: `0d4cf2553ffde9c3e794e614a33f6c93199c067b`.
-- Exact PR #82 source: `c0221b0fd642c4137109297e53eb4afe9723a0db`.
+- Exact PR #82 source: `37b64e9f217daf78cfcb476dc1c0224ee8095937`.
 - SDK setup, generated-source validation, Gradle compilation, APK archive check, provenance generation, and artifact upload all **PASS**.
 - APK package ID: `com.builder.safvalidation`.
 - APK SHA-256: `016e09627bdaf80e1150f675797d84ab6c62df6088b7ba136b42714c6c3d0485`.
