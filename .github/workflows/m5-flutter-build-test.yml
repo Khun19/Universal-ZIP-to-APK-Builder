@@ -94,7 +94,8 @@ jobs:
       - name: Create build provenance
         env:
           APK_PATH: ${{ steps.apk.outputs.path }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -122,6 +123,7 @@ jobs:
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": int(os.environ["GITHUB_RUN_ID"]),
               "commit_sha": os.environ["COMMIT_SHA"],
+              "workflow_sha": os.environ["WORKFLOW_SHA"],
               "flutter_version": flutter_version,
               "java_version": java_version,
               "apk_path": str(apk_path),
@@ -140,7 +142,8 @@ jobs:
       - name: Validate M5 provenance and checksum
         env:
           APK_PATH: ${{ steps.apk.outputs.path }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           python3 -m json.tool m5-provenance.json >/dev/null
@@ -153,7 +156,8 @@ jobs:
           record = json.loads(Path("m5-provenance.json").read_text(encoding="utf-8"))
           apk = Path(os.environ["APK_PATH"])
           actual_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
-          assert record["commit_sha"] == os.environ["COMMIT_SHA"], "provenance commit mismatch"
+          assert record["commit_sha"] == os.environ["COMMIT_SHA"], "provenance source commit mismatch"
+          assert record["workflow_sha"] == os.environ["WORKFLOW_SHA"], "provenance workflow SHA mismatch"
           assert record["apk_size_bytes"] == apk.stat().st_size, "APK size mismatch"
           assert record["apk_sha256"] == actual_hash, "APK SHA-256 mismatch"
           sidecar = Path("m5-apk.sha256").read_text(encoding="utf-8").split()
