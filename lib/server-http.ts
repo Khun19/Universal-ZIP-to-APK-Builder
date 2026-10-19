@@ -1,6 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import formidable from 'formidable';
-import AdmZip from 'adm-zip';
 import * as path from 'path';
 import * as fs from 'fs';
 import { executeBuildJob } from './worker.ts';
@@ -166,8 +165,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
         
           console.log(`\n📦 [${buildId}] Extracting...`);
-          const zip = new AdmZip(uploadedFile.filepath);
-          const extraction = (await import('./security/src/index.ts')).safeExtractAdmZip(zip, workspaceDir);
+          const extraction = (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
           const filePaths = extraction.filePaths;
 
         console.log(`🚀 Building APK...`);
