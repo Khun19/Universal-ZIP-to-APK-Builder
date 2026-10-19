@@ -120,9 +120,18 @@ jobs:
               except Exception:
                   event_payload = {}
           pr = event_payload.get("pull_request") or {}
-          # For pull_request events, GITHUB_SHA is the synthetic merge commit.
-          # The source under review is the PR head SHA from the event payload.
-          source_commit = ((pr.get("head") or {}).get("sha") if pr else None) or os.getenv("GITHUB_SHA")
+          event_name = os.getenv("GITHUB_EVENT_NAME")
+          if event_name == "pull_request":
+              head = pr.get("head") or {}
+              base = pr.get("base") or {}
+              # Fail closed: a PR event without its reviewed source identity is invalid evidence.
+              assert pr.get("number"), "pull_request event is missing PR number"
+              assert head.get("sha") and len(head["sha"]) == 40, "pull_request event is missing a valid head SHA"
+              assert base.get("sha") and len(base["sha"]) == 40, "pull_request event is missing a valid base SHA"
+              source_commit = head["sha"]
+          else:
+              source_commit = os.getenv("GITHUB_SHA")
+              assert source_commit and len(source_commit) == 40, "non-PR event is missing a valid GITHUB_SHA"
           record = {
               "schema_version": 1,
               "evidence_type": "builder-quality-gates",
@@ -159,7 +168,7 @@ jobs:
           out = Path(".ci-evidence/quality-gates-provenance.json")
           out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           reread = json.loads(out.read_text(encoding="utf-8"))
-          expected_source_commit = ((pr.get("head") or {}).get("sha") if pr else None) or os.environ["GITHUB_SHA"]
+          expected_source_commit = (pr["head"]["sha"] if os.getenv("GITHUB_EVENT_NAME") == "pull_request" else os.environ["GITHUB_SHA"])
           assert reread["source_commit"] == expected_source_commit
           assert reread["workflow_sha"] == os.environ["GITHUB_SHA"]
           assert reread["run_id"] == os.environ["GITHUB_RUN_ID"]
