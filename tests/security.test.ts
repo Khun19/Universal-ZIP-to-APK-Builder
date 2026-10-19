@@ -205,5 +205,5 @@ test("invalid configurable limits are rejected", () => {
 test("HTTP ZIP upload checks the archive path before AdmZip allocation", async () => {
   const serverSource = await readFile(new URL("../lib/server-http.ts", import.meta.url), "utf8");
   assert.match(serverSource, /safeExtract\(uploadedFile\.filepath, workspaceDir\)/);
-  assert.doesNotMatch(serverSource, /new AdmZip\\(uploadedFile\\.filepath\\)/);
+  assert.doesNotMatch(serverSource, /new AdmZip\(uploadedFile\.filepath\)/);
 });
