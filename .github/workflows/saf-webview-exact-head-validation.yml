@@ -20,13 +20,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      TARGET_SOURCE_SHA: c0221b0fd642c4137109297e53eb4afe9723a0db
+      TARGET_SOURCE_SHA: 37b64e9f217daf78cfcb476dc1c0224ee8095937
     steps:
       - name: Checkout PR #82 exact source
         uses: actions/checkout@v4
         with:
           repository: Khun19/Universal-ZIP-to-APK-Builder
-          ref: c0221b0fd642c4137109297e53eb4afe9723a0db
+          ref: 37b64e9f217daf78cfcb476dc1c0224ee8095937
           path: source
           persist-credentials: false
 
