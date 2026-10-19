@@ -10,6 +10,7 @@ test("generated SAF WebView blocks untrusted frames and external content", async
   assert.match(source, /frame-src 'none'/);
   assert.match(source, /script-src 'self' 'unsafe-inline'/);
   assert.match(source, /safeInterceptRequest\(assetLoader, request\.getUrl\(\)\)/);
+  assert.match(source, /if \(clean\.length\(\) == 0\) return false/);
   assert.match(source, /safeInterceptRequest\(assetLoader, Uri\.parse\(url\)\)/);
   assert.match(source, /appassets\.androidplatform\.net/);
   assert.match(source, /shouldOverrideUrlLoading/);
