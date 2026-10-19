@@ -27,3 +27,16 @@ The repository currently has no confirmed SAF-specific Android instrumentation t
 - physical-device install/launch and functional/security acceptance.
 
 Do not treat PR #79's old-source build or unrelated M4/M5/M6 artifacts as PR #82 evidence. Do not merge PR #82 based on this compile workflow alone. Record device results against the exact APK SHA-256 from this workflow artifact before reconsidering the gate.
+
+
+## Revalidation ledger — 2026-10-19
+
+### Run 39075880745 — FAIL before generation/compile
+- Exact PR #82 source SHA configured by the workflow: `c0221b0fd642c4137109297e53eb4afe9723a0db`.
+- Failed step: **Install Android SDK components**.
+- Observed log: `yes: standard output: Broken pipe`; the step used `yes | sdkmanager ...` while the shell had `set -euo pipefail`.
+- Consequence: the command's upstream `yes` process exited non-zero and pipefail made the step fail. Project generation, generated-source checks, Gradle compilation, APK creation, and provenance steps were skipped.
+- Interpretation: this is a workflow/setup failure, not evidence that PR #82's generated source or Android compilation passes or fails.
+- Correction present in the current validation-branch workflow: call `sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools"` directly, without piping `yes`. The Android setup action is configured to accept SDK licenses.
+- Next gate: trigger a fresh run from the corrected validation branch and inspect its exact commit/run. Only if generation and compilation complete should the APK hash/provenance be reviewed.
+- Runtime security, SAF runtime behavior, and physical-device acceptance remain **NOT RUN / BLOCKING** until independently evidenced.
