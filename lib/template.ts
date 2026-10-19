@@ -501,7 +501,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public boolean writeFile(String relativePath, String base64Data, String mimeType) {
             try { DocumentFile file = document(relativePath); if (file == null || !file.isFile()) { if (!createFile(relativePath, mimeType)) return false; file = document(relativePath); } if (file == null) return false; byte[] data = Base64.decode(base64Data == null ? "" : base64Data, Base64.DEFAULT); OutputStream output = getContentResolver().openOutputStream(file.getUri(), "wt"); if (output == null) return false; output.write(data); output.close(); return true; } catch (Exception error) { return false; }
         }
-        @JavascriptInterface public boolean remove(String relativePath) { try { DocumentFile file = document(relativePath); return file != null && file.delete(); } catch (Exception error) { return false; } }
+        @JavascriptInterface public boolean remove(String relativePath) { try { String clean = cleanPath(relativePath); if (clean.length() == 0) return false; DocumentFile file = document(clean); return file != null && file.delete(); } catch (Exception error) { return false; } }
         @JavascriptInterface public String getRootName() { DocumentFile root = root(); return root == null || root.getName() == null ? "Selected folder" : root.getName(); }
         private void notifyDirectoryResult(boolean ok) { if (directoryWebView != null) directoryWebView.post(() -> directoryWebView.evaluateJavascript("window.__androidDirectoryPickerResult(" + (ok ? "true" : "false") + ");", null)); }
     }
