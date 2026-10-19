@@ -12,6 +12,28 @@
       "evidence": "User-reported install, launch, UI and interaction acceptance in conversation on 2026-10-16; preserve exact hash/commit/run association.",
       "target_behavior": "Install and launch React Native app; verify UI renders and core interaction responds.",
       "device_tested_at": "2026-10-16"
+    },
+    {
+      "fixture": "M6 React Native original device-tested candidate",
+      "application_id": "com.builder.m6reactnative",
+      "sha256": "05c864b61fec5ce89077323ae52627d87db9fc1972f12e87b507f2c1357f8688",
+      "source_commit": "52e550907cb8da345c4d19b74611d7b9945479ef",
+      "workflow_run_id": "38656253893",
+      "device_result": "PASS",
+      "evidence": "User-reported physical-phone install, launch, React Native UI render and interaction acceptance; artifact SHA-256 and workflow/source association were independently recorded in the project evidence.",
+      "target_behavior": "Install and launch React Native app; verify RN initialization, UI render and core interaction.",
+      "device_tested_at": "2026-10-16"
+    },
+    {
+      "fixture": "Community Chat Demo current-main device-tested candidate",
+      "application_id": "com.communitychatdemo",
+      "sha256": "fee45be9d3b63a7e7a80afc397a1227f878158ea57928eca6775a5943c9eba4c",
+      "source_commit": "2a956c701d70e402d89685dc55cd0e4008f4f8a9",
+      "workflow_run_id": "38665909498",
+      "device_result": "PASS",
+      "evidence": "User-reported physical-phone install, launch, community/channel/chat navigation, chat send text visible, profile screen and UI state interaction; exact APK SHA-256 was independently recorded.",
+      "target_behavior": "Install and launch Community Chat Demo; verify community/channel/chat navigation, send-message UI and profile interaction.",
+      "device_tested_at": "2026-10-16"
     }
   ]
 }
