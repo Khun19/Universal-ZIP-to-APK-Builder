@@ -40,3 +40,14 @@ Do not treat PR #79's old-source build or unrelated M4/M5/M6 artifacts as PR #82
 - Correction present in the current validation-branch workflow: call `sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools"` directly, without piping `yes`. The Android setup action is configured to accept SDK licenses.
 - Next gate: trigger a fresh run from the corrected validation branch and inspect its exact commit/run. Only if generation and compilation complete should the APK hash/provenance be reviewed.
 - Runtime security, SAF runtime behavior, and physical-device acceptance remain **NOT RUN / BLOCKING** until independently evidenced.
+
+### Run 39281921683 — compile PASS, UI fixture limitation found
+- Validation branch commit used by the successful run: `0d4cf2553ffde9c3e794e614a33f6c93199c067b`.
+- Exact PR #82 source: `c0221b0fd642c4137109297e53eb4afe9723a0db`.
+- SDK setup, generated-source validation, Gradle compilation, APK archive check, provenance generation, and artifact upload all **PASS**.
+- APK package ID: `com.builder.safvalidation`.
+- APK SHA-256: `016e09627bdaf80e1150f675797d84ab6c62df6088b7ba136b42714c6c3d0485`.
+- Artifact: [`pr82-saf-webview-generated-apk`](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/39281921683/artifacts/12202240499). The GitHub artifact ZIP digest is `e7ac07ee16c1c04e3a714ad8f4a21f98bb4c2621cf54e84242beee74fef17905`; this is **not** the APK SHA-256.
+- Critical interpretation: the APK was generated from a deliberately minimal HTML fixture whose body was literally just `SAF validation fixture`. Therefore the white screen with one black text line is explained by the test fixture, not proof that the production SAF UI is correct or broken. This artifact was never a production SAF app acceptance build.
+- Follow-up correction: validation branch commit `328c2e72d2f2e28d88b401eb2a64ccb0df94a635` replaces the one-line placeholder with a visible SAF test page for directory selection, listing, create, write, and remove operations. A new workflow run must verify this updated fixture before any device test.
+- Runtime bridge isolation, external navigation/form behavior, actual SAF operations on device, and physical-device acceptance remain **NOT RUN / BLOCKING**. Do not merge PR #82 based on compile PASS alone.
