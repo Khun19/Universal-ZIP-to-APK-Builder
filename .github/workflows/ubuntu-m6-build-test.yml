@@ -90,6 +90,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
+      - name: Resolve source and workflow commit identities
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="${PR_HEAD_SHA:-$WORKFLOW_SHA}"
+          test -n "$SOURCE_COMMIT"
+          echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+          echo "WORKFLOW_SHA=$WORKFLOW_SHA" >> "$GITHUB_ENV"
+          echo "Source commit: $SOURCE_COMMIT"
+          echo "Workflow checkout/merge SHA: $WORKFLOW_SHA"
+
       - name: Run M6 React Native pipeline test
         run: |
           pnpm exec tsx --test tests/apk-identity-gate.test.ts
@@ -123,7 +136,8 @@ jobs:
               raise SystemExit("Could not read application ID from APK manifest")
           provenance = {
               "application_id": application_id,
-              "source_commit": os.environ["GITHUB_SHA"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_sha": os.environ["WORKFLOW_SHA"],
               "ref": os.environ["GITHUB_REF"],
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
@@ -151,7 +165,7 @@ jobs:
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$PROVENANCE_PATH" \
-            --expected-commit "$GITHUB_SHA" \
+            --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
             --expected-application-id "com.builder.m6reactnative" \
             --registry docs/tested-apk-registry.json \
@@ -180,7 +194,8 @@ jobs:
               raise SystemExit("Could not read application ID from bare-scaffold APK")
           provenance = {
               "application_id": app_id,
-              "source_commit": os.environ["GITHUB_SHA"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_sha": os.environ["WORKFLOW_SHA"],
               "ref": os.environ["GITHUB_REF"],
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
@@ -196,7 +211,7 @@ jobs:
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$OUT_DIR/provenance.json" \
-            --expected-commit "$GITHUB_SHA" \
+            --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
             --registry docs/tested-apk-registry.json \
             --output bare-scaffold-apk-identity-gate-report.json
