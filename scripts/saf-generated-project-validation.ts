@@ -22,7 +22,7 @@ await writeFile(path.join(fixtureRoot, "package.json"), JSON.stringify({
   productName: "SAF Validation",
   android: { applicationId: "com.builder.safvalidation" }
 }, null, 2) + "\n");
-const fixtureHtml = \`<!doctype html>
+const fixtureHtml = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -92,7 +92,7 @@ document.getElementById("remove").addEventListener("click",async()=>{
 });
 </script>
 </body>
-</html>\`;
+</html>`;
 await writeFile(path.join(webRoot, "index.html"), fixtureHtml + "\n");
 await writeFile(path.join(projectDir, "package.json"), await readFile(path.join(fixtureRoot, "package.json"), "utf8"));
 await writeFile(path.join(projectDir, "index.html"), await readFile(path.join(webRoot, "index.html"), "utf8"));
