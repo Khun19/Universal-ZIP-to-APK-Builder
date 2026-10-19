@@ -120,11 +120,15 @@ jobs:
               except Exception:
                   event_payload = {}
           pr = event_payload.get("pull_request") or {}
+          # For pull_request events, GITHUB_SHA is the synthetic merge commit.
+          # The source under review is the PR head SHA from the event payload.
+          source_commit = ((pr.get("head") or {}).get("sha") if pr else None) or os.getenv("GITHUB_SHA")
           record = {
               "schema_version": 1,
               "evidence_type": "builder-quality-gates",
               "repository": os.getenv("GITHUB_REPOSITORY"),
-              "source_commit": os.getenv("GITHUB_SHA"),
+              "source_commit": source_commit,
+              "workflow_sha": os.getenv("GITHUB_SHA"),
               "ref": os.getenv("GITHUB_REF"),
               "event": os.getenv("GITHUB_EVENT_NAME"),
               "workflow": os.getenv("GITHUB_WORKFLOW"),
@@ -155,7 +159,9 @@ jobs:
           out = Path(".ci-evidence/quality-gates-provenance.json")
           out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           reread = json.loads(out.read_text(encoding="utf-8"))
-          assert reread["source_commit"] == os.environ["GITHUB_SHA"]
+          expected_source_commit = ((pr.get("head") or {}).get("sha") if pr else None) or os.environ["GITHUB_SHA"]
+          assert reread["source_commit"] == expected_source_commit
+          assert reread["workflow_sha"] == os.environ["GITHUB_SHA"]
           assert reread["run_id"] == os.environ["GITHUB_RUN_ID"]
           print(json.dumps(reread, indent=2, sort_keys=True))
           PY
