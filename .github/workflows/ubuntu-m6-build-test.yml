@@ -82,7 +82,7 @@ jobs:
       - name: Run M6 React Native pipeline test
         run: |
           pnpm exec tsx --test tests/apk-identity-gate.test.ts
-          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts tests/react-native-bare-scaffold.test.ts
 
       - name: Find APK
         run: |
@@ -146,6 +146,50 @@ jobs:
             --registry docs/tested-apk-registry.json \
             --output apk-identity-gate-report.json
 
+      - name: Generate and validate bare-scaffold APK provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH=".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK_PATH"
+          OUT_DIR="$(dirname "$APK_PATH")"
+          sha256sum "$APK_PATH" > "$OUT_DIR/SHA256SUMS.txt"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          apk = Path(".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk")
+          sdk = os.environ.get("ANDROID_HOME", os.environ.get("ANDROID_SDK_ROOT", ""))
+          badging = subprocess.check_output([os.path.join(sdk, "build-tools", "34.0.0", "aapt"), "dump", "badging", str(apk)], text=True)
+          app_id = next((line.split("name=\x27", 1)[1].split("\x27", 1)[0] for line in badging.splitlines() if line.startswith("package: name=\x27")), None)
+          if not app_id:
+              raise SystemExit("Could not read application ID from bare-scaffold APK")
+          provenance = {
+              "application_id": app_id,
+              "source_commit": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "artifact": {"path": str(apk), "size_bytes": apk.stat().st_size, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest()},
+              "ci_build": True,
+              "real_device_acceptance": "NOT_RUN",
+              "fixture": "bare-react-native-custom-main-entrypoint"
+          }
+          apk.with_name("provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(provenance, indent=2))
+          PY
+          node scripts/apk-identity-gate.mjs \
+            --apk "$APK_PATH" \
+            --provenance "$OUT_DIR/provenance.json" \
+            --expected-commit "$GITHUB_SHA" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --registry docs/tested-apk-registry.json \
+            --output bare-scaffold-apk-identity-gate-report.json
+
       - name: Upload APK checksum and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -155,5 +199,9 @@ jobs:
             .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/SHA256SUMS.txt
             .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json
             apk-identity-gate-report.json
+            .workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk
+            .workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/SHA256SUMS.txt
+            .workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/provenance.json
+            bare-scaffold-apk-identity-gate-report.json
           if-no-files-found: error
           retention-days: 14
