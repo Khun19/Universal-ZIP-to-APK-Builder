@@ -108,6 +108,37 @@ jobs:
           pnpm exec tsx --test tests/apk-identity-gate.test.ts
           RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts tests/react-native-bare-scaffold.test.ts
 
+      - name: Audit generated Android toolchain versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXTURE="tests/fixtures/react-native-project"
+          GENERATED=".workspace/m6-react-native-direct-integration/android"
+          echo "=== Requested CI toolchain ==="
+          java -version
+          node --version
+          pnpm --version
+          echo "=== Fixture framework and AGP declarations ==="
+          node -e 'const p=require("./tests/fixtures/react-native-project/package.json"); console.log("react-native="+p.dependencies["react-native"]); console.log("react="+p.dependencies["react"])'
+          grep -nE "com.android.application|com.facebook.react" "$FIXTURE/android/build.gradle"
+          echo "=== Gradle wrapper properties in generated workspace ==="
+          mapfile -t WRAPPERS < <(find "$GENERATED" -path '*/gradle/wrapper/gradle-wrapper.properties' -type f -print 2>/dev/null || true)
+          if [ "${#WRAPPERS[@]}" -eq 0 ]; then
+            echo "GRADLE_WRAPPER_STATUS=NOT_FOUND_IN_GENERATED_WORKSPACE"
+            echo "Resolved Gradle version cannot be asserted from a wrapper file in this workspace."
+          else
+            for wrapper in "${WRAPPERS[@]}"; do
+              echo "GRADLE_WRAPPER_FILE=$wrapper"
+              grep -E '^distributionUrl=' "$wrapper" || true
+              wrapper_dir="$(dirname "$(dirname "$(dirname "$wrapper")")")"
+              if [ -x "$wrapper_dir/gradlew" ]; then
+                (cd "$wrapper_dir" && ./gradlew --version)
+              fi
+            done
+          fi
+          echo "=== Android SDK packages ==="
+          sdkmanager --list_installed
+
       - name: Find APK
         run: |
           find . -name "*.apk" -type f
