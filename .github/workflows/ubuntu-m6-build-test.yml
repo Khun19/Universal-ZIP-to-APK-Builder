@@ -191,12 +191,30 @@ jobs:
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "framework": "React Native",
+              "build_strategy": "react-native-gradle-debug",
+              "toolchain": {
+                  "java_version": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).splitlines()[0],
+                  "gradle_wrapper_version": next((line.split("=", 1)[1].strip() for line in Path(".workspace/m6-react-native-direct-integration/android/gradle/wrapper/gradle-wrapper.properties").read_text().splitlines() if line.startswith("distributionUrl=")), None),
+                  "android_sdk_platform": "android-34",
+                  "android_build_tools": "34.0.0",
+                  "framework_version": json.loads(Path(".workspace/m6-react-native-direct-integration/package.json").read_text()).get("dependencies", {}).get("react-native"),
+              },
+              "validation_results": {
+                  "exact_output_path": "PASS",
+                  "non_empty_and_size_limit": "PASS",
+                  "zip_crc_and_manifest_dex_or_native": "PASS",
+                  "application_id_match": "PASS",
+                  "sha256_recorded": "PASS",
+                  "provenance_identity_gate": "PENDING_GATE_STEP",
+              },
               "artifact": {
                   "path": str(apk),
                   "size_bytes": apk.stat().st_size,
                   "sha256": digest,
               },
               "ci_build": True,
+              "device_acceptance": {"status": "NOT_RUN", "evidence": None},
               "real_device_acceptance": "NOT_RUN",
           }
           apk.with_name("provenance.json").write_text(
@@ -249,8 +267,26 @@ jobs:
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "framework": "React Native",
+              "build_strategy": "react-native-bare-scaffold-gradle-debug",
+              "toolchain": {
+                  "java_version": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).splitlines()[0],
+                  "gradle_wrapper_version": next((line.split("=", 1)[1].strip() for line in Path(".workspace/m6-bare-react-native-scaffold-test/android/gradle/wrapper/gradle-wrapper.properties").read_text().splitlines() if line.startswith("distributionUrl=")), None),
+                  "android_sdk_platform": "android-34",
+                  "android_build_tools": "34.0.0",
+                  "framework_version": None
+              },
+              "validation_results": {
+                  "exact_output_path": "PASS",
+                  "non_empty_and_size_limit": "PASS",
+                  "zip_crc_and_manifest_dex_or_native": "PASS",
+                  "application_id_extracted": "PASS",
+                  "sha256_recorded": "PASS",
+                  "provenance_identity_gate": "PENDING_GATE_STEP"
+              },
               "artifact": {"path": str(apk), "size_bytes": apk.stat().st_size, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest()},
               "ci_build": True,
+              "device_acceptance": {"status": "NOT_RUN", "evidence": None},
               "real_device_acceptance": "NOT_RUN",
               "fixture": "bare-react-native-custom-main-entrypoint"
           }
