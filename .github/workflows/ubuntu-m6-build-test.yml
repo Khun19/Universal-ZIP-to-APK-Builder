@@ -244,6 +244,24 @@ jobs:
           set -euo pipefail
           APK_PATH=".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK_PATH"
+          SIZE_BYTES="$(stat -c '%s' "$APK_PATH")"
+          MAX_SIZE_BYTES=$((250 * 1024 * 1024))
+          if [ "$SIZE_BYTES" -gt "$MAX_SIZE_BYTES" ]; then
+            echo "::error::Bare-scaffold APK exceeds 250 MiB policy limit: $SIZE_BYTES bytes"
+            exit 1
+          fi
+          python - "$APK_PATH" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              bad = apk.testzip()
+              if bad:
+                  raise SystemExit(f"Bare-scaffold APK ZIP CRC/read validation failed at: {bad}")
+              names = set(apk.namelist())
+              if "AndroidManifest.xml" not in names:
+                  raise SystemExit("Bare-scaffold APK missing AndroidManifest.xml")
+              if not (any(n.startswith("classes") and n.endswith(".dex") for n in names) or any(n.startswith("lib/") and n.endswith(".so") for n in names)):
+                  raise SystemExit("Bare-scaffold APK missing DEX files and native libraries")
+          PY
           OUT_DIR="$(dirname "$APK_PATH")"
           sha256sum "$APK_PATH" > "$OUT_DIR/SHA256SUMS.txt"
           python - <<'PY'
