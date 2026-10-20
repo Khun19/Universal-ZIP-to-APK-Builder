@@ -31,7 +31,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+
+      - name: Setup Gradle caching
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -112,6 +116,51 @@ jobs:
         run: |
           find . -name "*.apk" -type f
 
+
+      - name: Validate exact M6 APK output and structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK_PATH"
+          test -s "$APK_PATH"
+          SIZE_BYTES="$(stat -c '%s' "$APK_PATH")"
+          MAX_SIZE_BYTES=$((250 * 1024 * 1024))
+          if [ "$SIZE_BYTES" -gt "$MAX_SIZE_BYTES" ]; then
+            echo "::error::APK exceeds 250 MiB policy limit: $SIZE_BYTES bytes"
+            exit 1
+          fi
+          python - "$APK_PATH" "$SIZE_BYTES" <<'PY'
+          import sys, zipfile
+          path, size = sys.argv[1], int(sys.argv[2])
+          with zipfile.ZipFile(path) as apk:
+              bad = apk.testzip()
+              if bad:
+                  raise SystemExit(f"APK ZIP CRC/read validation failed at: {bad}")
+              names = set(apk.namelist())
+              if "AndroidManifest.xml" not in names:
+                  raise SystemExit("APK missing AndroidManifest.xml")
+              has_dex = any(n.startswith("classes") and n.endswith(".dex") for n in names)
+              has_native = any(n.startswith("lib/") and n.endswith(".so") for n in names)
+              if not (has_dex or has_native):
+                  raise SystemExit("APK missing DEX files and native libraries")
+              print(f"APK structure PASS; size_bytes={size}; dex={has_dex}; native_libs={has_native}")
+          PY
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          APK_ANALYZER="$(find "$SDK_ROOT" -path '*/bin/apkanalyzer' -type f -print -quit)"
+          if [ -n "$APK_ANALYZER" ]; then
+            APP_ID="$("$APK_ANALYZER" manifest application-id "$APK_PATH")"
+          else
+            AAPT="$SDK_ROOT/build-tools/34.0.0/aapt"
+            APP_ID="$("$AAPT" dump badging "$APK_PATH" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
+          fi
+          test "$APP_ID" = "com.builder.m6reactnative" || {
+            echo "::error::Unexpected APK application ID: $APP_ID"
+            exit 1
+          }
+          echo "Validated exact APK: $APK_PATH"
+          echo "Size bytes: $SIZE_BYTES"
+          echo "Application ID: $APP_ID"
 
       - name: Generate APK checksum and provenance
         shell: bash
