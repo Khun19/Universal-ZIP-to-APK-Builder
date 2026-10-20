@@ -107,3 +107,47 @@ CI coverage varies by workflow and fixture. Before claiming a framework is CI-ve
 ## APK identity and real-device eligibility gate
 
 Before sharing any APK for device testing, verify the actual APK SHA-256 (not the artifact ZIP digest), source commit, workflow run ID, package identity, provenance, and tested-APK registry. Same-hash APKs must not be offered as new device-test candidates. A different hash alone is not a behavior change. Record device results against the exact APK SHA-256 + source commit + run ID. See [`docs/APK-IDENTITY-GATE.md`](APK-IDENTITY-GATE.md) and [`docs/tested-apk-registry.json`](tested-apk-registry.json).
+
+## Framework-specific APK build and evidence contract
+
+Each build strategy MUST declare one exact output path (or a finite, strategy-owned list of exact paths) and the expected application ID when known. Do not select the first APK found by a repository-wide `find | head -n 1`. Discovery must stay inside the selected strategy's output directory; zero matches or multiple ambiguous matches fail closed.
+
+| Detected framework | Build strategy | Expected output area |
+| --- | --- | --- |
+| Native Android | Run the project's Gradle wrapper with `--no-daemon assembleDebug` from the Android project root | The selected Android module's `build/outputs/apk/debug/` |
+| React Native | Run `cd android && ./gradlew --no-daemon assembleDebug` from the React Native project root | `android/app/build/outputs/apk/debug/` |
+| Flutter | Run `flutter build apk --debug` | `build/app/outputs/flutter-apk/` |
+| Vite/HTML via Capacitor | Install project dependencies using the lockfile, run the declared web build, run `npx cap sync android`, then run the Android Gradle wrapper from `android/` | `android/app/build/outputs/apk/debug/` |
+
+A framework name alone is not proof of support. The selected strategy must verify required project markers and toolchain availability before running. Plain HTML/Vite must use an explicitly detected and configured Android wrapper/integration; never assume a Capacitor Android project exists.
+
+### Mandatory APK validation gates
+
+1. Exact strategy-owned output path exists; file is non-empty and below the configured maximum size (initial policy default: 250 MiB, configurable by the strategy).
+2. APK opens as a ZIP archive and every entry passes CRC/read validation.
+3. `AndroidManifest.xml` exists, and at least one DEX file or native library exists.
+4. Extract the actual application ID using `apkanalyzer manifest application-id` (or the pinned Android build-tools `aapt dump badging` fallback) and compare it to the strategy's expected ID when configured.
+5. Calculate SHA-256 from the actual APK bytes.
+6. Write per-build provenance and a machine-readable validation report. Every gate records PASS/FAIL; a failed gate fails the job and prevents APK delivery.
+
+### Per-build provenance
+
+Keep `build-provenance.json` (or the current strategy's equivalent `provenance.json`) alongside the APK and upload both in the same workflow artifact. Include at least:
+
+- repository, source commit SHA, workflow ref/SHA, workflow name, run ID and run attempt;
+- detected framework, selected strategy and exact output path;
+- JDK, Gradle Wrapper, Android SDK/build-tools and framework version when discoverable;
+- actual manifest application ID, APK byte size and APK SHA-256;
+- individual validation gate results and overall CI build result;
+- `device_acceptance.status` set to `NOT_RUN` by default, or PASS/FAIL only when a real-device test was performed for this exact APK SHA-256, source commit and workflow run. Include device-test evidence reference when available.
+
+Do not label the uploaded artifact ZIP digest as the APK SHA-256. Artifact storage and provenance are separate: provenance binds the APK bytes to their source/build run; the workflow artifact merely transports the files.
+
+### Cache performance evidence
+
+Use one Gradle cache mechanism per Gradle build job. The selected M6 workflow uses `gradle/actions/setup-gradle@v6` with `cache-provider: basic`; do not also set `actions/setup-java`'s `cache: gradle` or independently cache the same Gradle User Home.
+
+Record cache status and the measured build-step duration for at least two comparable runs on the same workflow/runner class and source/build inputs. Treat the first run as the baseline (usually cold) and the second as the repeat run; do not assume either is cold/warm without the action's actual cache evidence. Compare cache status, build duration, build result and APK validation result. A cache hit never upgrades a build or validation failure to PASS, and two runs are required before claiming a measured speed improvement.
+
+CI/build acceptance and physical-device acceptance are separate gates. A CI success must not set device acceptance to PASS.
+
