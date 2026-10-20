@@ -319,6 +319,53 @@ jobs:
             --registry docs/tested-apk-registry.json \
             --output bare-scaffold-apk-identity-gate-report.json
 
+      - name: Finalize and re-check provenance gate results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          targets = [
+              (
+                  Path(".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json"),
+                  Path("apk-identity-gate-report.json"),
+              ),
+              (
+                  Path(".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/provenance.json"),
+                  Path("bare-scaffold-apk-identity-gate-report.json"),
+              ),
+          ]
+          for provenance_path, report_path in targets:
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              if report.get("valid") is not True or report.get("errors") != []:
+                  raise SystemExit(f"Identity gate did not pass: {report_path}")
+              provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+              results = provenance.setdefault("validation_results", {})
+              if results.get("provenance_identity_gate") != "PENDING_GATE_STEP":
+                  raise SystemExit(f"Unexpected identity-gate state in {provenance_path}")
+              results["provenance_identity_gate"] = "PASS"
+              results["identity_gate_report_valid"] = "PASS"
+              provenance_path.write_text(json.dumps(provenance, indent=2) + "\\n", encoding="utf-8")
+              print(f"Finalized provenance gate result: {provenance_path}")
+          PY
+          node scripts/apk-identity-gate.mjs \\
+            --apk ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk" \\
+            --provenance ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json" \\
+            --expected-commit "$SOURCE_COMMIT" \\
+            --expected-run-id "$GITHUB_RUN_ID" \\
+            --expected-application-id "com.builder.m6reactnative" \\
+            --registry docs/tested-apk-registry.json \\
+            --output apk-identity-gate-report.json
+          node scripts/apk-identity-gate.mjs \\
+            --apk ".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk" \\
+            --provenance ".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/provenance.json" \\
+            --expected-commit "$SOURCE_COMMIT" \\
+            --expected-run-id "$GITHUB_RUN_ID" \\
+            --registry docs/tested-apk-registry.json \\
+            --output bare-scaffold-apk-identity-gate-report.json
+
       - name: Upload APK checksum and provenance
         uses: actions/upload-artifact@v4
         with:
