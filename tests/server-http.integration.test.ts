@@ -3,11 +3,26 @@ import assert from "node:assert/strict";
 import AdmZip from "adm-zip";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
+import { createServer as createNetServer } from "node:net";
 
 const enabled = process.env.RUN_HTTP_UPLOAD_INTEGRATION === "1";
-const baseUrl = "http://127.0.0.1:3000";
+async function getAvailablePort(): Promise<number> {
+  const probe = createNetServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = probe.address();
+  if (!address || typeof address === "string") {
+    probe.close();
+    throw new Error("Could not determine an available localhost port");
+  }
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  return port;
+}
 
-async function waitForServer(child: ChildProcess): Promise<void> {
+async function waitForServer(child: ChildProcess, baseUrl: string): Promise<void> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`HTTP server exited early with code ${child.exitCode}`);
@@ -36,7 +51,7 @@ function zipWithRawEntryName(name: string): Buffer {
   return bytes;
 }
 
-async function uploadZip(zip: AdmZip | Buffer, name: string): Promise<{ status: number; body: any }> {
+async function uploadZip(baseUrl: string, zip: AdmZip | Buffer, name: string): Promise<{ status: number; body: any }> {
   const form = new FormData();
   const bytes = Buffer.isBuffer(zip) ? zip : zip.toBuffer();
   form.append("file", new Blob([new Uint8Array(bytes)], { type: "application/zip" }), name);
@@ -52,10 +67,12 @@ test("HTTP /api/upload-zip accepts safe ZIP through project analysis and leaves 
   skip: !enabled,
   timeout: 150_000,
 }, async () => {
+  const port = await getAvailablePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
   const server = spawn("pnpm", ["exec", "tsx", "lib/server-http.ts"], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PORT: "3000" },
+    env: { ...process.env, PORT: String(port) },
   });
   let logs = "";
   server.stdout?.on("data", (chunk) => { logs += chunk.toString(); });
@@ -64,7 +81,7 @@ test("HTTP /api/upload-zip accepts safe ZIP through project analysis and leaves 
     ? fs.readdirSync(".workspace").filter((name) => name.startsWith("zip-build-"))
     : [];
   try {
-    await waitForServer(server);
+    await waitForServer(server, baseUrl);
     const zip = new AdmZip();
     zip.addFile("package.json", Buffer.from(JSON.stringify({
       name: "http-upload-fixture",
@@ -74,7 +91,7 @@ test("HTTP /api/upload-zip accepts safe ZIP through project analysis and leaves 
     })));
     zip.addFile("index.html", Buffer.from("<!doctype html><html><body><h1>HTTP fixture</h1></body></html>"));
     zip.addFile("vite.config.ts", Buffer.from("export default {};\n"));
-    const result = await uploadZip(zip, "safe-vite-fixture.zip");
+    const result = await uploadZip(baseUrl, zip, "safe-vite-fixture.zip");
     assert.ok(
       result.status === 200 ||
       (result.status === 500 && result.body?.error === "APK Build Failed"),
@@ -126,7 +143,7 @@ test("HTTP /api/upload-zip rejects malicious ZIP and leaves no workspace output"
       "wild/[ab].txt",
     ].entries()) {
       const maliciousZip = zipWithRawEntryName(unsafeName);
-      const result = await uploadZip(maliciousZip, `malicious-${index}.zip`);
+      const result = await uploadZip(baseUrl, maliciousZip, `malicious-${index}.zip`);
       assert.equal(result.status, 500, `${unsafeName}: ${JSON.stringify(result.body)}`);
       assert.match(
         String(result.body?.details),
