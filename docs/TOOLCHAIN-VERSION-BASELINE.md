@@ -10,9 +10,10 @@
 | Area | Verified value | Evidence / limitation | Decision |
 |---|---|---|---|
 | Canonical build executor | GitHub Actions on `ubuntu-24.04` | M6 workflow | Keep as default; local Termux remains recovery-only |
-| M6 Java | Temurin JDK 17, major version pinned; patch resolved by runner | `.github/workflows/ubuntu-m6-build-test.yml` uses `actions/setup-java@v4`, `java-version: 17` | Keep Java 17 for current M6 baseline; record actual `java -version` |
-| M6 Node.js | `22.13.0` | Explicit `actions/setup-node@v4` input | Keep pinned for reproducibility; update only with regression evidence |
-| M6 pnpm | `11.23.0` | Explicit `pnpm/action-setup@v4` input | Keep pinned until a separate dependency/tooling review |
+| GitHub Actions JavaScript runtime | Node 24-compatible action releases | M4/M5/M6 workflows use `actions/checkout@v7`, `actions/setup-node@v7`, `actions/setup-java@v6`, `android-actions/setup-android@v4`, `pnpm/action-setup@v6`, and `actions/upload-artifact@v7` | Keep actions on supported Node 24 releases; do not confuse action runtime with the app build's pinned Node 22.13.0 |
+| M6 Java | Temurin JDK 17, major version pinned; patch resolved by runner | `.github/workflows/ubuntu-m6-build-test.yml` uses `actions/setup-java@v6`, `java-version: 17` | Keep Java 17 for current M6 baseline; record actual `java -version` |
+| M6 Node.js | `22.13.0` | Explicit `actions/setup-node@v7` input; this pins the application build runtime to Node 22 independently of the action's Node 24 runtime | Keep pinned for reproducibility; update only with regression evidence |
+| M6 pnpm | `11.23.0` | Explicit `pnpm/action-setup@v6`, Node 24-compatible action runtime | Keep pinned until a separate dependency/tooling review |
 | M6 Android platform | `platforms;android-34` | Explicit `sdkmanager` package list | Do not replace API 34 baseline; add a separate API-level compatibility lane if needed |
 | M6 Android Build Tools | `34.0.0` | Explicit `sdkmanager` package list and PATH | Do not upgrade without framework/build evidence |
 | M6 NDK | `25.2.9519653` and `26.1.10909125` | Both explicitly installed and verified by workflow | Preserve both until fixture evidence identifies which versions are required |
@@ -48,7 +49,7 @@
 
 - Record actual Java, Node, pnpm, Flutter, SDK package and runner versions in CI artifacts/logs.
 - Prefer supported security patch updates that preserve the required major/minor compatibility.
-- Review GitHub Actions runtime deprecations and action versions as a separate CI maintenance item; do not combine unrelated action/runtime migrations with framework upgrades.
+- GitHub Actions no longer supports Node 20 as of 2026-09-23. This branch migrates M4/M5/M6 workflow actions to Node 24-compatible releases while retaining the application's pinned Node 22.13.0 build runtime. Verify exact-head CI after action upgrades; do not combine unrelated framework upgrades with this maintenance.
 
 ### P3 — Flutter, Capacitor, Expo, and Termux
 
