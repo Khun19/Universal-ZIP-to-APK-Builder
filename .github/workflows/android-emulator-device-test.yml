@@ -62,6 +62,19 @@ jobs:
           accept-android-sdk-licenses: true
           packages: platform-tools emulator
 
+      - name: Install Android Emulator runtime libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes libpulse0
+          # Diagnose missing shared libraries before sdkmanager invokes the emulator.
+          ldd "${ANDROID_HOME}/emulator/emulator" | tee "${RUNNER_TEMP}/emulator-ldd.txt"
+          if grep -q "not found" "${RUNNER_TEMP}/emulator-ldd.txt"; then
+            echo "Android Emulator has unresolved shared-library dependencies"
+            exit 1
+          fi
+
       - name: Install pinned Android SDK packages
         shell: bash
         run: |
