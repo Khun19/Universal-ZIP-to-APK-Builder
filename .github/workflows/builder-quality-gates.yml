@@ -78,6 +78,8 @@ jobs:
         run: pnpm run typecheck
 
       - name: Unit and regression tests
+        env:
+          RUN_HTTP_UPLOAD_INTEGRATION: "1"
         run: pnpm test
 
       - name: Build workspace packages
