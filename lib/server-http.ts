@@ -191,6 +191,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
             apkPath: result.outputPath
           }));
         } else {
+          fs.rmSync(workspaceDir, { recursive: true, force: true });
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'APK Build Failed', logs: result.logs }));
         }
