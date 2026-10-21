@@ -50,6 +50,13 @@ The canonical development contract is defined by these repository documents:
 - **Test/evidence matrix:** `docs/TEST-MATRIX.md`
 - **Build quality/security/evidence standards:** `docs/BUILD-QUALITY-SECURITY-STANDARDS.md`
 - **Architectural decisions:** `docs/ADR/`
+- **Release / version / checksum / provenance contract:** [docs/RELEASE-AND-PACKAGING-STANDARDS.md](docs/RELEASE-AND-PACKAGING-STANDARDS.md)
+- **Change history:** [CHANGELOG.md](CHANGELOG.md)
+- **Release validation workflow:** [Release Readiness](.github/workflows/release-readiness.yml)
+
+### Release and package policy
+
+Official releases are tag-based, tested, checksum-verified, and provenance-linked. Release automation creates a **draft** source release; it does not invent or attach an APK. An APK may be advertised as official only after exact-commit identity validation and the required runtime/device acceptance evidence. GitHub Packages publication is deferred until reusable package boundaries and the current security/acceptance gates are stable.
 
 ### Goal Alignment & Deviation Audit
 
