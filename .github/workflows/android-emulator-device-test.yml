@@ -285,7 +285,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          adb install -r "$APK_PATH" | tee .ci-evidence/adb-install.log
+          # Software-emulated x86_64 guests can briefly lose the package service
+          # after boot. Wait for Android framework readiness, then retry installation
+          # only while the emulator remains connected; preserve diagnostics on failure.
+          mkdir -p .ci-evidence/install
+          adb shell getprop sys.boot_completed | tee .ci-evidence/install/boot-completed.txt
+          for attempt in $(seq 1 24); do
+            if adb shell service check package 2>&1 | tee .ci-evidence/install/package-service.txt | grep -q "found"; then
+              break
+            fi
+            sleep 5
+          done
+          install_ok=0
+          for attempt in 1 2 3; do
+            echo "APK install attempt $attempt/3" | tee -a .ci-evidence/adb-install.log
+            if adb install -r "$APK_PATH" 2>&1 | tee -a .ci-evidence/adb-install.log; then
+              install_ok=1
+              break
+            fi
+            adb devices -l > ".ci-evidence/install/adb-devices-attempt-${attempt}.txt" 2>&1 || true
+            adb shell getprop sys.boot_completed > ".ci-evidence/install/boot-attempt-${attempt}.txt" 2>&1 || true
+            adb shell service check package > ".ci-evidence/install/package-service-attempt-${attempt}.txt" 2>&1 || true
+            adb logcat -d -v threadtime > ".ci-evidence/install/logcat-attempt-${attempt}.txt" 2>&1 || true
+            tail -n 200 .ci-evidence/emulator-console.log > ".ci-evidence/install/emulator-console-attempt-${attempt}.txt" 2>&1 || true
+            if ! adb get-state 2>/dev/null | grep -qx device; then
+              echo "Emulator disconnected; refusing further install retries"
+              break
+            fi
+            sleep 10
+          done
+          if [ "$install_ok" -ne 1 ]; then
+            echo "APK installation failed after retries; diagnostic evidence follows"
+            adb devices -l || true
+            adb shell getprop sys.boot_completed || true
+            adb shell service check package || true
+            tail -n 200 .ci-evidence/emulator-console.log || true
+            exit 1
+          fi
           python3 scripts/android-emulator-ui-test.py --package "$PACKAGE_ID" --evidence-dir .ci-evidence/ui
           adb logcat -d -v threadtime > .ci-evidence/logcat.txt
           if grep -E -A 25 "FATAL EXCEPTION|Fatal signal [0-9]+|has died" .ci-evidence/logcat.txt | grep -F "$PACKAGE_ID"; then
