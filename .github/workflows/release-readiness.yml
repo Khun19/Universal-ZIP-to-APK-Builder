@@ -1,0 +1,154 @@
+name: Release Readiness
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing tag to validate (must point at the checked-out commit)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-readiness-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-package-source:
+    name: Validate release source and create traceable source bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release tag and version metadata
+        id: release
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+            git fetch --force --tags
+            git checkout --detach "refs/tags/$TAG"
+          fi
+          if ! [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "Invalid release tag: $TAG"
+            echo "Expected vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-(alpha|beta|rc).N"
+            exit 1
+          fi
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          TAG_COMMIT="$(git rev-parse "refs/tags/$TAG^{commit}")"
+          test "$SOURCE_COMMIT" = "$TAG_COMMIT"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$([[ "$TAG" == *-* ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          node --version
+          corepack pnpm --version
+
+      - name: Install locked dependencies
+        run: corepack pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Run typecheck, unit tests, and workspace build
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack pnpm run typecheck
+          corepack pnpm run test:unit
+          corepack pnpm run build
+
+      - name: Create source archive, checksums, and provenance
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_COMMIT: ${{ steps.release.outputs.source_commit }}
+          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          git archive --format=tar.gz --prefix="Universal-ZIP-to-APK-Builder-${RELEASE_VERSION}/" "$SOURCE_COMMIT" > "release-assets/SOURCE-CODE.tar.gz"
+          SOURCE_SHA="$(sha256sum release-assets/SOURCE-CODE.tar.gz | awk '{print $1}')"
+          SOURCE_SIZE="$(stat -c '%s' release-assets/SOURCE-CODE.tar.gz)"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path("release-assets/release-provenance.json")
+          p.write_text(json.dumps({
+              "schema_version": 1,
+              "product": "Universal ZIP-to-APK Builder",
+              "release_tag": os.environ["RELEASE_TAG"],
+              "release_version": os.environ["RELEASE_VERSION"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_sha": os.environ["GITHUB_SHA"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "prerelease": os.environ["IS_PRERELEASE"] == "true",
+              "assets": [{
+                  "name": "SOURCE-CODE.tar.gz",
+                  "size_bytes": int(os.environ["SOURCE_SIZE"]),
+                  "sha256": os.environ["SOURCE_SHA"]
+              }],
+              "apk": {
+                  "status": "NOT_INCLUDED",
+                  "reason": "No APK is included unless an exact-tag APK build and required runtime/device acceptance evidence are available."
+              }
+          }, indent=2, sort_keys=True) + "\n")
+          PY
+          (cd release-assets && sha256sum SOURCE-CODE.tar.gz release-provenance.json > SHA256SUMS)
+          sha256sum --check release-assets/SHA256SUMS
+
+      - name: Upload release candidate assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-candidate-${{ steps.release.outputs.tag }}-${{ github.run_id }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release as draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
+          SOURCE_COMMIT: ${{ steps.release.outputs.source_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TITLE="Universal ZIP-to-APK Builder ${RELEASE_VERSION}"
+          NOTES="$(cat <<EOF
+          ## Release contents
+
+          - Source archive: SOURCE-CODE.tar.gz
+          - SHA-256 checksums: SHA256SUMS
+          - Provenance: release-provenance.json
+          - Source commit: ${SOURCE_COMMIT}
+
+          ## Scope and limitations
+
+          This release contains the tested source bundle only. It does not claim universal framework support.
+          No APK is attached unless the exact release commit has a separately verified APK and the required runtime/device evidence.
+          Review the repository changelog and release documentation before use.
+          EOF
+          )"
+          ARGS=(--draft --title "$TITLE" --notes "$NOTES" --verify-tag)
+          if [ "$IS_PRERELEASE" = "true" ]; then ARGS+=(--prerelease); fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to overwrite assets."
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" release-assets/SOURCE-CODE.tar.gz release-assets/SHA256SUMS release-assets/release-provenance.json "${ARGS[@]}"
