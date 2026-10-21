@@ -165,8 +165,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
         
           console.log(`\n📦 [${buildId}] Extracting...`);
-          const extraction = (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
-          const filePaths = extraction.filePaths;
+          const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
 
         console.log(`🚀 Building APK...`);
         const analysis = analyzeProjectFiles(filePaths);
