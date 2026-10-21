@@ -246,7 +246,14 @@ jobs:
           echo "acceleration_mode=$ACCEL_MODE" > .ci-evidence/emulator-runtime-config.txt
           nohup emulator -avd builder-api35 -accel "$ACCEL_MODE" -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > .ci-evidence/emulator-console.log 2>&1 &
           echo $! > .ci-evidence/emulator.pid
-          adb wait-for-device
+          # Bound the first adb connection wait so a dead emulator cannot hold the job until the 100-minute job timeout.
+          if ! timeout 120s adb wait-for-device; then
+            echo "adb did not report an emulator device within 120 seconds"
+            cat .ci-evidence/emulator-accel-check.txt || true
+            tail -n 200 .ci-evidence/emulator-console.log || true
+            adb devices -l || true
+            exit 1
+          fi
           for attempt in $(seq 1 90); do
             booted="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
             if [ "$booted" = "1" ]; then break; fi
