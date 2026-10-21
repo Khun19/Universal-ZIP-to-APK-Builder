@@ -77,7 +77,18 @@ jobs:
 
       - name: Install Android SDK components
         run: |
-          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
+          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Verify React Native native toolchains
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$SDK_ROOT"
+          test -f "$SDK_ROOT/ndk/25.2.9519653/build/cmake/android.toolchain.cmake"
+          test -f "$SDK_ROOT/ndk/26.1.10909125/build/cmake/android.toolchain.cmake"
+          test -x "$SDK_ROOT/cmake/3.22.1/bin/cmake"
+          test -x "$SDK_ROOT/cmake/3.22.1/bin/ninja"
+          echo "Verified NDK 25.2.9519653, NDK 26.1.10909125, CMake 3.22.1 and Ninja."
 
       - name: Add Android build-tools to PATH
         run: |
