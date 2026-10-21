@@ -1,0 +1,249 @@
+name: Android Emulator Device Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'examples/react-native-chat-demo/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/android-emulator-device-test.yml'
+      - '.github/workflows/community-chat-demo-builder-apk.yml'
+      - 'docs/TEST-MATRIX.md'
+      - 'docs/VALIDATION-WORKFLOW.md'
+  workflow_dispatch:
+
+concurrency:
+  group: android-emulator-device-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-install-ui-test:
+    name: Build with Builder and test on Android Emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      ANDROID_API: '35'
+      ANDROID_BUILD_TOOLS: '35.0.0'
+      ANDROID_IMAGE: 'system-images;android-35;google_apis;x86_64'
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.23.0
+
+      - name: Setup Android SDK and Emulator
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+          packages: platform-tools emulator
+
+      - name: Install pinned Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-${ANDROID_API}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "emulator" \
+            "${ANDROID_IMAGE}"
+          echo "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}" >> "$GITHUB_PATH"
+          java -version
+          node --version
+          pnpm --version
+          adb version
+          emulator -version
+          sdkmanager --list_installed
+
+      - name: Install locked Builder dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Generate pinned React Native Android platform fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCAFFOLD_DIR="$RUNNER_TEMP/community-chat-native-scaffold"
+          rm -rf "$SCAFFOLD_DIR"
+          cd "$RUNNER_TEMP"
+          npx --yes @react-native-community/cli@15.0.1 init CommunityChatDemo --version 0.76.9 --directory "$SCAFFOLD_DIR" --skip-install
+          test -s "$SCAFFOLD_DIR/android/gradlew"
+          test -s "$SCAFFOLD_DIR/android/app/build.gradle"
+          rm -rf "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
+          cp -a "$SCAFFOLD_DIR/android" "$GITHUB_WORKSPACE/examples/react-native-chat-demo/android"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          gradle_file = Path(os.environ["GITHUB_WORKSPACE"]) / "examples/react-native-chat-demo/android/app/build.gradle"
+          text = gradle_file.read_text()
+          marker = "react {"
+          if text.count(marker) != 1:
+              raise SystemExit("Expected exactly one React Gradle configuration block")
+          text = text.replace(marker, marker + "\n    // Embed the JS bundle so the installed APK does not require Metro.\n    debuggableVariants = []", 1)
+          gradle_file.write_text(text)
+          if "debuggableVariants = []" not in gradle_file.read_text():
+              raise SystemExit("Failed to enable embedded React Native bundle")
+          PY
+
+      - name: Package fixture ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd examples/react-native-chat-demo
+          test -s package.json
+          test -s App.js
+          test -s index.js
+          zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
+            -x "node_modules/*" "ios/*" ".gradle/*" "build/*"
+          unzip -t "$GITHUB_WORKSPACE/community-chat-demo.zip"
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'package.json'
+          unzip -Z1 "$GITHUB_WORKSPACE/community-chat-demo.zip" | grep -qx 'android/gradlew'
+
+      - name: Build APK through the actual Builder CLI
+        env:
+          BUILD_TIMEOUT_MS: '3600000'
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx lib/cli.ts community-chat-demo.zip 2>&1 | tee community-chat-builder-build.log
+
+      - name: Validate APK structure and record identity
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find output -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test -s "$APK"
+          unzip -t "$APK"
+          unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          unzip -Z1 "$APK" | grep -qx 'assets/index.android.bundle'
+          aapt dump badging "$APK" | tee emulator-apk-badging.txt
+          PACKAGE_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" emulator-apk-badging.txt | head -n 1)"
+          test -n "$PACKAGE_ID"
+          SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          SIZE="$(stat -c '%s' "$APK")"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          echo "package_id=$PACKAGE_ID" >> "$GITHUB_OUTPUT"
+          echo "apk_sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "apk_size=$SIZE" >> "$GITHUB_OUTPUT"
+          mkdir -p .ci-evidence
+          printf '%s  %s\n' "$SHA256" "$APK" > .ci-evidence/emulator-apk.sha256
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          record = {
+              "schema_version": 1,
+              "evidence_type": "android-emulator-test",
+              "source_commit": os.environ["GITHUB_SHA"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "application_id": os.environ["PACKAGE_ID"],
+              "apk_path": os.environ["APK_PATH"],
+              "apk_size_bytes": int(os.environ["APK_SIZE"]),
+              "apk_sha256": os.environ["APK_SHA256"],
+              "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
+              "runtime_test_status": "PENDING"
+          }
+          Path(".ci-evidence/emulator-test-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+          PY
+        env:
+          PACKAGE_ID: ${{ steps.apk.outputs.package_id }}
+          APK_PATH: ${{ steps.apk.outputs.apk_path }}
+          APK_SHA256: ${{ steps.apk.outputs.apk_sha256 }}
+          APK_SIZE: ${{ steps.apk.outputs.apk_size }}
+          ANDROID_API: ${{ env.ANDROID_API }}
+          ANDROID_IMAGE: ${{ env.ANDROID_IMAGE }}
+
+      - name: Create Android Emulator AVD
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "no" | avdmanager create avd --force --name builder-api35 --package "$ANDROID_IMAGE" --device pixel_2
+          mkdir -p .ci-evidence
+          emulator -list-avds | tee .ci-evidence/emulator-avds.txt
+
+      - name: Boot Android Emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup emulator -avd builder-api35 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > .ci-evidence/emulator-console.log 2>&1 &
+          echo $! > .ci-evidence/emulator.pid
+          adb wait-for-device
+          for attempt in $(seq 1 90); do
+            booted="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+            if [ "$booted" = "1" ]; then break; fi
+            sleep 5
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell getprop ro.build.version.release | tee .ci-evidence/emulator-android-release.txt
+          adb shell getprop ro.build.version.sdk | tee .ci-evidence/emulator-api-level.txt
+          adb shell getprop ro.product.cpu.abi | tee .ci-evidence/emulator-abi.txt
+          adb devices -l | tee .ci-evidence/adb-devices.txt
+
+      - name: Install, launch, and test UI interactions
+        env:
+          APK_PATH: ${{ steps.apk.outputs.apk_path }}
+          PACKAGE_ID: ${{ steps.apk.outputs.package_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb install -r "$APK_PATH" | tee .ci-evidence/adb-install.log
+          python3 scripts/android-emulator-ui-test.py --package "$PACKAGE_ID" --evidence-dir .ci-evidence/ui
+          adb logcat -d -v threadtime > .ci-evidence/logcat.txt
+          if grep -E "FATAL EXCEPTION|Fatal signal [0-9]+|has died" .ci-evidence/logcat.txt | grep -F "$PACKAGE_ID"; then
+            echo "Detected a fatal runtime failure for $PACKAGE_ID"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path(".ci-evidence/emulator-test-provenance.json")
+          record = json.loads(p.read_text())
+          record["runtime_test_status"] = "PASS"
+          record["test_scope"] = ["install", "launch", "communities-screen", "open-community-chat", "send-local-message", "profile-screen"]
+          p.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+          PY
+
+      - name: Upload Emulator test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-emulator-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .ci-evidence/
+            community-chat-builder-build.log
+            community-chat-demo.zip
+            emulator-apk-badging.txt
+            output/*.apk
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
