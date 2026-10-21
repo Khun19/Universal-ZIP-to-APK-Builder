@@ -56,7 +56,7 @@ test("HTTP /api/upload-zip accepts safe ZIP through project analysis and leaves 
       devDependencies: { vite: "^7.3.2" },
     })));
     zip.addFile("index.html", Buffer.from("<!doctype html><html><body><h1>HTTP fixture</h1></body></html>"));
-    zip.addFile("vite.config.ts", Buffer.from("export default {};\\n"));
+    zip.addFile("vite.config.ts", Buffer.from("export default {};\n"));
     const result = await uploadZip(zip, "safe-vite-fixture.zip");
     assert.ok(
       result.status === 200 ||
