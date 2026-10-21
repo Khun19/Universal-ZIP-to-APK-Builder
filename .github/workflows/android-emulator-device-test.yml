@@ -91,6 +91,7 @@ jobs:
             "platform-tools" \
             "platforms;android-${ANDROID_API}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;26.1.10909125" \
             "emulator" \
             "${ANDROID_IMAGE}"
           # Make SDK executables available in this step as well as later steps.
