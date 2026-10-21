@@ -203,3 +203,23 @@ Use the following independent labels in reports:
 - `BLOCKED`, `NOT RUN`, and `FAIL`: preserve their distinct meanings.
 
 Do not convert skipped tests to PASS. A fixture can only receive its final PASS when all mandatory levels in its fixture contract have evidence. CI success is not device verification, and one passing fixture is not universal framework support.
+
+
+## Android Emulator Automated Runtime Gate
+
+The workflow `.github/workflows/android-emulator-device-test.yml` currently exercises the Community Chat React Native fixture through the actual Builder CLI on GitHub Actions Ubuntu and Android Emulator API 35 (Google APIs, x86_64). It is the first implementation of the shared emulator-testing foundation, not proof that every framework adapter has already been integrated.
+
+Required evidence for this fixture:
+- [ ] APK structure and embedded React Native bundle are valid.
+- [ ] APK package ID, size, SHA-256, source commit and run ID are recorded.
+- [ ] Emulator boots and reports its Android API level and ABI.
+- [ ] APK installs successfully through `adb install`.
+- [ ] Launcher activity starts and Communities UI renders.
+- [ ] Community chat opens and expected starter message is visible.
+- [ ] A local message can be entered and appears in the chat.
+- [ ] Profile screen opens and expected profile text renders.
+- [ ] Screenshot, UI hierarchy XML, emulator log, install output and logcat are uploaded even on failure where available.
+
+The helper `scripts/android-emulator-ui-test.py` uses UIAutomator hierarchy text/content descriptions and calculated element bounds rather than fixed tap coordinates. Missing elements fail the test. Emulator API 35 x86_64 is a CI runtime target and does not replace physical-device acceptance.
+
+**Current status:** `IMPLEMENTED — CI VERIFICATION PENDING` until the new workflow passes on the exact PR head. Integration into M4, M5, and other framework-specific build workflows remains a separate follow-up; do not claim all-framework emulator coverage until each fixture has an explicit test contract and exact-head evidence.
