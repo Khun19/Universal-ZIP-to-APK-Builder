@@ -8,6 +8,7 @@ import {
 } from './analyzer.ts';
 import { determineBuildStrategy } from './strategy.ts';
 import { URL } from 'url';
+import { randomUUID } from 'node:crypto';
 import { listTemplates, getTemplate } from './template-registry';
 import { generateFromTemplate } from './template-generator';
 import { handleBuildRequest } from './server.ts';
@@ -160,14 +161,18 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         return;
       }
 
-      const buildId = `zip-build-${Date.now()}`;
+      const buildId = `zip-build-${randomUUID()}`;
       const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
       try {
           console.log(`\n📦 [${buildId}] Extracting...`);
           const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
+          const packageJsonPath = filePaths.find((filePath) => filePath === 'package.json' || filePath.endsWith('/package.json'));
+          const packageJson = packageJsonPath
+            ? JSON.parse(fs.readFileSync(path.join(workspaceDir, packageJsonPath), 'utf8'))
+            : {};
 
         console.log(`🚀 Building APK...`);
-        const analysis = analyzeProjectFiles(filePaths);
+        const analysis = analyzeProjectFiles(filePaths, packageJson);
         if (analysis.projectType === 'Unknown') {
           throw new Error('Unable to determine project type');
         }
