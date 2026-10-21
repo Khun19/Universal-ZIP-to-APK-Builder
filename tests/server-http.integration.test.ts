@@ -114,14 +114,34 @@ test("HTTP /api/upload-zip rejects malicious ZIP and leaves no workspace output"
     : [];
   try {
     await waitForServer(server);
-    const maliciousZip = zipWithRawEntryName("../outside.txt");
-    const result = await uploadZip(maliciousZip, "malicious.zip");
-    assert.equal(result.status, 500, JSON.stringify(result.body));
-    assert.match(String(result.body?.details), /Unsafe archive path|path depth|duplicate or case-colliding/i);
-    const after = fs.existsSync(".workspace")
-      ? fs.readdirSync(".workspace").filter((name) => name.startsWith("zip-build-"))
-      : [];
-    assert.deepEqual(after, before, "malicious ZIP must not leave a workspace or partial output");
+    // Use raw ZIP header rewriting so these names reach the HTTP extractor
+    // unchanged (including backslashes and unzip pattern metacharacters).
+    for (const [index, unsafeName] of [
+      "../outside.txt",
+      "nested/../../outside.txt",
+      "/absolute.txt",
+      "C:/outside.txt",
+      "nested\\\\..\\\\outside.txt",
+      "wild/*.txt",
+      "wild/[ab].txt",
+    ].entries()) {
+      const maliciousZip = zipWithRawEntryName(unsafeName);
+      const result = await uploadZip(maliciousZip, `malicious-${index}.zip`);
+      assert.equal(result.status, 500, `${unsafeName}: ${JSON.stringify(result.body)}`);
+      assert.match(
+        String(result.body?.details),
+        /Unsafe archive path|path depth|duplicate or case-colliding/i,
+        `unsafe path should be rejected: ${JSON.stringify(unsafeName)}`,
+      );
+      const after = fs.existsSync(".workspace")
+        ? fs.readdirSync(".workspace").filter((name) => name.startsWith("zip-build-"))
+        : [];
+      assert.deepEqual(
+        after,
+        before,
+        `rejected ZIP ${JSON.stringify(unsafeName)} must not leave a workspace or partial output`,
+      );
+    }
   } finally {
     server.kill("SIGTERM");
     await new Promise<void>((resolve) => {
