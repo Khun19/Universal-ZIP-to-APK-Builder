@@ -20,9 +20,26 @@ async function waitForServer(child: ChildProcess): Promise<void> {
   throw new Error("HTTP upload test server did not become ready");
 }
 
-async function uploadZip(zip: AdmZip, name: string): Promise<{ status: number; body: any }> {
+function zipWithRawEntryName(name: string): Buffer {
+  const nameBytes = Buffer.from(name, "utf8");
+  const zip = new AdmZip();
+  zip.addFile("x".repeat(nameBytes.length), Buffer.from("malicious payload"));
+  const bytes = zip.toBuffer();
+  const localHeader = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  const centralHeader = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  assert.notEqual(localHeader, -1, "fixture must contain a local file header");
+  assert.notEqual(centralHeader, -1, "fixture must contain a central-directory entry");
+  assert.equal(bytes.readUInt16LE(localHeader + 26), nameBytes.length);
+  assert.equal(bytes.readUInt16LE(centralHeader + 28), nameBytes.length);
+  nameBytes.copy(bytes, localHeader + 30);
+  nameBytes.copy(bytes, centralHeader + 46);
+  return bytes;
+}
+
+async function uploadZip(zip: AdmZip | Buffer, name: string): Promise<{ status: number; body: any }> {
   const form = new FormData();
-  form.append("file", new Blob([zip.toBuffer()], { type: "application/zip" }), name);
+  const bytes = Buffer.isBuffer(zip) ? zip : zip.toBuffer();
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: "application/zip" }), name);
   const response = await fetch(baseUrl + "/api/upload-zip", {
     method: "POST",
     body: form,
@@ -97,9 +114,8 @@ test("HTTP /api/upload-zip rejects malicious ZIP and leaves no workspace output"
     : [];
   try {
     await waitForServer(server);
-    const zip = new AdmZip();
-    zip.addFile("../outside.txt", Buffer.from("must not escape"));
-    const result = await uploadZip(zip, "malicious.zip");
+    const maliciousZip = zipWithRawEntryName("../outside.txt");
+    const result = await uploadZip(maliciousZip, "malicious.zip");
     assert.equal(result.status, 500, JSON.stringify(result.body));
     assert.match(String(result.body?.details), /Unsafe archive path|path depth|duplicate or case-colliding/i);
     const after = fs.existsSync(".workspace")
