@@ -135,31 +135,26 @@ jobs:
             echo "GRADLE_WRAPPER_FILE=$wrapper"
             grep -E '^distributionUrl=' "$wrapper" || true
           done
-          if grep -q 'Installed Gradle fallback completed successfully' "$BUILD_LOG"; then
-            if command -v gradle >/dev/null 2>&1; then
-              if gradle --version; then
-                echo "GRADLE_VERSION_SOURCE=installed-gradle-fallback-confirmed-by-build-log"
-              else
-                echo "GRADLE_VERSION_PROBE_STATUS=FAILED_AFTER_SUCCESSFUL_FALLBACK"
-              fi
-            else
-              echo "INSTALLED_GRADLE_STATUS=NOT_FOUND_AFTER_BUILD"
-            fi
-          elif grep -q 'Using the project Gradle Wrapper.' "$BUILD_LOG"; then
-            for wrapper in "${WRAPPERS[@]}"; do
-              wrapper_dir="$(dirname "$(dirname "$(dirname "$wrapper")")")"
-              if [ -x "$wrapper_dir/gradlew" ]; then
-                if (cd "$wrapper_dir" && ./gradlew --version); then
-                  echo "GRADLE_VERSION_SOURCE=wrapper-build-path"
-                else
-                  echo "GRADLE_VERSION_PROBE_STATUS=WRAPPER_PROBE_FAILED_AFTER_BUILD"
-                fi
-              fi
-            done
-          else
-            echo "GRADLE_VERSION_SOURCE=BUILD_LOG_DOES_NOT_PROVE_RESOLVED_COMMAND"
+          # Never launch a second Gradle process after a successful APK build:
+          # a post-build version probe can download a distribution, fail independently,
+          # or report a version different from the command that actually produced the APK.
+          if ! grep -q 'M6_GRADLE_BUILD_EVIDENCE_BEGIN' "$BUILD_LOG" || ! grep -q 'M6_GRADLE_BUILD_EVIDENCE_END' "$BUILD_LOG"; then
+            echo "GRADLE_BUILD_EVIDENCE_STATUS=NOT_CAPTURED"
+            exit 1
           fi
-          echo "=== Android SDK packages ==="
+          if ! grep -Eq 'Executing Gradle command:|Executing fallback Gradle command:' "$BUILD_LOG"; then
+            echo "GRADLE_BUILD_COMMAND_STATUS=NOT_CAPTURED"
+            exit 1
+          fi
+          grep -E 'M6_GRADLE_BUILD_EVIDENCE_(BEGIN|END)|Using the project Gradle Wrapper|Executing Gradle command:|Installed Gradle fallback available:|Executing fallback Gradle command:|Installed Gradle fallback completed successfully|Installed Gradle detected:|Gradle Wrapper bootstrap failed|Gradle Java compatibility' "$BUILD_LOG"
+          echo "GRADLE_VERSION_SOURCE=build-path-log-only"
+          echo "GRADLE_VERSION_PROBE_STATUS=NOT_RUN_POST_BUILD"
+          mapfile -t WRAPPERS < <(find "$GENERATED" -path '*/gradle/wrapper/gradle-wrapper.properties' -type f -print 2>/dev/null || true)
+          for wrapper in "${WRAPPERS[@]}"; do
+            echo "GRADLE_WRAPPER_FILE=$wrapper"
+            grep -E '^distributionUrl=' "$wrapper" || true
+          done
+                    echo "=== Android SDK packages ==="
           sdkmanager --list_installed
 
       - name: Find APK
