@@ -12,6 +12,7 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - '.github/workflows/android-emulator-device-test.yml'
+      - 'docs/ANDROID-EMULATOR-REQUIREMENTS.md'
       - '.github/workflows/community-chat-demo-builder-apk.yml'
       - 'docs/TEST-MATRIX.md'
       - 'docs/VALIDATION-WORKFLOW.md'
@@ -58,7 +59,7 @@ jobs:
       - name: Setup Android SDK and Emulator
         uses: android-actions/setup-android@v4
         with:
-          cmdline-tools-version: 12266719
+          cmdline-tools-version: 15859902
           accept-android-sdk-licenses: true
           packages: platform-tools emulator
 
@@ -67,12 +68,19 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes libpulse0
+          sudo apt-get install --yes libpulse0 libnss3 libx11-xcb1 libxcomposite1 libxcursor1 libxi6 libxtst6 libxrandr2 libxrender1 libfontconfig1 libxkbcommon0
           # Diagnose missing shared libraries before sdkmanager invokes the emulator.
           ldd "${ANDROID_HOME}/emulator/emulator" | tee "${RUNNER_TEMP}/emulator-ldd.txt"
           if grep -q "not found" "${RUNNER_TEMP}/emulator-ldd.txt"; then
             echo "Android Emulator has unresolved shared-library dependencies"
             exit 1
+          fi
+          # Record the host virtualization capability; the boot step selects acceleration accordingly.
+          if [ -e /dev/kvm ]; then
+            echo "KVM device detected"
+            ls -l /dev/kvm
+          else
+            echo "KVM unavailable; software-emulation fallback may be slow"
           fi
 
       - name: Install pinned Android SDK packages
@@ -226,7 +234,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          nohup emulator -avd builder-api35 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > .ci-evidence/emulator-console.log 2>&1 &
+          if emulator -accel-check > .ci-evidence/emulator-accel-check.txt 2>&1; then
+            ACCEL_MODE=on
+            echo "Hardware virtualization acceleration available"
+          else
+            ACCEL_MODE=off
+            export ANDROID_I_WANT_MY_TCG=yes
+            echo "Hardware acceleration unavailable; using software emulation (slower)"
+          fi
+          echo "acceleration_mode=$ACCEL_MODE" > .ci-evidence/emulator-runtime-config.txt
+          nohup emulator -avd builder-api35 -accel "$ACCEL_MODE" -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > .ci-evidence/emulator-console.log 2>&1 &
           echo $! > .ci-evidence/emulator.pid
           adb wait-for-device
           for attempt in $(seq 1 90); do
