@@ -196,6 +196,20 @@ test("failed extraction leaves no staging directory or partial published destina
   });
 });
 
+function archiveWithRawEntryName(name: string): AdmZip {
+  const nameBytes = Buffer.from(name, "utf8");
+  const bytes = archive([["x".repeat(nameBytes.length), "payload"]]).toBuffer();
+  const localHeader = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  const centralHeader = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  assert.notEqual(localHeader, -1, "fixture must contain a local file header");
+  assert.notEqual(centralHeader, -1, "fixture must contain a central-directory entry");
+  assert.equal(bytes.readUInt16LE(localHeader + 26), nameBytes.length);
+  assert.equal(bytes.readUInt16LE(centralHeader + 28), nameBytes.length);
+  nameBytes.copy(bytes, localHeader + 30);
+  nameBytes.copy(bytes, centralHeader + 46);
+  return new AdmZip(bytes);
+}
+
 test("ZIP adversarial paths reject traversal, absolute paths, drive roots, NUL and unzip patterns", () => {
   for (const unsafe of [
     "../outside.txt",
@@ -204,12 +218,12 @@ test("ZIP adversarial paths reject traversal, absolute paths, drive roots, NUL a
     "C:/outside.txt",
     "C:\\outside.txt",
     "nested\\..\\outside.txt",
-    "bad\\0name.txt",
+    "bad\0name.txt",
     "wild/*.txt",
     "wild/[ab].txt",
   ]) {
     assert.throws(
-      () => inspectAdmZip(archive([[unsafe, "payload"]])),
+      () => inspectAdmZip(archiveWithRawEntryName(unsafe)),
       /Unsafe archive path|duplicate or case-colliding/,
       `expected unsafe ZIP member to be rejected: ${JSON.stringify(unsafe)}`,
     );
@@ -218,7 +232,7 @@ test("ZIP adversarial paths reject traversal, absolute paths, drive roots, NUL a
 
 test("NFC-normalized and case-insensitive ZIP path collisions are rejected", () => {
   assert.throws(
-    () => inspectAdmZip(archive([["caf\\u00e9.txt", "a"], ["cafe\\u0301.txt", "b"]])),
+    () => inspectAdmZip(archive([["café.txt", "a"], ["cafe\u0301.txt", "b"]])),
     /duplicate or case-colliding/,
   );
 });
