@@ -153,7 +153,19 @@ jobs:
           echo "apk_sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "apk_size=$SIZE" >> "$GITHUB_OUTPUT"
           mkdir -p .ci-evidence
-          printf '%s  %s\n' "$SHA256" "$APK" > .ci-evidence/emulator-apk.sha256
+          printf '%s  %s\\n' "$SHA256" "$APK" > .ci-evidence/emulator-apk.sha256
+
+      - name: Write APK provenance
+        env:
+          PACKAGE_ID: ${{ steps.apk.outputs.package_id }}
+          APK_PATH: ${{ steps.apk.outputs.apk_path }}
+          APK_SHA256: ${{ steps.apk.outputs.apk_sha256 }}
+          APK_SIZE: ${{ steps.apk.outputs.apk_size }}
+          ANDROID_API: ${{ env.ANDROID_API }}
+          ANDROID_IMAGE: ${{ env.ANDROID_IMAGE }}
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -170,15 +182,8 @@ jobs:
               "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
               "runtime_test_status": "PENDING"
           }
-          Path(".ci-evidence/emulator-test-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+          Path(".ci-evidence/emulator-test-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\\n")
           PY
-        env:
-          PACKAGE_ID: ${{ steps.apk.outputs.package_id }}
-          APK_PATH: ${{ steps.apk.outputs.apk_path }}
-          APK_SHA256: ${{ steps.apk.outputs.apk_sha256 }}
-          APK_SIZE: ${{ steps.apk.outputs.apk_size }}
-          ANDROID_API: ${{ env.ANDROID_API }}
-          ANDROID_IMAGE: ${{ env.ANDROID_IMAGE }}
 
       - name: Create Android Emulator AVD
         shell: bash
