@@ -120,25 +120,30 @@ jobs:
       - name: Validate APK, package ID, and SHA-256
         run: |
           set -euo pipefail
-          APK="$(find output -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          test -n "$APK"
+          mapfile -t APK_FILES < <(find "$GITHUB_WORKSPACE/output" -maxdepth 1 -type f -name '*.apk' -print | sort)
+          if [ "${#APK_FILES[@]}" -ne 1 ]; then
+            printf 'Expected exactly one APK under %s/output; found %s\n' "$GITHUB_WORKSPACE" "${#APK_FILES[@]}" >&2
+            printf '%s\n' "${APK_FILES[@]}" >&2
+            exit 1
+          fi
+          APK="${APK_FILES[0]}"
           test -s "$APK"
           unzip -t "$APK"
           unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
           unzip -Z1 "$APK" | grep -qx 'assets/index.android.bundle'
-          aapt dump badging "$APK" | tee apk-badging.txt
-          sha256sum "$APK" | tee apk-sha256.txt
-          stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee apk-size.txt
-          printf 'APK_PATH=%s\n' "$APK" | tee apk-path.txt
+          aapt dump badging "$APK" | tee "$GITHUB_WORKSPACE/apk-badging.txt"
+          sha256sum "$APK" | tee "$GITHUB_WORKSPACE/apk-sha256.txt"
+          stat -c 'APK_SIZE_BYTES=%s' "$APK" | tee "$GITHUB_WORKSPACE/apk-size.txt"
+          printf 'APK_PATH=%s\n' "$APK" | tee "$GITHUB_WORKSPACE/apk-path.txt"
+          PACKAGE_ID="$(awk -F "\047" '/^package:/ {print $2; exit}' "$GITHUB_WORKSPACE/apk-badging.txt")"
+          test "$PACKAGE_ID" = "com.communitychatdemo"
           {
             echo "## Community Chat Demo — Builder APK"
             echo
             echo "- Commit: $GITHUB_SHA"
             echo "- APK: $APK"
-            echo "- $(cat apk-size.txt)"
-            echo "- SHA-256: $(awk '{print $1}' apk-sha256.txt)"
-            PACKAGE_ID="$(awk -F "\047" '/^package:/ {print $2; exit}' apk-badging.txt)"
-            test -n "$PACKAGE_ID"
+            echo "- $(cat "$GITHUB_WORKSPACE/apk-size.txt")"
+            echo "- SHA-256: $(awk '{print $1}' "$GITHUB_WORKSPACE/apk-sha256.txt")"
             echo "- Package: $PACKAGE_ID"
             echo "- Device install/launch/interaction: NOT RUN in cloud CI"
           } >> "$GITHUB_STEP_SUMMARY"
