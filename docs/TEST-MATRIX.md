@@ -223,3 +223,8 @@ Required evidence for this fixture:
 The helper `scripts/android-emulator-ui-test.py` uses UIAutomator hierarchy text/content descriptions and calculated element bounds rather than fixed tap coordinates. Missing elements fail the test. Emulator API 35 x86_64 is a CI runtime target and does not replace physical-device acceptance.
 
 **Current status:** `IMPLEMENTED — CI VERIFICATION PENDING` until the new workflow passes on the exact PR head. Integration into M4, M5, and other framework-specific build workflows remains a separate follow-up; do not claim all-framework emulator coverage until each fixture has an explicit test contract and exact-head evidence.
+
+## Android Emulator Runtime Acceptance
+
+The installation prerequisites, host-library checks, acceleration fallback, AVD boot protocol, APK identity gates, framework adapters, failure evidence, and PASS/FAIL definitions are specified in [Android Emulator Requirements and Installation Plan](ANDROID-EMULATOR-REQUIREMENTS.md). Apply this contract to the emulator CI workflow. The current automated fixture covers React Native Community Chat only; other frameworks remain uncovered until their own runtime fixtures and assertions pass.
+
