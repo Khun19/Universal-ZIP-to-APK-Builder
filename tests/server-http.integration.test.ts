@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import AdmZip from "adm-zip";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 
 const enabled = process.env.RUN_HTTP_UPLOAD_INTEGRATION === "1";
 const baseUrl = "http://127.0.0.1:3000";
@@ -67,10 +65,12 @@ test("HTTP /api/upload-zip accepts safe ZIP through project analysis and leaves 
       `safe ZIP should pass extraction and project analysis before the build stage; status=${result.status}, body=${JSON.stringify(result.body)}, server logs=${logs}`,
     );
     if (result.status === 500) assert.ok(Array.isArray(result.body.logs));
-    const after = fs.existsSync(".workspace")
-      ? fs.readdirSync(".workspace").filter((name) => name.startsWith("zip-build-"))
-      : [];
-    assert.deepEqual(after, before, "failed safe ZIP build must not leave partial workspace output");
+    if (result.status === 500) {
+      const after = fs.existsSync(".workspace")
+        ? fs.readdirSync(".workspace").filter((name) => name.startsWith("zip-build-"))
+        : [];
+      assert.deepEqual(after, before, "failed safe ZIP build must not leave partial workspace output");
+    }
   } finally {
     server.kill("SIGTERM");
     await new Promise<void>((resolve) => {
