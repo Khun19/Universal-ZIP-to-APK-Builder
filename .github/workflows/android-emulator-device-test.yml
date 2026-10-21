@@ -157,6 +157,7 @@ jobs:
 
       - name: Write APK provenance
         env:
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           PACKAGE_ID: ${{ steps.apk.outputs.package_id }}
           APK_PATH: ${{ steps.apk.outputs.apk_path }}
           APK_SHA256: ${{ steps.apk.outputs.apk_sha256 }}
@@ -172,7 +173,8 @@ jobs:
           record = {
               "schema_version": 1,
               "evidence_type": "android-emulator-test",
-              "source_commit": os.environ["GITHUB_SHA"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_sha": os.environ["GITHUB_SHA"],
               "workflow_run_id": os.environ["GITHUB_RUN_ID"],
               "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
               "application_id": os.environ["PACKAGE_ID"],
@@ -224,7 +226,7 @@ jobs:
           adb install -r "$APK_PATH" | tee .ci-evidence/adb-install.log
           python3 scripts/android-emulator-ui-test.py --package "$PACKAGE_ID" --evidence-dir .ci-evidence/ui
           adb logcat -d -v threadtime > .ci-evidence/logcat.txt
-          if grep -E "FATAL EXCEPTION|Fatal signal [0-9]+|has died" .ci-evidence/logcat.txt | grep -F "$PACKAGE_ID"; then
+          if grep -E -A 25 "FATAL EXCEPTION|Fatal signal [0-9]+|has died" .ci-evidence/logcat.txt | grep -F "$PACKAGE_ID"; then
             echo "Detected a fatal runtime failure for $PACKAGE_ID"
             exit 1
           fi
