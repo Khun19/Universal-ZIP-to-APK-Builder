@@ -57,18 +57,28 @@ jobs:
           echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
           echo "is_prerelease=$([[ "$TAG" == *-* ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           node --version
-          corepack pnpm --version
+          pnpm --version
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pinned pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.23.0
 
       - name: Install locked dependencies
-        run: corepack pnpm install --frozen-lockfile --config.node-linker=hoisted
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
       - name: Run typecheck, unit tests, and workspace build
         shell: bash
         run: |
           set -euo pipefail
-          corepack pnpm run typecheck
-          corepack pnpm run test:unit
-          corepack pnpm run build
+          pnpm run typecheck
+          pnpm run test:unit
+          pnpm run build
 
       - name: Create source archive, checksums, and provenance
         shell: bash
