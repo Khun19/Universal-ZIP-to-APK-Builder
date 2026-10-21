@@ -5,12 +5,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      validate_only:
-        description: 'Validate and package the selected ref without publishing a GitHub Release'
-        required: true
-        type: boolean
-        default: true
 
 permissions:
   contents: read
