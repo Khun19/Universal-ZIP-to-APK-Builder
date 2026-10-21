@@ -29,6 +29,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Record source and workflow commit identities
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="${PR_HEAD_SHA:-$WORKFLOW_SHA}"
+          test "${#SOURCE_COMMIT}" -eq 40
+          test "${#WORKFLOW_SHA}" -eq 40
+          echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+          echo "WORKFLOW_SHA=$WORKFLOW_SHA" >> "$GITHUB_ENV"
+          echo "Source commit: $SOURCE_COMMIT"
+          echo "Workflow checkout/merge SHA: $WORKFLOW_SHA"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -140,13 +155,58 @@ jobs:
           {
             echo "## Community Chat Demo — Builder APK"
             echo
-            echo "- Commit: $GITHUB_SHA"
+            echo "- Source commit: $SOURCE_COMMIT"
+            echo "- Workflow SHA: $WORKFLOW_SHA"
             echo "- APK: $APK"
             echo "- $(cat "$GITHUB_WORKSPACE/apk-size.txt")"
             echo "- SHA-256: $(awk '{print $1}' "$GITHUB_WORKSPACE/apk-sha256.txt")"
             echo "- Package: $PACKAGE_ID"
             echo "- Device install/launch/interaction: NOT RUN in cloud CI"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate APK provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH="$(cat "$GITHUB_WORKSPACE/apk-path.txt" | sed 's/^APK_PATH=//')"
+          test -s "$APK_PATH"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          apk = Path(os.environ["GITHUB_WORKSPACE"]) / "output" / Path(os.environ.get("APK_PATH_BASENAME", "")).name if os.environ.get("APK_PATH_BASENAME") else Path(open(os.path.join(os.environ["GITHUB_WORKSPACE"], "apk-path.txt"), encoding="utf-8").read().strip().split("=", 1)[1])
+          if not apk.is_file() or apk.stat().st_size <= 0:
+              raise SystemExit(f"APK missing or empty: {apk}")
+          sdk = os.environ.get("ANDROID_HOME", os.environ.get("ANDROID_SDK_ROOT", ""))
+          aapt = os.path.join(sdk, "build-tools", "35.0.0", "aapt")
+          badging = subprocess.check_output([aapt, "dump", "badging", str(apk)], text=True)
+          package_id = next((line.split("name='", 1)[1].split("'", 1)[0] for line in badging.splitlines() if line.startswith("package: name='")), None)
+          if package_id != "com.communitychatdemo":
+              raise SystemExit(f"Unexpected package ID: {package_id}")
+          provenance = {
+              "schema_version": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_sha": os.environ["WORKFLOW_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "application_id": package_id,
+              "artifact": {
+                  "path": str(apk.relative_to(Path(os.environ["GITHUB_WORKSPACE"]))),
+                  "size_bytes": apk.stat().st_size,
+                  "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+              },
+              "ci_build": True,
+              "real_device_acceptance": "NOT_RUN",
+          }
+          Path("apk-provenance.json").write_text(json.dumps(provenance, indent=2) + "\\n", encoding="utf-8")
+          print(json.dumps(provenance, indent=2))
+          PY
 
       - name: Upload Builder APK and evidence
         uses: actions/upload-artifact@v4
