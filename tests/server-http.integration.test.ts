@@ -121,7 +121,7 @@ test("HTTP /api/upload-zip rejects malicious ZIP and leaves no workspace output"
       "nested/../../outside.txt",
       "/absolute.txt",
       "C:/outside.txt",
-      "nested\\\\..\\\\outside.txt",
+      "nested\\..\\outside.txt",
       "wild/*.txt",
       "wild/[ab].txt",
     ].entries()) {
