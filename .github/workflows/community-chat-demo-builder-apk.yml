@@ -208,6 +208,20 @@ jobs:
           print(json.dumps(provenance, indent=2))
           PY
 
+      - name: Enforce APK identity and provenance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH="$(sed 's/^APK_PATH=//' "$GITHUB_WORKSPACE/apk-path.txt")"
+          node scripts/apk-identity-gate.mjs \
+            --apk "$APK_PATH" \
+            --provenance apk-provenance.json \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-application-id "com.communitychatdemo" \
+            --registry docs/tested-apk-registry.json \
+            --output community-chat-apk-identity-gate-report.json
+
       - name: Upload Builder APK and evidence
         uses: actions/upload-artifact@v7
         with:
@@ -221,5 +235,6 @@ jobs:
             apk-size.txt
             apk-path.txt
             apk-provenance.json
+            community-chat-apk-identity-gate-report.json
           if-no-files-found: error
           retention-days: 14
