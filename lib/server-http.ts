@@ -160,10 +160,9 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         return;
       }
 
+      const buildId = `zip-build-${Date.now()}`;
+      const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
       try {
-        const buildId = `zip-build-${Date.now()}`;
-        const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
-        
           console.log(`\n📦 [${buildId}] Extracting...`);
           const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
 
@@ -196,8 +195,11 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
           res.end(JSON.stringify({ error: 'APK Build Failed', logs: result.logs }));
         }
       } catch (error: any) {
+        fs.rmSync(workspaceDir, { recursive: true, force: true });
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Server Error', details: error.message }));
+      } finally {
+        fs.rmSync(uploadedFile.filepath, { force: true });
       }
     });
   } else {
