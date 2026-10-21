@@ -153,7 +153,7 @@ jobs:
           echo "apk_sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "apk_size=$SIZE" >> "$GITHUB_OUTPUT"
           mkdir -p .ci-evidence
-          printf '%s  %s\\n' "$SHA256" "$APK" > .ci-evidence/emulator-apk.sha256
+          printf '%s  %s\n' "$SHA256" "$APK" > .ci-evidence/emulator-apk.sha256
 
       - name: Write APK provenance
         env:
@@ -184,7 +184,7 @@ jobs:
               "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
               "runtime_test_status": "PENDING"
           }
-          Path(".ci-evidence/emulator-test-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\\n")
+          Path(".ci-evidence/emulator-test-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
           PY
 
       - name: Create Android Emulator AVD
