@@ -41,7 +41,7 @@ def snapshot(evidence: Path, name: str) -> ET.Element:
     return ET.parse(local).getroot()
 
 
-def wait_for_text(evidence: Path, name: str, target: str, timeout: int = 35) -> ET.Element:
+def wait_for_text(evidence: Path, name: str, target: str, timeout: int = 120) -> ET.Element:
     deadline = time.monotonic() + timeout
     last_root = None
     while time.monotonic() < deadline:
@@ -49,7 +49,26 @@ def wait_for_text(evidence: Path, name: str, target: str, timeout: int = 35) -> 
         if any(target.casefold() in searchable(node).casefold() for node in last_root.iter()):
             return last_root
         time.sleep(2)
-    raise AssertionError(f"UI text/content description not found: {target!r}; snapshot={name}")
+    # Preserve actionable failure evidence before the workflow exits. On software
+    # emulation, React Native can take longer to become interactive; if it still
+    # does not render, diagnostics distinguish slow startup from a blank screen or
+    # native/JS runtime failure.
+    labels = [searchable(node) for node in (last_root.iter() if last_root is not None else []) if searchable(node)]
+    (evidence / f"{name}-visible-labels.txt").write_text("\n".join(labels) + "\n")
+    for label, command in (
+        ("activity", ["shell", "dumpsys", "activity", "activities"]),
+        ("process", ["shell", "pidof", "com.communitychatdemo"]),
+        ("logcat", ["logcat", "-d", "-v", "threadtime"]),
+    ):
+        try:
+            output = adb(*command, check=False)
+        except Exception as exc:
+            output = f"diagnostic command failed: {exc}\n"
+        (evidence / f"{name}-{label}.txt").write_text(output)
+    raise AssertionError(
+        f"UI text/content description not found: {target!r}; snapshot={name}; "
+        f"visible labels={labels[:100]!r}; diagnostics saved under {evidence}"
+    )
 
 
 def searchable(node: ET.Element) -> str:
