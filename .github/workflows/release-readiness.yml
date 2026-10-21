@@ -59,6 +59,51 @@ jobs:
           node --version
           pnpm --version
 
+      - name: Require successful exact-commit CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.release.outputs.source_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Never turn a tag into a release merely because this workflow ran.
+          # Wait for the source commit's existing checks, and fail closed if any
+          # applicable check fails or no CI evidence exists for this exact SHA.
+          for attempt in $(seq 1 40); do
+            gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_COMMIT/check-runs?per_page=100" > "$RUNNER_TEMP/source-check-runs.json"
+            python3 - "$RUNNER_TEMP/source-check-runs.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          checks = [
+              c for c in data.get("check_runs", [])
+              if c.get("name") != "Validate release source and create traceable source bundle"
+          ]
+          if not checks:
+              print("No prior CI check runs exist for the exact source commit.")
+              raise SystemExit(10)
+          pending = [c for c in checks if c.get("status") != "completed"]
+          failed = [c for c in checks if c.get("status") == "completed" and c.get("conclusion") not in ("success", "neutral", "skipped")]
+          print(f"Exact-source checks: {len(checks)} total, {len(pending)} pending, {len(failed)} failed")
+          for c in failed:
+              print(f"FAILED: {c.get('name')} => {c.get('conclusion')} ({c.get('html_url')})")
+          if failed:
+              raise SystemExit(1)
+          if pending:
+              raise SystemExit(11)
+          print("All reported exact-source checks completed without failure.")
+          PY
+            result=$?
+            if [ "$result" -eq 0 ]; then exit 0; fi
+            if [ "$result" -eq 1 ]; then exit 1; fi
+            if [ "$result" -eq 10 ]; then
+              echo "Release blocked: exact-source CI evidence is missing."
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Release blocked: exact-source checks did not finish within 20 minutes."
+          exit 1
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
