@@ -227,9 +227,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Keep AVD creation and emulator lookup on one explicit, persistent path.
+          export ANDROID_SDK_HOME="$HOME/.android"
+          export ANDROID_AVD_HOME="$ANDROID_SDK_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          {
+            echo "ANDROID_SDK_HOME=$ANDROID_SDK_HOME"
+            echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME"
+          } >> "$GITHUB_ENV"
           echo "no" | avdmanager create avd --force --name builder-api35 --package "$ANDROID_IMAGE" --device pixel_2
           mkdir -p .ci-evidence
           emulator -list-avds | tee .ci-evidence/emulator-avds.txt
+          test -s "$ANDROID_AVD_HOME/builder-api35.ini"
+          grep -qx 'builder-api35' .ci-evidence/emulator-avds.txt
 
       - name: Boot Android Emulator
         shell: bash
