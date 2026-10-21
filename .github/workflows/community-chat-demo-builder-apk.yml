@@ -204,7 +204,7 @@ jobs:
               "ci_build": True,
               "real_device_acceptance": "NOT_RUN",
           }
-          Path("apk-provenance.json").write_text(json.dumps(provenance, indent=2) + "\\n", encoding="utf-8")
+          Path("apk-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
           print(json.dumps(provenance, indent=2))
           PY
 
@@ -220,5 +220,6 @@ jobs:
             apk-sha256.txt
             apk-size.txt
             apk-path.txt
+            apk-provenance.json
           if-no-files-found: error
           retention-days: 14
