@@ -26,6 +26,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Record source and workflow commit identities
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="${PR_HEAD_SHA:-$WORKFLOW_SHA}"
+          test "${#SOURCE_COMMIT}" -eq 40
+          test "${#WORKFLOW_SHA}" -eq 40
+          echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+          echo "WORKFLOW_SHA=$WORKFLOW_SHA" >> "$GITHUB_ENV"
+          echo "Source commit: $SOURCE_COMMIT"
+          echo "Workflow checkout/merge SHA: $WORKFLOW_SHA"
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -112,7 +127,8 @@ jobs:
               raise SystemExit("Could not read application ID from APK manifest")
           provenance = {
               "application_id": application_id,
-              "source_commit": os.environ["GITHUB_SHA"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_sha": os.environ["WORKFLOW_SHA"],
               "ref": os.environ["GITHUB_REF"],
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
@@ -140,7 +156,7 @@ jobs:
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$PROVENANCE_PATH" \
-            --expected-commit "$GITHUB_SHA" \
+            --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
             --expected-application-id "com.builder.m6reactnative" \
             --registry docs/tested-apk-registry.json \
@@ -169,7 +185,8 @@ jobs:
               raise SystemExit("Could not read application ID from bare-scaffold APK")
           provenance = {
               "application_id": app_id,
-              "source_commit": os.environ["GITHUB_SHA"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_sha": os.environ["WORKFLOW_SHA"],
               "ref": os.environ["GITHUB_REF"],
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
@@ -185,7 +202,7 @@ jobs:
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$OUT_DIR/provenance.json" \
-            --expected-commit "$GITHUB_SHA" \
+            --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
             --registry docs/tested-apk-registry.json \
             --output bare-scaffold-apk-identity-gate-report.json
