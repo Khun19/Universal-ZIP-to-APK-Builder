@@ -38,6 +38,7 @@ For a quick, source-of-truth reading path:
 3. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — understand the canonical architecture and design boundaries.
 4. **[docs/VALIDATION-WORKFLOW.md](docs/VALIDATION-WORKFLOW.md)** — follow the build and acceptance process.
 5. **[docs/TEST-MATRIX.md](docs/TEST-MATRIX.md)** — check the required tests and evidence for acceptance.
+6. **[Release, Deployment, and Package Standards](docs/RELEASE-DEPLOYMENT-PACKAGE-STANDARDS.md)** — follow the versioning, release provenance, deployment truthfulness, and package publication rules.
 
 ## Canonical project rules
 
