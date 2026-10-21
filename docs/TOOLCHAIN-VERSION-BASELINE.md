@@ -21,7 +21,7 @@
 | React Native fixture | `0.76.9` | `tests/fixtures/react-native-project/package.json` | Keep as regression baseline |
 | React version in M6 fixture | `18.3.1` | Same fixture package manifest | Treat as part of the pinned fixture, not an independent floating dependency |
 | Android Gradle Plugin in M6 fixture | `8.7.3` | `tests/fixtures/react-native-project/android/build.gradle` | Keep for current fixture until a separate candidate fixture proves compatibility |
-| Gradle Wrapper committed in M6 fixture | Not present in tracked fixture tree at baseline | Recursive Git tree contains no `gradle-wrapper.properties` under the fixture | **Resolved Gradle version is unknown from tracked fixture alone.** Capture generated workspace wrapper details during CI before deciding on an upgrade |
+| Gradle Wrapper committed in M6 fixture | Not present in tracked fixture tree | The generated workspace contains `gradle-wrapper.properties` with `distributionUrl=...gradle-8.11.1-all.zip`; `./gradlew --version` reported Gradle 8.11.1 on source commit `f678a87966837baf12fef0b1d5466945c7a2017a`, M6 run `39623196833` | Record Gradle 8.11.1 as the verified generated-workspace baseline for this run; do not infer that the wrapper is tracked or upgrade to Gradle 9.x without a separate passing candidate lane |
 | Flutter fixture SDK | Workflow pins Flutter `3.47.4` on stable channel | `.github/workflows/m5-flutter-build-test.yml` | Record actual resolved version; test upgrades independently |
 | Flutter Android platform | API 34 / Build Tools 34.0.0 | M5 workflow | Preserve baseline; test new API levels in a separate lane |
 | Capacitor | Adapter/build path exists; this baseline review did not verify a pinned, reproducible Capacitor fixture/toolchain | Requires targeted fixture/path review | Do not claim compatibility or upgrade status without evidence |
@@ -32,11 +32,10 @@
 
 ### P0 — Capture exact resolved Gradle version and security status
 
-1. Find the wrapper generated for the M6 build workspace after the integration test runs.
-2. Record `distributionUrl`, the output of `./gradlew --version` when the wrapper exists, and the Android Gradle Plugin version from the generated project.
-3. If a wrapper is absent, record that explicitly and identify the actual Gradle invocation/source before choosing a version.
-4. Compare the resolved version with the official Gradle security advisories and the matching AGP compatibility requirements.
-5. Do not force Gradle 9.x onto the RN 0.76.9 / AGP 8.7.3 baseline without a passing, exact-commit integration build.
+1. The M6 generated workspace was verified to use Gradle 8.11.1 on source commit `f678a87966837baf12fef0b1d5466945c7a2017a`, run `39623196833`; the tracked fixture itself still does not contain the wrapper.
+2. Preserve the distinction between the wrapper distribution URL, the `./gradlew --version` result, and the actual build command recorded by the integration test.
+3. Compare Gradle 8.11.1 with official security advisories and the matching AGP compatibility requirements before selecting any upgrade.
+4. Do not force Gradle 9.x onto the RN 0.76.9 / AGP 8.7.3 baseline without a passing, exact-commit integration build.
 
 ### P1 — Keep the proven M6 baseline and add candidate lanes
 
