@@ -104,6 +104,18 @@ For important acceptance tests record:
 CI coverage varies by workflow and fixture. Before claiming a framework is CI-verified, confirm that the applicable workflow actually ran successfully for the exact source commit and produced a validated artifact. Do not infer full framework coverage from workflow filenames or from a successful unrelated workflow. Device-only behavior remains a separate acceptance gate when the roadmap requires it. If the required workflow or evidence is missing, report `BLOCKED` or `NOT RUN`; do not make a local Termux build the default substitute.
 
 
+## Gradle cache comparison evidence
+
+A same-source repeat run was completed for PR #88 before the Node 24 action-version refresh. Both attempts used source commit `9c61761638cc16c6b5c26c3015327daa81a02e97` and restored the same Gradle cache key:
+
+- Workflow run: [`39478730690`](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/39478730690), attempt 1 and rerun attempt 2.
+- Cache key: `setup-java-Linux-x64-gradle-d1e4c46fa42b4f8f4785d05a573e7c174995e852a467b47798b0752c63b2e174`.
+- Both attempts logged `Cache hit` and `Cache restored successfully`; restored cache size was approximately 1,108,598,848 bytes.
+- Pull-request runs report the cache as read-only by default, so this evidence proves repeatable restore, not that this PR wrote or refreshed the cache.
+- Primary APK size remained 109,260,611 bytes, but SHA-256 differed between attempts (`b5488b399ddb258a4b8201e29316f266bbd79c57bc20935c7d62566ec8a3da56` vs. `9d1ea48d16bce6d54665dffbcf91b5b50a36c454361ed78f43879e3c518f5016`). The bare-scaffold APK was also the same size (110,564,257 bytes) but had different hashes across attempts. This is a reproducibility observation, not evidence of a behavior change.
+- The logs do not establish a reliable speed improvement; runner timing varied and the second restore was not faster. Do not claim a cache performance gain from cache-hit evidence alone.
+- These runs validate the cache configuration at commit `9c61761638cc16c6b5c26c3015327daa81a02e97`. The subsequent Node 24 action-version update must pass its own exact-head checks before PR #88 can leave draft.
+
 ## APK identity and real-device eligibility gate
 
 Before sharing any APK for device testing, verify the actual APK SHA-256 (not the artifact ZIP digest), source commit, workflow run ID, package identity, provenance, and tested-APK registry. Same-hash APKs must not be offered as new device-test candidates. A different hash alone is not a behavior change. Record device results against the exact APK SHA-256 + source commit + run ID. See [`docs/APK-IDENTITY-GATE.md`](APK-IDENTITY-GATE.md) and [`docs/tested-apk-registry.json`](tested-apk-registry.json).
