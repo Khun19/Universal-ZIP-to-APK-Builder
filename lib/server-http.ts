@@ -166,9 +166,10 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       try {
           console.log(`\n📦 [${buildId}] Extracting...`);
           const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
-          const packageJsonPath = filePaths.find((filePath) => filePath === 'package.json' || filePath.endsWith('/package.json'));
-          const packageJson = packageJsonPath
-            ? JSON.parse(fs.readFileSync(path.join(workspaceDir, packageJsonPath), 'utf8'))
+          // Only read the root manifest through a fixed, workspace-owned path.
+          // Archive entry names are untrusted input and must not be used in filesystem joins.
+          const packageJson = filePaths.includes('package.json')
+            ? JSON.parse(fs.readFileSync(path.join(workspaceDir, 'package.json'), 'utf8'))
             : {};
 
         console.log(`🚀 Building APK...`);
