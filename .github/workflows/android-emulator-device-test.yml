@@ -245,6 +245,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Hosted runners may expose /dev/kvm but deny the runner user access.
+          # Grant access before probing acceleration so x86_64 boots do not silently
+          # fall back to very slow software emulation.
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm | tee .ci-evidence/kvm-permissions.txt
+          fi
           if emulator -accel-check > .ci-evidence/emulator-accel-check.txt 2>&1; then
             ACCEL_MODE=on
             echo "Hardware virtualization acceleration available"
