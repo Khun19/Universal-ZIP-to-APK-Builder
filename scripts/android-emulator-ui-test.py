@@ -32,10 +32,39 @@ def adb(*args: str, check: bool = True) -> str:
 
 def snapshot(evidence: Path, name: str) -> ET.Element:
     evidence.mkdir(parents=True, exist_ok=True)
-    remote = "/sdcard/window.xml"
-    adb("shell", "uiautomator", "dump", remote)
+    remote = f"/sdcard/{name}.xml"
     local = evidence / f"{name}.xml"
-    adb("pull", remote, str(local))
+    dump_messages = []
+    # UIAutomator can report a transient empty hierarchy while the first
+    # activity frame is starting. Retry only the snapshot operation, and
+    # verify the remote file exists before attempting to pull it.
+    for attempt in range(1, 4):
+        result = subprocess.run(
+            ["adb", "shell", "uiautomator", "dump", "--compressed", remote],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        dump_messages.append(
+            f"attempt={attempt} exit={result.returncode} "
+            f"stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}"
+        )
+        exists = adb("shell", "test", "-s", remote, check=False)
+        if result.returncode == 0 and not exists.strip():
+            try:
+                adb("pull", remote, str(local))
+                break
+            except RuntimeError as exc:
+                dump_messages.append(str(exc))
+        time.sleep(2)
+    else:
+        diagnostic = adb("shell", "ls", "-la", "/sdcard", check=False)
+        raise RuntimeError(
+            f"UIAutomator hierarchy dump failed for {remote}. "
+            f"Attempts: {'; '.join(dump_messages)}. "
+            f"/sdcard listing: {diagnostic[-4000:]}"
+        )
     adb("shell", "screencap", "-p", f"/sdcard/{name}.png")
     adb("pull", f"/sdcard/{name}.png", str(evidence / f"{name}.png"))
     return ET.parse(local).getroot()
