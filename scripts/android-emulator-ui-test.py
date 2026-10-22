@@ -33,14 +33,19 @@ def adb(*args: str, check: bool = True) -> str:
 def snapshot(evidence: Path, name: str) -> ET.Element:
     evidence.mkdir(parents=True, exist_ok=True)
     remote = f"/data/local/tmp/{name}.xml"
+    remote_png = f"/data/local/tmp/{name}.png"
     local = evidence / f"{name}.xml"
     dump_messages = []
-    # UIAutomator can report a transient empty hierarchy while the first
-    # activity frame is starting. Retry only the snapshot operation, and
-    # verify the remote file exists before attempting to pull it.
+
+    # Capture the actual screen first so a missing accessibility root does not
+    # destroy the only evidence of what the emulator displayed.
+    adb("shell", "screencap", "-p", remote_png)
+    adb("pull", remote_png, str(evidence / f"{name}.png"))
+
+    # Avoid --compressed while diagnosing Android API 35's null-root behavior.
     for attempt in range(1, 4):
         result = subprocess.run(
-            ["adb", "shell", "uiautomator", "dump", "--compressed", remote],
+            ["adb", "shell", "uiautomator", "dump", remote],
             check=False,
             capture_output=True,
             text=True,
@@ -51,25 +56,39 @@ def snapshot(evidence: Path, name: str) -> ET.Element:
             f"stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}"
         )
         present = adb(
-            "shell", "sh", "-c", f"test -s {remote} && echo PRESENT", check=False
+            "shell", "sh", "-c",
+            f"if [ -s {remote} ]; then echo PRESENT; else echo MISSING; fi",
+            check=False,
         )
+        dump_messages.append(f"remote_file_check={present.strip()!r}")
         if result.returncode == 0 and "PRESENT" in present:
             try:
                 adb("pull", remote, str(local))
-                break
-            except RuntimeError as exc:
-                dump_messages.append(str(exc))
+                return ET.parse(local).getroot()
+            except (RuntimeError, ET.ParseError) as exc:
+                dump_messages.append(f"pull_or_parse_error={exc}")
         time.sleep(2)
-    else:
-        diagnostic = adb("shell", "ls", "-la", "/sdcard", check=False)
-        raise RuntimeError(
-            f"UIAutomator hierarchy dump failed for {remote}. "
-            f"Attempts: {'; '.join(dump_messages)}. "
-            f"/sdcard listing: {diagnostic[-4000:]}"
-        )
-    adb("shell", "screencap", "-p", f"/data/local/tmp/{name}.png")
-    adb("pull", f"/data/local/tmp/{name}.png", str(evidence / f"{name}.png"))
-    return ET.parse(local).getroot()
+
+    diagnostics = {}
+    for label, command in (
+        ("activity", ["shell", "dumpsys", "activity", "activities"]),
+        ("window", ["shell", "dumpsys", "window", "windows"]),
+        ("process", ["shell", "pidof", "com.communitychatdemo"]),
+        ("logcat", ["logcat", "-d", "-v", "threadtime"]),
+        ("temp_listing", ["shell", "ls", "-la", "/data/local/tmp"]),
+    ):
+        try:
+            diagnostics[label] = adb(*command, check=False)
+            (evidence / f"{name}-{label}.txt").write_text(diagnostics[label])
+        except Exception as exc:
+            diagnostics[label] = f"diagnostic command failed: {exc}"
+    raise RuntimeError(
+        f"UIAutomator hierarchy dump failed for {remote}. "
+        f"Attempts: {'; '.join(dump_messages)}. "
+        f"Activity diagnostics: {diagnostics.get('activity', '')[-2500:]}. "
+        f"Window diagnostics: {diagnostics.get('window', '')[-2500:]}. "
+        f"Process: {diagnostics.get('process', '').strip()!r}"
+    )
 
 
 def wait_for_text(evidence: Path, name: str, target: str, timeout: int = 120) -> ET.Element:
