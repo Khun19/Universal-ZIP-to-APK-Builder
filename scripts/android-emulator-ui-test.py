@@ -55,13 +55,21 @@ def snapshot(evidence: Path, name: str) -> ET.Element:
             f"attempt={attempt} exit={result.returncode} "
             f"stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}"
         )
-        present = adb(
-            "shell", "sh", "-c",
-            f"if [ -s {remote} ]; then echo PRESENT; else echo MISSING; fi",
+        # Use adb's exit status for the remote file test instead of nested
+        # shell quoting. `adb shell sh -c` can return no stdout on API 35 even
+        # when UIAutomator reports success, making a valid dump look missing.
+        remote_check = subprocess.run(
+            ["adb", "shell", "test", "-s", remote],
             check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
-        dump_messages.append(f"remote_file_check={present.strip()!r}")
-        if result.returncode == 0 and "PRESENT" in present:
+        dump_messages.append(
+            f"remote_file_check_exit={remote_check.returncode} "
+            f"stderr={remote_check.stderr.strip()!r}"
+        )
+        if result.returncode == 0 and remote_check.returncode == 0:
             try:
                 adb("pull", remote, str(local))
                 return ET.parse(local).getroot()
