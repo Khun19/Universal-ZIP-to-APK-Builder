@@ -145,20 +145,20 @@ jobs:
           # Metro even when a bundle was embedded. Make this fixture self-contained
           # for emulator acceptance by disabling debuggability on its debug variant.
           import re
-          build_types = re.search(r"(?ms)^\\s*buildTypes\\s*\\{(.*?)^\\s*\\}", text)
+          build_types = re.search(r"(?ms)^\s*buildTypes\s*\{(.*?)^\s*\}", text)
           if not build_types:
               raise SystemExit("Could not locate Android buildTypes block")
           body = build_types.group(1)
-          debug_blocks = list(re.finditer(r"(?m)^(\\s*)debug\\s*\\{", body))
+          debug_blocks = list(re.finditer(r"(?m)^(\s*)debug\s*\{", body))
           if len(debug_blocks) != 1:
               raise SystemExit(f"Expected one debug build type block, found {len(debug_blocks)}")
           debug = debug_blocks[0]
           insert_at = debug.end()
-          body = body[:insert_at] + "\\n" + debug.group(1) + "    debuggable false" + body[insert_at:]
+          body = body[:insert_at] + "\n" + debug.group(1) + "    debuggable false" + body[insert_at:]
           text = text[:build_types.start(1)] + body + text[build_types.end(1):]
           gradle_file.write_text(text)
           updated = gradle_file.read_text()
-          if "debuggableVariants = []" not in updated or not re.search(r"(?ms)buildTypes\\s*\\{.*?debug\\s*\\{[^}]*debuggable false", updated):
+          if "debuggableVariants = []" not in updated or not re.search(r"(?ms)buildTypes\s*\{.*?debug\s*\{[^}]*debuggable false", updated):
               raise SystemExit("Failed to configure a self-contained, non-debuggable emulator APK")
           PY
 
