@@ -1,6 +1,12 @@
 # Universal Framework-Aware ZIP-to-APK Builder
 
+<div align="center">
+
+<img src="docs/images/rz-builder-logo.svg" alt="RZ Builder — Secure. Build. Verify." width="720" />
+
 **Developer-focused build orchestrator for turning supported project ZIPs into Android APKs**
+
+</div>
 
 Universal ZIP-to-APK Builder is a framework-aware, developer-focused build orchestrator for turning supported project ZIPs into real Android APKs. GitHub Actions on Ubuntu runners is the canonical build execution path. Phone-side installation and runtime checks remain separate acceptance steps when applicable; local Termux builds are an optional, secondary recovery/development path, not the default build requirement.
 

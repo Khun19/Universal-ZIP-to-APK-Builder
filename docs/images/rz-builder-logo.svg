@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">RZ Builder</title>
+  <desc id="desc">Geometric RZ monogram with silver chrome and icy blue glass accents, followed by the RZ Builder wordmark and Secure. Build. Verify. tagline.</desc>
+  <defs>
+    <linearGradient id="chrome" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FAFC"/>
+      <stop offset=".28" stop-color="#9AA8B8"/>
+      <stop offset=".52" stop-color="#FFFFFF"/>
+      <stop offset=".76" stop-color="#718096"/>
+      <stop offset="1" stop-color="#DCE6F0"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8BE9FF"/>
+      <stop offset=".48" stop-color="#168BFF"/>
+      <stop offset="1" stop-color="#1746B8"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#59CFFF" stop-opacity=".04"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(38 34)">
+    <rect x="0" y="0" width="292" height="292" rx="58" fill="#080D14" stroke="#3C5268" stroke-width="2"/>
+    <rect x="8" y="8" width="276" height="276" rx="52" fill="url(#glass)" stroke="#9ADFFF" stroke-opacity=".35"/>
+    <path d="M58 82 H163 C197 82 215 102 215 130 C215 153 202 169 180 177 L226 228 H177 L134 181 H105 V228 H58 Z M105 121 V146 H160 C169 146 175 141 175 133 C175 125 169 121 160 121 Z" fill="url(#chrome)" fill-rule="evenodd"/>
+    <path d="M143 82 H237 V112 L188 179 H237 V211 H132 L132 183 L183 114 H143 Z" fill="url(#blue)" opacity=".96"/>
+    <path d="M58 82 H163 C197 82 215 102 215 130 C215 153 202 169 180 177 L226 228 H177 L134 181 H105 V228 H58 Z" fill="none" stroke="#FFFFFF" stroke-opacity=".5" stroke-width="2" stroke-linejoin="round"/>
+  </g>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <text x="382" y="164" font-size="94" font-weight="700" letter-spacing="-3" fill="url(#chrome)">RZ Builder</text>
+    <path d="M386 193 H1008" stroke="#40556B" stroke-width="2"/>
+    <text x="388" y="239" font-size="26" font-weight="600" letter-spacing="5" fill="#75CFFF">SECURE. BUILD. VERIFY.</text>
+    <text x="388" y="282" font-size="21" letter-spacing="1.2" fill="#AAB8C8">Framework-aware ZIP-to-APK Builder</text>
+  </g>
+</svg>
