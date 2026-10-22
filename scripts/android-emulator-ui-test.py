@@ -32,7 +32,7 @@ def adb(*args: str, check: bool = True) -> str:
 
 def snapshot(evidence: Path, name: str) -> ET.Element:
     evidence.mkdir(parents=True, exist_ok=True)
-    remote = f"/sdcard/{name}.xml"
+    remote = f"/data/local/tmp/{name}.xml"
     local = evidence / f"{name}.xml"
     dump_messages = []
     # UIAutomator can report a transient empty hierarchy while the first
@@ -67,8 +67,8 @@ def snapshot(evidence: Path, name: str) -> ET.Element:
             f"Attempts: {'; '.join(dump_messages)}. "
             f"/sdcard listing: {diagnostic[-4000:]}"
         )
-    adb("shell", "screencap", "-p", f"/sdcard/{name}.png")
-    adb("pull", f"/sdcard/{name}.png", str(evidence / f"{name}.png"))
+    adb("shell", "screencap", "-p", f"/data/local/tmp/{name}.png")
+    adb("pull", f"/data/local/tmp/{name}.png", str(evidence / f"{name}.png"))
     return ET.parse(local).getroot()
 
 
