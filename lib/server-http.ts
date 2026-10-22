@@ -13,7 +13,7 @@ import { listTemplates, getTemplate } from './template-registry';
 import { generateFromTemplate } from './template-generator';
 import { handleBuildRequest } from './server.ts';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
