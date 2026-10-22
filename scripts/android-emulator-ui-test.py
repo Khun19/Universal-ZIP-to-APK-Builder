@@ -50,8 +50,10 @@ def snapshot(evidence: Path, name: str) -> ET.Element:
             f"attempt={attempt} exit={result.returncode} "
             f"stdout={result.stdout.strip()!r} stderr={result.stderr.strip()!r}"
         )
-        exists = adb("shell", "test", "-s", remote, check=False)
-        if result.returncode == 0 and not exists.strip():
+        present = adb(
+            "shell", "sh", "-c", f"test -s {remote} && echo PRESENT", check=False
+        )
+        if result.returncode == 0 and "PRESENT" in present:
             try:
                 adb("pull", remote, str(local))
                 break
