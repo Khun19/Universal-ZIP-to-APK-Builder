@@ -130,7 +130,8 @@ test("HTTP /api/upload-zip rejects malicious ZIP and leaves no workspace output"
     ? fs.readdirSync(".workspace").filter((name) => name.startsWith("zip-build-"))
     : [];
   try {
-    await waitForServer(server);
+    const baseUrl = "http://127.0.0.1:3000";
+    await waitForServer(server, baseUrl);
     // Use raw ZIP header rewriting so these names reach the HTTP extractor
     // unchanged (including backslashes and unzip pattern metacharacters).
     for (const [index, unsafeName] of [
