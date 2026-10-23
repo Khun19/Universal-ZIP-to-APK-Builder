@@ -1,0 +1,209 @@
+name: Builder Source Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: builder-source-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-package:
+    name: Validate exact tag and prepare source release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      source_commit: ${{ steps.meta.outputs.source_commit }}
+    steps:
+      - name: Checkout exact release ref
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.23.0
+
+      - name: Record release identity
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_NAME="${GITHUB_REF_NAME}"
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || {
+              echo "Tag must follow vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N"
+              exit 1
+            }
+            test "$(git rev-parse "refs/tags/$TAG_NAME^{commit}")" = "$SOURCE_COMMIT"
+          fi
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Builder source release validation"
+            echo
+            echo "- Ref: $GITHUB_REF"
+            echo "- Source commit: $SOURCE_COMMIT"
+            echo "- Workflow run: $GITHUB_RUN_ID (attempt $GITHUB_RUN_ATTEMPT)"
+            echo "- Package type: source archive only; no APK or runtime acceptance is implied."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit and regression tests
+        run: pnpm test
+
+      - name: Build workspace
+        run: pnpm run build
+
+      - name: Create source archive, checksum, and provenance manifest
+        id: package
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ steps.meta.outputs.source_commit }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-dist
+          ARCHIVE_NAME="universal-zip-to-apk-builder-source-${RELEASE_TAG}.tar.gz"
+          git archive --format=tar.gz --prefix="universal-zip-to-apk-builder-${RELEASE_TAG}/" --output="release-dist/$ARCHIVE_NAME" "$SOURCE_COMMIT"
+          (
+            cd release-dist
+            sha256sum "$ARCHIVE_NAME" > SHA256SUMS
+          )
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          record = {
+              "schema_version": 1,
+              "release_type": "source-only",
+              "product": "Universal ZIP-to-APK Builder",
+              "tag": os.environ["RELEASE_TAG"],
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
+              "created_at_utc": datetime.now(timezone.utc).isoformat(),
+              "validation": {
+                  "locked_dependency_install": "PASS",
+                  "typecheck": "PASS",
+                  "unit_and_regression_tests": "PASS",
+                  "workspace_build": "PASS"
+              },
+              "deliverables": ["source archive", "SHA256SUMS", "release-manifest.json"],
+              "apk_included": False,
+              "real_device_acceptance": "NOT_APPLICABLE_TO_SOURCE_ARCHIVE",
+              "limitations": [
+                  "This release does not claim that every detected framework is supported.",
+                  "A source archive is not a compiled Builder APK.",
+                  "No hosted Builder deployment is implied."
+              ]
+          }
+          Path("release-dist/release-manifest.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+          PY
+          echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+          cat release-dist/SHA256SUMS
+          cat release-dist/release-manifest.json
+          {
+            echo
+            echo "## Release package"
+            echo
+            echo "- Archive: `$ARCHIVE_NAME`"
+            echo "- Checksum and manifest generated after successful validation."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release candidate bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: builder-source-release-${{ steps.meta.outputs.tag_name }}-${{ github.run_id }}
+          path: release-dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish validated GitHub source release
+    needs: validate-and-package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Download validated source bundle
+        uses: actions/download-artifact@v7
+        with:
+          name: builder-source-release-${{ needs.validate-and-package.outputs.tag_name }}-${{ github.run_id }}
+          path: release-dist
+
+      - name: Verify bundle and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.validate-and-package.outputs.tag_name }}
+          SOURCE_COMMIT: ${{ needs.validate-and-package.outputs.source_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "release-dist/universal-zip-to-apk-builder-source-${TAG_NAME}.tar.gz"
+          test -s release-dist/SHA256SUMS
+          test -s release-dist/release-manifest.json
+          (cd release-dist && sha256sum --check SHA256SUMS)
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          record = json.loads(Path("release-dist/release-manifest.json").read_text())
+          assert record["tag"] == os.environ["TAG_NAME"]
+          assert record["source_commit"] == os.environ["SOURCE_COMMIT"]
+          assert record["release_type"] == "source-only"
+          assert record["apk_included"] is False
+          assert all(value == "PASS" for value in record["validation"].values())
+          PY
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists; refusing to overwrite an existing release."
+            exit 1
+          fi
+          cat > release-notes.md <<EOF
+          ## Universal ZIP-to-APK Builder ${TAG_NAME}
+
+          **Release type:** validated source archive. This is not a compiled Builder APK.
+
+          - Source commit: ${SOURCE_COMMIT}
+          - Workflow run: ${GITHUB_RUN_ID}
+          - Validation: locked dependency install, typecheck, unit/regression tests, and workspace build all passed.
+          - APK/device acceptance: not included or implied.
+          - Framework support remains evidence-based; detection alone is not support evidence.
+
+          See `release-manifest.json` and `SHA256SUMS` for machine-readable provenance and integrity verification.
+          EOF
+          gh release create "$TAG_NAME" \
+            "release-dist/universal-zip-to-apk-builder-source-${TAG_NAME}.tar.gz" \
+            release-dist/SHA256SUMS release-dist/release-manifest.json \
+            --verify-tag --title "Universal ZIP-to-APK Builder ${TAG_NAME}" \
+            --notes-file release-notes.md
