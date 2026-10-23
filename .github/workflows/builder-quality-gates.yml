@@ -16,6 +16,7 @@ on:
       - 'docs/ARCHITECTURE.md'
       - 'docs/TEST-MATRIX.md'
       - 'docs/VALIDATION-WORKFLOW.md'
+      - 'docs/MILESTONE-CI-MATRIX.md'
       - 'docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md'
       - 'docs/DEVELOPMENT-READINESS-AUDIT.md'
   push:
@@ -33,6 +34,7 @@ on:
       - 'docs/ARCHITECTURE.md'
       - 'docs/TEST-MATRIX.md'
       - 'docs/VALIDATION-WORKFLOW.md'
+      - 'docs/MILESTONE-CI-MATRIX.md'
       - 'docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md'
       - 'docs/DEVELOPMENT-READINESS-AUDIT.md'
 
@@ -50,17 +52,17 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout exact commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6.0.5
         with:
           version: 11.23.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22.13.0
           cache: pnpm
@@ -82,3 +84,102 @@ jobs:
 
       - name: Build workspace packages
         run: pnpm run build
+
+      - name: Write quality-gate provenance
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-evidence
+          python3 - <<'PY'
+          import hashlib, json, os, platform, subprocess
+          from pathlib import Path
+
+          def command(*args):
+              try:
+                  return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+              except Exception as exc:
+                  return f"unavailable: {exc}"
+
+          def sha256(path):
+              p = Path(path)
+              if not p.is_file():
+                  return None
+              h = hashlib.sha256()
+              with p.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          event_payload = {}
+          event_path = os.getenv("GITHUB_EVENT_PATH")
+          if event_path and Path(event_path).is_file():
+              try:
+                  event_payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+              except Exception:
+                  event_payload = {}
+          pr = event_payload.get("pull_request") or {}
+          event_name = os.getenv("GITHUB_EVENT_NAME")
+          if event_name == "pull_request":
+              head = pr.get("head") or {}
+              base = pr.get("base") or {}
+              # Fail closed: a PR event without its reviewed source identity is invalid evidence.
+              assert pr.get("number"), "pull_request event is missing PR number"
+              assert head.get("sha") and len(head["sha"]) == 40, "pull_request event is missing a valid head SHA"
+              assert base.get("sha") and len(base["sha"]) == 40, "pull_request event is missing a valid base SHA"
+              source_commit = head["sha"]
+          else:
+              source_commit = os.getenv("GITHUB_SHA")
+              assert source_commit and len(source_commit) == 40, "non-PR event is missing a valid GITHUB_SHA"
+          record = {
+              "schema_version": 1,
+              "evidence_type": "builder-quality-gates",
+              "repository": os.getenv("GITHUB_REPOSITORY"),
+              "source_commit": source_commit,
+              "workflow_sha": os.getenv("GITHUB_SHA"),
+              "ref": os.getenv("GITHUB_REF"),
+              "event": os.getenv("GITHUB_EVENT_NAME"),
+              "workflow": os.getenv("GITHUB_WORKFLOW"),
+              "run_id": os.getenv("GITHUB_RUN_ID"),
+              "run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+              "job_status": os.getenv("JOB_STATUS"),
+              "pull_request": {
+                  "number": pr.get("number"),
+                  "head_sha": (pr.get("head") or {}).get("sha"),
+                  "base_sha": (pr.get("base") or {}).get("sha"),
+              } if pr else None,
+              "runner": {
+                  "os": platform.platform(),
+                  "node": command("node", "--version"),
+                  "pnpm": command("pnpm", "--version"),
+              },
+              "inputs": {
+                  "package_json_sha256": sha256("package.json"),
+                  "pnpm_lock_sha256": sha256("pnpm-lock.yaml"),
+              },
+              "gate_commands": [
+                  "pnpm install --frozen-lockfile --config.node-linker=hoisted",
+                  "pnpm run typecheck",
+                  "pnpm test",
+                  "pnpm run build",
+              ],
+          }
+          out = Path(".ci-evidence/quality-gates-provenance.json")
+          out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          reread = json.loads(out.read_text(encoding="utf-8"))
+          expected_source_commit = (pr["head"]["sha"] if os.getenv("GITHUB_EVENT_NAME") == "pull_request" else os.environ["GITHUB_SHA"])
+          assert reread["source_commit"] == expected_source_commit
+          assert reread["workflow_sha"] == os.environ["GITHUB_SHA"]
+          assert reread["run_id"] == os.environ["GITHUB_RUN_ID"]
+          print(json.dumps(reread, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload quality-gate provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: builder-quality-gates-provenance
+          path: .ci-evidence/quality-gates-provenance.json
+          if-no-files-found: error
+          retention-days: 14
