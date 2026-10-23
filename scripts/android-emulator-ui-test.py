@@ -63,9 +63,9 @@ def snapshot(evidence: Path, name: str) -> ET.Element:
     local = evidence / f"{name}.xml"
     dump_messages = []
 
-    # Capture the screen before the hierarchy. Use adb exec-out so the PNG is
-    # written directly to the runner instead of relying on a remote temp file
-    # and a second adb pull, which failed on the API 35 runner.
+    # Keep an early screenshot for failure diagnostics, then refresh it after
+    # a valid hierarchy is pulled so the retained PNG reflects the same stable UI
+    # state as the XML instead of a frame captured during a screen transition.
     capture_screenshot(evidence, name)
 
     # Avoid --compressed while diagnosing Android API 35's null-root behavior.
@@ -98,7 +98,11 @@ def snapshot(evidence: Path, name: str) -> ET.Element:
         if result.returncode == 0 and remote_check.returncode == 0:
             try:
                 adb("pull", remote, str(local))
-                return ET.parse(local).getroot()
+                root = ET.parse(local).getroot()
+                # Refresh after the hierarchy is valid. If this capture fails,
+                # capture_screenshot records the failure and the final gate fails closed.
+                capture_screenshot(evidence, name)
+                return root
             except (RuntimeError, ET.ParseError) as exc:
                 dump_messages.append(f"pull_or_parse_error={exc}")
         time.sleep(2)
