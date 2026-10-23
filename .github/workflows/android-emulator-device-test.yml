@@ -347,10 +347,43 @@ jobs:
           fi
           python3 scripts/android-emulator-ui-test.py --package "$PACKAGE_ID" --evidence-dir .ci-evidence/ui
           adb logcat -d -v threadtime > .ci-evidence/logcat.txt
-          if grep -E -A 25 "FATAL EXCEPTION|Fatal signal [0-9]+|has died" .ci-evidence/logcat.txt | grep -F "$PACKAGE_ID"; then
-            echo "Detected a fatal runtime failure for $PACKAGE_ID"
-            exit 1
-          fi
+          # The emulator's full logcat includes unrelated system-service process
+          # deaths. Fail only on a crash/death attributed to this APK's package.
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          package = os.environ["PACKAGE_ID"]
+          escaped = re.escape(package)
+          lines = Path(".ci-evidence/logcat.txt").read_text(errors="replace").splitlines()
+          failures = []
+
+          for index, line in enumerate(lines):
+              if "FATAL EXCEPTION" in line:
+                  block = lines[index:min(index + 50, len(lines))]
+                  if any(re.search(r"\bProcess:\s*" + escaped + r"\s*,\s*PID:\s*\d+", item) for item in block):
+                      failures.append(("Java fatal exception", index, line))
+
+              if re.search(r"Fatal signal\s+\d+", line):
+                  block = lines[max(0, index - 10):min(index + 60, len(lines))]
+                  same_line = re.search(r"\bpid\s+\d+\s+\(" + escaped + r"\)", line)
+                  tombstone = any(re.search(r">>>\s*" + escaped + r"\s*<<<", item) for item in block)
+                  if same_line or tombstone:
+                      failures.append(("native fatal signal", index, line))
+
+              if re.search(r"\bProcess\s+" + escaped + r"\s+\(pid\s+\d+\)\s+has died\b", line):
+                  failures.append(("app process death", index, line))
+
+          if failures:
+              print(f"Detected app-specific runtime failure for {package}:")
+              for kind, index, line in failures:
+                  print(f"{kind} at logcat line {index + 1}: {line}")
+              sys.exit(1)
+
+          print(f"PASS: no app-specific fatal exception, native signal, or process death for {package}")
+          PY
           python3 - <<'PY'
           import json
           from pathlib import Path
