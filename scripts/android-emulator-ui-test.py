@@ -180,6 +180,12 @@ def main() -> None:
     # from the live hierarchy, rather than relying on fixed screen coordinates.
     root = snapshot(evidence, "03-message-draft")
     tap_node(root, "Send message")
+    # The send handler clears the draft, but Android keeps the IME open. While
+    # the keyboard is visible, the message list is clipped out of the UI tree,
+    # so dismiss it and scroll the chat list before asserting the sent message.
+    adb("shell", "input", "keyevent", "4", check=False)
+    time.sleep(1)
+    adb("shell", "input", "swipe", "540", "1600", "540", "1100", "350", check=False)
     root = wait_for_text(evidence, "04-message-sent", "Emulator_test_message")
     assert any("Emulator_test_message" in searchable(node) for node in root.iter()), "Sent message not visible"
     print("PASS: type and send a local chat message")
