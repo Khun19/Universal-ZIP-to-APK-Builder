@@ -44,7 +44,7 @@ def capture_screenshot(evidence: Path, name: str) -> None:
             capture_output=True,
             timeout=30,
         )
-        if result.returncode == 0 and result.stdout.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        if result.returncode == 0 and result.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
             target.write_bytes(result.stdout)
             return
         errors.append(
@@ -54,7 +54,7 @@ def capture_screenshot(evidence: Path, name: str) -> None:
         )
         time.sleep(1)
     SCREENSHOT_FAILURES.append(name)
-    (evidence / f"{name}-screenshot-error.txt").write_text("\\n".join(errors) + "\\n")
+    (evidence / f"{name}-screenshot-error.txt").write_text("\n".join(errors) + "\n")
 
 
 def snapshot(evidence: Path, name: str) -> ET.Element:
