@@ -30,17 +30,43 @@ def adb(*args: str, check: bool = True) -> str:
     return result.stdout
 
 
+SCREENSHOT_FAILURES: list[str] = []
+
+
+def capture_screenshot(evidence: Path, name: str) -> None:
+    """Capture PNG bytes directly from adb and preserve failures for the final gate."""
+    target = evidence / f"{name}.png"
+    errors = []
+    for attempt in range(1, 4):
+        result = subprocess.run(
+            ["adb", "exec-out", "screencap", "-p"],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+            target.write_bytes(result.stdout)
+            return
+        errors.append(
+            f"attempt={attempt} exit={result.returncode} "
+            f"stderr={result.stderr.decode(errors='replace').strip()!r} "
+            f"stdout_bytes={len(result.stdout)}"
+        )
+        time.sleep(1)
+    SCREENSHOT_FAILURES.append(name)
+    (evidence / f"{name}-screenshot-error.txt").write_text("\\n".join(errors) + "\\n")
+
+
 def snapshot(evidence: Path, name: str) -> ET.Element:
     evidence.mkdir(parents=True, exist_ok=True)
     remote = f"/data/local/tmp/{name}.xml"
-    remote_png = f"/data/local/tmp/{name}.png"
     local = evidence / f"{name}.xml"
     dump_messages = []
 
-    # Capture the actual screen first so a missing accessibility root does not
-    # destroy the only evidence of what the emulator displayed.
-    adb("shell", "screencap", "-p", remote_png)
-    adb("pull", remote_png, str(evidence / f"{name}.png"))
+    # Capture the screen before the hierarchy. Use adb exec-out so the PNG is
+    # written directly to the runner instead of relying on a remote temp file
+    # and a second adb pull, which failed on the API 35 runner.
+    capture_screenshot(evidence, name)
 
     # Avoid --compressed while diagnosing Android API 35's null-root behavior.
     for attempt in range(1, 4):
@@ -180,21 +206,35 @@ def main() -> None:
     # from the live hierarchy, rather than relying on fixed screen coordinates.
     root = snapshot(evidence, "03-message-draft")
     tap_node(root, "Send message")
-    # The send handler clears the draft, but Android keeps the IME open. While
-    # the keyboard is visible, the message list is clipped out of the UI tree,
-    # so dismiss it and scroll the chat list before asserting the sent message.
-    adb("shell", "input", "keyevent", "4", check=False)
+
+    # Navigate away from the focused TextInput so React Native unmounts it and
+    # Android closes the keyboard. Verify the send handler updated app state
+    # before returning to Chat to check the rendered message text.
+    tap_node(root, "Profile")
+    root = wait_for_text(evidence, "04-profile-after-send", "Your Demo Profile")
+    profile_labels = [searchable(node) for node in root.iter() if searchable(node)]
+    assert "Messages sent" in profile_labels, "Profile message counter missing"
+    assert "1" in profile_labels, "Profile did not record exactly one sent message"
+    print("PASS: send handler persisted one message")
+
+    tap_node(root, "Chat")
+    root = wait_for_text(evidence, "05-chat-after-profile", "general")
     time.sleep(1)
     adb("shell", "input", "swipe", "540", "1600", "540", "1100", "350", check=False)
-    root = wait_for_text(evidence, "04-message-sent", "Emulator_test_message")
+    root = wait_for_text(evidence, "06-message-sent", "Emulator_test_message")
     assert any("Emulator_test_message" in searchable(node) for node in root.iter()), "Sent message not visible"
-    print("PASS: type and send a local chat message")
+    print("PASS: sent message rendered in chat")
 
     tap_node(root, "Profile")
-    root = wait_for_text(evidence, "05-profile", "Your Demo Profile")
+    root = wait_for_text(evidence, "07-profile", "Your Demo Profile")
     assert any("Profile" in searchable(node) for node in root.iter()), "Profile screen missing"
     print("PASS: navigate to Profile screen")
     print("ANDROID_EMULATOR_UI_TEST=PASS")
+    if SCREENSHOT_FAILURES:
+        raise RuntimeError(
+            "UI interactions passed but screenshot evidence is incomplete for: "
+            + ", ".join(SCREENSHOT_FAILURES)
+        )
 
 
 if __name__ == "__main__":
