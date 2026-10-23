@@ -22,24 +22,28 @@ jobs:
 
     steps:
       - name: Checkout exact commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+
+      - name: Setup Gradle caching
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22.13.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6.0.5
         with:
           version: 11.23.0
 
@@ -49,7 +53,7 @@ jobs:
           which pnpm
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: 12266719
           accept-android-sdk-licenses: true
@@ -62,7 +66,7 @@ jobs:
 
       - name: Install Android SDK components
         run: |
-          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" "ndk;26.1.10909125" "cmake;3.22.1"
+          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" "ndk;26.1.10909125" "ndk;27.0.12077973" "cmake;3.22.1"
 
       - name: Verify React Native native toolchains
         run: |
@@ -71,9 +75,10 @@ jobs:
           test -n "$SDK_ROOT"
           test -f "$SDK_ROOT/ndk/25.2.9519653/build/cmake/android.toolchain.cmake"
           test -f "$SDK_ROOT/ndk/26.1.10909125/build/cmake/android.toolchain.cmake"
+          test -f "$SDK_ROOT/ndk/27.0.12077973/build/cmake/android.toolchain.cmake"
           test -x "$SDK_ROOT/cmake/3.22.1/bin/cmake"
           test -x "$SDK_ROOT/cmake/3.22.1/bin/ninja"
-          echo "Verified NDK 25.2.9519653, NDK 26.1.10909125, CMake 3.22.1 and Ninja."
+          echo "Verified NDK 25.2.9519653, NDK 26.1.10909125, NDK 27.0.12077973, CMake 3.22.1 and Ninja."
 
       - name: Add Android build-tools to PATH
         run: |
@@ -113,6 +118,51 @@ jobs:
           find . -name "*.apk" -type f
 
 
+      - name: Validate exact M6 APK output and structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK_PATH"
+          test -s "$APK_PATH"
+          SIZE_BYTES="$(stat -c '%s' "$APK_PATH")"
+          MAX_SIZE_BYTES=$((250 * 1024 * 1024))
+          if [ "$SIZE_BYTES" -gt "$MAX_SIZE_BYTES" ]; then
+            echo "::error::APK exceeds 250 MiB policy limit: $SIZE_BYTES bytes"
+            exit 1
+          fi
+          python - "$APK_PATH" "$SIZE_BYTES" <<'PY'
+          import sys, zipfile
+          path, size = sys.argv[1], int(sys.argv[2])
+          with zipfile.ZipFile(path) as apk:
+              bad = apk.testzip()
+              if bad:
+                  raise SystemExit(f"APK ZIP CRC/read validation failed at: {bad}")
+              names = set(apk.namelist())
+              if "AndroidManifest.xml" not in names:
+                  raise SystemExit("APK missing AndroidManifest.xml")
+              has_dex = any(n.startswith("classes") and n.endswith(".dex") for n in names)
+              has_native = any(n.startswith("lib/") and n.endswith(".so") for n in names)
+              if not (has_dex or has_native):
+                  raise SystemExit("APK missing DEX files and native libraries")
+              print(f"APK structure PASS; size_bytes={size}; dex={has_dex}; native_libs={has_native}")
+          PY
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          APK_ANALYZER="$(find "$SDK_ROOT" -path '*/bin/apkanalyzer' -type f -print -quit)"
+          if [ -n "$APK_ANALYZER" ]; then
+            APP_ID="$("$APK_ANALYZER" manifest application-id "$APK_PATH")"
+          else
+            AAPT="$SDK_ROOT/build-tools/34.0.0/aapt"
+            APP_ID="$("$AAPT" dump badging "$APK_PATH" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
+          fi
+          test "$APP_ID" = "com.builder.m6reactnative" || {
+            echo "::error::Unexpected APK application ID: $APP_ID"
+            exit 1
+          }
+          echo "Validated exact APK: $APK_PATH"
+          echo "Size bytes: $SIZE_BYTES"
+          echo "Application ID: $APP_ID"
+
       - name: Generate APK checksum and provenance
         shell: bash
         run: |
@@ -142,12 +192,30 @@ jobs:
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "framework": "React Native",
+              "build_strategy": "react-native-gradle-debug",
+              "toolchain": {
+                  "java_version": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).splitlines()[0],
+                  "gradle_wrapper_version": next((line.split("=", 1)[1].strip() for line in Path(".workspace/m6-react-native-direct-integration/android/gradle/wrapper/gradle-wrapper.properties").read_text().splitlines() if line.startswith("distributionUrl=")), None),
+                  "android_sdk_platform": "android-34",
+                  "android_build_tools": "34.0.0",
+                  "framework_version": json.loads(Path(".workspace/m6-react-native-direct-integration/package.json").read_text()).get("dependencies", {}).get("react-native"),
+              },
+              "validation_results": {
+                  "exact_output_path": "PASS",
+                  "non_empty_and_size_limit": "PASS",
+                  "zip_crc_and_manifest_dex_or_native": "PASS",
+                  "application_id_match": "PASS",
+                  "sha256_recorded": "PASS",
+                  "provenance_identity_gate": "PENDING_GATE_STEP",
+              },
               "artifact": {
                   "path": str(apk),
                   "size_bytes": apk.stat().st_size,
                   "sha256": digest,
               },
               "ci_build": True,
+              "device_acceptance": {"status": "NOT_RUN", "evidence": None},
               "real_device_acceptance": "NOT_RUN",
           }
           apk.with_name("provenance.json").write_text(
@@ -177,6 +245,24 @@ jobs:
           set -euo pipefail
           APK_PATH=".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK_PATH"
+          SIZE_BYTES="$(stat -c '%s' "$APK_PATH")"
+          MAX_SIZE_BYTES=$((250 * 1024 * 1024))
+          if [ "$SIZE_BYTES" -gt "$MAX_SIZE_BYTES" ]; then
+            echo "::error::Bare-scaffold APK exceeds 250 MiB policy limit: $SIZE_BYTES bytes"
+            exit 1
+          fi
+          python - "$APK_PATH" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              bad = apk.testzip()
+              if bad:
+                  raise SystemExit(f"Bare-scaffold APK ZIP CRC/read validation failed at: {bad}")
+              names = set(apk.namelist())
+              if "AndroidManifest.xml" not in names:
+                  raise SystemExit("Bare-scaffold APK missing AndroidManifest.xml")
+              if not (any(n.startswith("classes") and n.endswith(".dex") for n in names) or any(n.startswith("lib/") and n.endswith(".so") for n in names)):
+                  raise SystemExit("Bare-scaffold APK missing DEX files and native libraries")
+          PY
           OUT_DIR="$(dirname "$APK_PATH")"
           sha256sum "$APK_PATH" > "$OUT_DIR/SHA256SUMS.txt"
           python - <<'PY'
@@ -200,8 +286,26 @@ jobs:
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "framework": "React Native",
+              "build_strategy": "react-native-bare-scaffold-gradle-debug",
+              "toolchain": {
+                  "java_version": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).splitlines()[0],
+                  "gradle_wrapper_version": next((line.split("=", 1)[1].strip() for line in Path(".workspace/m6-bare-react-native-scaffold-test/android/gradle/wrapper/gradle-wrapper.properties").read_text().splitlines() if line.startswith("distributionUrl=")), None),
+                  "android_sdk_platform": "android-34",
+                  "android_build_tools": "34.0.0",
+                  "framework_version": None
+              },
+              "validation_results": {
+                  "exact_output_path": "PASS",
+                  "non_empty_and_size_limit": "PASS",
+                  "zip_crc_and_manifest_dex_or_native": "PASS",
+                  "application_id_extracted": "PASS",
+                  "sha256_recorded": "PASS",
+                  "provenance_identity_gate": "PENDING_GATE_STEP"
+              },
               "artifact": {"path": str(apk), "size_bytes": apk.stat().st_size, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest()},
               "ci_build": True,
+              "device_acceptance": {"status": "NOT_RUN", "evidence": None},
               "real_device_acceptance": "NOT_RUN",
               "fixture": "bare-react-native-custom-main-entrypoint"
           }
@@ -216,8 +320,55 @@ jobs:
             --registry docs/tested-apk-registry.json \
             --output bare-scaffold-apk-identity-gate-report.json
 
+      - name: Finalize and re-check provenance gate results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          targets = [
+              (
+                  Path(".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json"),
+                  Path("apk-identity-gate-report.json"),
+              ),
+              (
+                  Path(".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/provenance.json"),
+                  Path("bare-scaffold-apk-identity-gate-report.json"),
+              ),
+          ]
+          for provenance_path, report_path in targets:
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              if report.get("valid") is not True or report.get("errors") != []:
+                  raise SystemExit(f"Identity gate did not pass: {report_path}")
+              provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+              results = provenance.setdefault("validation_results", {})
+              if results.get("provenance_identity_gate") != "PENDING_GATE_STEP":
+                  raise SystemExit(f"Unexpected identity-gate state in {provenance_path}")
+              results["provenance_identity_gate"] = "PASS"
+              results["identity_gate_report_valid"] = "PASS"
+              provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+              print(f"Finalized provenance gate result: {provenance_path}")
+          PY
+          node scripts/apk-identity-gate.mjs \
+            --apk ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk" \
+            --provenance ".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json" \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-application-id "com.builder.m6reactnative" \
+            --registry docs/tested-apk-registry.json \
+            --output apk-identity-gate-report.json
+          node scripts/apk-identity-gate.mjs \
+            --apk ".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/app-debug.apk" \
+            --provenance ".workspace/m6-bare-react-native-scaffold-test/android/app/build/outputs/apk/debug/provenance.json" \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --registry docs/tested-apk-registry.json \
+            --output bare-scaffold-apk-identity-gate-report.json
+
       - name: Upload APK checksum and provenance
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: m6-build-apk
           path: |
