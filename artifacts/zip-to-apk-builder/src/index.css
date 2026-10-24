@@ -402,3 +402,26 @@
     inset: -1px;
   }
 }
+
+@layer utilities {
+  .rz-shell { --rz-glow: hsl(var(--primary) / .16); }
+  .rz-card { box-shadow: 0 8px 30px hsl(220 30% 10% / .035); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; }
+  .rz-card:hover { transform: translateY(-1px); border-color: hsl(var(--accent) / .32); box-shadow: 0 12px 36px hsl(220 30% 10% / .06); }
+  .rz-hero { position: relative; overflow: hidden; background-image: radial-gradient(circle at 82% 45%, hsl(var(--accent) / .10), transparent 17rem); }
+  .rz-engine-mark { position: relative; width: 190px; height: 190px; display: grid; place-items: center; }
+  .rz-engine-core { width: 86px; height: 86px; display: grid; place-items: center; border: 1px solid hsl(var(--primary) / .38); border-radius: 24px; background: hsl(var(--background) / .75); box-shadow: 0 0 45px var(--rz-glow), inset 0 0 24px hsl(var(--primary) / .06); font-weight: 900; letter-spacing: -.08em; }
+  .rz-engine-ring { position: absolute; border: 1px solid hsl(var(--accent) / .25); border-radius: 999px; animation: rzOrbit 8s linear infinite; }
+  .rz-engine-ring::after { content: ''; position: absolute; width: 5px; height: 5px; border-radius: 50%; background: hsl(var(--primary)); top: -2px; left: 50%; box-shadow: 0 0 12px hsl(var(--primary) / .8); }
+  .ring-a { width: 132px; height: 132px; }
+  .ring-b { width: 176px; height: 176px; animation-duration: 13s; animation-direction: reverse; opacity: .6; }
+  .rz-engine-label { position: absolute; right: -4px; bottom: 6px; font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .16em; color: hsl(var(--muted-foreground)); }
+  .rz-engine-label span { color: hsl(var(--accent)); }
+  .rz-launch { animation: rzLaunchOut .55s 1.0s ease forwards; }
+  .rz-launch-grid { background-image: linear-gradient(hsl(180 30% 60% / .07) 1px, transparent 1px), linear-gradient(90deg, hsl(180 30% 60% / .07) 1px, transparent 1px); background-size: 28px 28px; mask-image: radial-gradient(circle, black 20%, transparent 72%); }
+  .rz-energy { box-shadow: 0 0 40px hsl(var(--primary) / .12); animation: rzEnergy 1.1s cubic-bezier(.2,.8,.2,1) both; }
+  .rz-energy-delay { animation-delay: .12s; border-color: hsl(var(--accent) / .28); }
+  @keyframes rzOrbit { to { transform: rotate(360deg); } }
+  @keyframes rzEnergy { from { opacity: 0; transform: scale(.35) rotate(-25deg); } 45% { opacity: 1; } to { opacity: .8; transform: scale(1) rotate(15deg); } }
+  @keyframes rzLaunchOut { to { opacity: 0; visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) { .rz-card, .rz-engine-ring, .rz-energy, .rz-launch { animation: none !important; transition: none !important; } }
+}
