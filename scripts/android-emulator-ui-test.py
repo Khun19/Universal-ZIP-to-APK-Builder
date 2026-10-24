@@ -185,6 +185,91 @@ def tap_node(root: ET.Element, target: str) -> None:
     adb("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 
 
+def node_bounds(node: ET.Element) -> tuple[int, int, int, int] | None:
+    numbers = [int(value) for value in __import__("re").findall(r"-?\d+", node.attrib.get("bounds", ""))]
+    if len(numbers) != 4:
+        return None
+    left, top, right, bottom = numbers
+    if right <= left or bottom <= top:
+        return None
+    return left, top, right, bottom
+
+
+def vertical_scroll_view(root: ET.Element) -> ET.Element:
+    candidates = [
+        node for node in root.iter()
+        if node.attrib.get("class") == "android.widget.ScrollView"
+        and node.attrib.get("scrollable") == "true"
+    ]
+    if len(candidates) != 1:
+        raise AssertionError(
+            f"Expected one vertical chat ScrollView, found {len(candidates)}"
+        )
+    return candidates[0]
+
+
+def target_visible_in_scroll_view(root: ET.Element, target: str) -> bool:
+    try:
+        node = find_node(root, target)
+        viewport_node = vertical_scroll_view(root)
+    except AssertionError:
+        return False
+    rect = node_bounds(node)
+    viewport = node_bounds(viewport_node)
+    if rect is None or viewport is None:
+        return False
+    left, top, right, bottom = rect
+    view_left, view_top, view_right, view_bottom = viewport
+    return (
+        max(left, view_left) < min(right, view_right)
+        and max(top, view_top) < min(bottom, view_bottom)
+    )
+
+
+def scroll_until_visible(
+    evidence: Path, name: str, target: str, timeout: int = 45
+) -> ET.Element:
+    """Scroll the actual vertical chat viewport until the target is on-screen.
+
+    A UIAutomator node can exist in the hierarchy while its bounds are clipped or
+    outside the viewport. Treating that as visible produced false-positive tests
+    and screenshots that did not show the sent message.
+    """
+    deadline = time.monotonic() + timeout
+    last_root: ET.Element | None = None
+    while time.monotonic() < deadline:
+        last_root = snapshot(evidence, name)
+        if target_visible_in_scroll_view(last_root, target):
+            # Confirm the same text remains in the viewport after a settling delay;
+            # this second snapshot overwrites the PNG/XML evidence with the stable state.
+            time.sleep(0.75)
+            confirmed = snapshot(evidence, name)
+            if target_visible_in_scroll_view(confirmed, target):
+                return confirmed
+            last_root = confirmed
+
+        viewport_node = vertical_scroll_view(last_root)
+        viewport = node_bounds(viewport_node)
+        if viewport is None:
+            raise AssertionError(
+                f"Vertical chat ScrollView has invalid bounds: {viewport_node.attrib.get('bounds')!r}"
+            )
+        left, top, right, bottom = viewport
+        if bottom - top < 50:
+            raise AssertionError(f"Vertical chat ScrollView is too small to scroll: {viewport!r}")
+        x = (left + right) // 2
+        adb(
+            "shell", "input", "swipe",
+            str(x), str(bottom - 20), str(x), str(top + 20), "350",
+        )
+        time.sleep(0.75)
+
+    raise AssertionError(
+        f"UI text {target!r} never became visible inside the chat ScrollView; "
+        f"last snapshot={name}; see {evidence} for XML, screenshots and diagnostics"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", required=True)
@@ -223,9 +308,9 @@ def main() -> None:
 
     tap_node(root, "Chat")
     root = wait_for_text(evidence, "05-chat-after-profile", "general")
-    time.sleep(1)
-    adb("shell", "input", "swipe", "540", "1600", "540", "1100", "350", check=False)
-    root = wait_for_text(evidence, "06-message-sent", "Emulator_test_message")
+    # Scroll inside the chat message list, not the bottom navigation/composer.
+    # A matching UIAutomator node outside the viewport is not visual acceptance.
+    root = scroll_until_visible(evidence, "06-message-sent", "Emulator_test_message")
     assert any("Emulator_test_message" in searchable(node) for node in root.iter()), "Sent message not visible"
     print("PASS: sent message rendered in chat")
 
