@@ -107,3 +107,12 @@ CI coverage varies by workflow and fixture. Before claiming a framework is CI-ve
 ## APK identity and real-device eligibility gate
 
 Before sharing any APK for device testing, verify the actual APK SHA-256 (not the artifact ZIP digest), source commit, workflow run ID, package identity, provenance, and tested-APK registry. Same-hash APKs must not be offered as new device-test candidates. A different hash alone is not a behavior change. Record device results against the exact APK SHA-256 + source commit + run ID. See [`docs/APK-IDENTITY-GATE.md`](APK-IDENTITY-GATE.md) and [`docs/tested-apk-registry.json`](tested-apk-registry.json).
+
+
+## Android Emulator test loop
+
+The first automated runtime fixture is `.github/workflows/android-emulator-device-test.yml`. It builds the Community Chat ZIP through the Builder CLI, installs the resulting APK into an Android Emulator on the Ubuntu runner, and checks launch, Communities UI, opening a chat, sending a local message, and opening Profile. Evidence includes APK SHA-256 and provenance, emulator API/ABI, install output, screenshots, UI hierarchy XML, emulator console log, and logcat.
+
+A runtime failure must remain a failure. Use the screenshot, UI hierarchy, logcat, and Builder build log to identify the failed phase before changing code. Keep the original failure evidence, make the smallest root-cause fix, and rerun the exact-head checks. Never use an earlier APK or another commit's emulator result to mark the new candidate PASS.
+
+This first workflow is the shared foundation and a React Native fixture implementation. M4/Vite, M5/Flutter, native Android, Capacitor, and other adapters must be connected and verified separately before the project can claim emulator coverage for all frameworks. The physical phone remains a separate evidence class.
