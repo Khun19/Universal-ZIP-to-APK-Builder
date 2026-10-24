@@ -220,9 +220,15 @@ def target_visible_in_scroll_view(root: ET.Element, target: str) -> bool:
         return False
     left, top, right, bottom = rect
     view_left, view_top, view_right, view_bottom = viewport
+    # Require the complete text node to be inside the scroll viewport with
+    # a small margin. Mere intersection allowed a composer-overlapped message
+    # to pass while the screenshot showed only a clipped portion of the text.
+    margin = 16
     return (
-        max(left, view_left) < min(right, view_right)
-        and max(top, view_top) < min(bottom, view_bottom)
+        left >= view_left + margin
+        and top >= view_top + margin
+        and right <= view_right - margin
+        and bottom <= view_bottom - margin
     )
 
 
@@ -258,9 +264,36 @@ def scroll_until_visible(
         if bottom - top < 50:
             raise AssertionError(f"Vertical chat ScrollView is too small to scroll: {viewport!r}")
         x = (left + right) // 2
+        try:
+            target_rect = node_bounds(find_node(last_root, target))
+        except AssertionError:
+            target_rect = None
+
+        if target_rect is None:
+            # The target may be outside the hierarchy viewport or have invalid
+            # off-screen bounds; use a full swipe to bring later messages upward.
+            start_y, end_y = bottom - 20, top + 20
+        else:
+            target_center = (target_rect[1] + target_rect[3]) // 2
+            viewport_center = (top + bottom) // 2
+            delta = target_center - viewport_center
+            max_distance = bottom - top - 40
+            if delta > 0:
+                # Finger moves up; message content moves up toward the viewport center.
+                distance = min(delta, max_distance)
+                start_y, end_y = bottom - 20, max(top + 20, bottom - 20 - distance)
+            elif delta < 0:
+                # Finger moves down; recover if the target has been scrolled too high.
+                distance = min(-delta, max_distance)
+                start_y, end_y = top + 20, min(bottom - 20, top + 20 + distance)
+            else:
+                start_y, end_y = bottom - 20, top + 20
+
+        if start_y == end_y:
+            raise AssertionError(f"Cannot scroll chat viewport to reveal {target!r}")
         adb(
             "shell", "input", "swipe",
-            str(x), str(bottom - 20), str(x), str(top + 20), "350",
+            str(x), str(start_y), str(x), str(end_y), "350",
         )
         time.sleep(0.75)
 
