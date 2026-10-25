@@ -79,6 +79,12 @@ function workspaceBuildIds(): string[] {
     : [];
 }
 
+function uploadTempFiles(): string[] {
+  return fs.existsSync(".workspace/.uploads")
+    ? fs.readdirSync(".workspace/.uploads")
+    : [];
+}
+
 test("HTTP /api/upload-zip accepts a safe ZIP through analysis and cleans failed builds", {
   skip: !enabled,
   timeout: 150_000,
@@ -106,6 +112,7 @@ test("HTTP /api/upload-zip accepts a safe ZIP through analysis and cleans failed
     zip.addFile("index.html", Buffer.from("<!doctype html><html><body><h1>HTTP fixture</h1></body></html>"));
     zip.addFile("vite.config.ts", Buffer.from("export default {};\n"));
     const result = await uploadZip(baseUrl, zip, "safe-vite-fixture.zip");
+    assert.deepEqual(uploadTempFiles(), [], "successful upload analysis must remove its temporary upload file");
     assert.ok(
       result.status === 200 ||
       (result.status === 500 && result.body?.error === "APK Build Failed"),
@@ -148,6 +155,7 @@ test("HTTP /api/upload-zip rejects malicious paths before creating workspace out
     ].entries()) {
       const result = await uploadZip(baseUrl, zipWithRawEntryName(unsafeName), `malicious-${index}.zip`);
       assert.equal(result.status, 500, `${unsafeName}: ${JSON.stringify(result.body)}; logs=${logs}`);
+      assert.deepEqual(uploadTempFiles(), [], `rejected upload ${JSON.stringify(unsafeName)} must remove its temporary file`);
       assert.match(
         String(result.body?.details),
         /Unsafe archive path|path depth|duplicate or case-colliding/i,
