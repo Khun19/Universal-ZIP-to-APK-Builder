@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/m6-community-chat-demo-mainline
+      - fix/pr96-emulator-ci-evidence-20261026
   pull_request:
     branches:
       - main
