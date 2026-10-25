@@ -79,6 +79,12 @@ pnpm test
 
 A local APK, if produced, must be labelled as a local build and recorded separately from CI artifacts. Capture the source commit, environment/toolchain, command, exit code, APK path/size, and SHA-256.
 
+## Emulator CI Verification
+
+The isolated Community Chat Demo workflow runs emulator verification as a separate job after the Builder APK job. It downloads the APK and metadata from that same workflow run, verifies the APK's SHA-256 against the recorded value, derives the package ID from the saved badging output, and installs/launches that exact artifact on an API 35 x86_64 emulator. The job records source commit, workflow run ID, package ID, APK SHA-256, API level, launch/process evidence, logcat, and screenshot; evidence upload runs even if emulator verification fails. The emulator job must never rebuild the APK.
+
+Report the outcomes independently as `CI BUILD PASS`, `EMULATOR INSTALL/LAUNCH PASS`, and `REAL DEVICE PASS`. The first two do not establish physical-device acceptance. The physical-device gate remains pending until a real device is tested against the same APK identity.
+
 ## Real Android Verification
 
 When the acceptance criterion requires runtime verification, the APK must be installed through the normal Android UI (or an equivalent documented device procedure) and checked for the feature-specific behavior. Do not convert a successful Gradle build into a runtime PASS.
