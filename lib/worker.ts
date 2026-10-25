@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -11,6 +11,7 @@ import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
 
 export interface BuildJobResult {
@@ -496,8 +497,12 @@ async function regenerateFlutterAndroidPlatform(
 
   try {
     logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
-    await execAsync(
-      flutterCommand(flutterExecutor, [
+    // Use execFile so scaffoldPath is passed as one argv element and never
+    // interpreted by a shell, even when it contains spaces or metacharacters.
+    await execFileAsync(
+      flutterExecutor.executable,
+      [
+        ...flutterExecutor.prefixArgs,
         'create',
         '-t',
         'app',
@@ -505,7 +510,7 @@ async function regenerateFlutterAndroidPlatform(
         'builder_android_scaffold',
         '--platforms=android',
         scaffoldPath,
-      ]),
+      ],
       { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
     );
 
@@ -762,6 +767,8 @@ export interface FlutterExecutor {
   mode: 'native' | 'ubuntu-proot';
   commandPrefix: string;
   displayCommand: string;
+  executable: string;
+  prefixArgs: string[];
 }
 
 /**
@@ -789,7 +796,7 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
           timeout: 15_000,
           maxBuffer: 128 * 1024,
         });
-        return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
+        return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter', executable: 'flutter', prefixArgs: [] };
       } catch {
         // Fall through to the Ubuntu PRoot Flutter SDK.
       }
@@ -824,6 +831,8 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
     mode: 'ubuntu-proot',
     commandPrefix: 'proot-distro login ' + shellQuote(prootDistro) + ' -- sh -lc ' + shellQuote(inner) + ' --',
     displayCommand: 'proot-distro login ' + prootDistro + ' -- ' + prootFlutter,
+    executable: 'proot-distro',
+    prefixArgs: ['login', prootDistro, '--', 'sh', '-lc', inner, '--'],
   };
 }
 
