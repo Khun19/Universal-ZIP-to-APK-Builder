@@ -399,7 +399,7 @@ test('Flutter scaffold invokes execFile with hostile path as one argv item (no s
       'create', '-t', 'app', '--project-name', 'builder_android_scaffold',
       '--platforms=android', hostilePath,
     ]);
-    assert.strictEqual(fs.existsSync(path.join(root, 'SHOULD_NOT_EXIST')), false);
+    assert.strictEqual(fs.existsSync(path.join(projectPath, 'SHOULD_NOT_EXIST')), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
