@@ -357,6 +357,8 @@ test('Flutter scaffold arguments are shell-quoted as distinct arguments', () => 
     mode: 'native',
     commandPrefix: 'flutter',
     displayCommand: 'flutter',
+    executable: 'flutter',
+    prefixArgs: [],
   };
   const hostilePath = "/tmp/scaffold with spaces; touch /tmp/builder-pwned";
   assert.equal(
@@ -368,6 +370,8 @@ test('Flutter scaffold arguments are shell-quoted as distinct arguments', () => 
     mode: 'ubuntu-proot',
     commandPrefix: "proot-distro login 'ubuntu' -- sh -lc 'exec flutter \"$@\"' --",
     displayCommand: 'proot-distro login ubuntu -- flutter',
+    executable: 'proot-distro',
+    prefixArgs: ['login', 'ubuntu', '--', 'sh', '-lc', 'exec flutter "$@"', '--'],
   };
   assert.equal(
     flutterCommand(proot, ['create', hostilePath]),
