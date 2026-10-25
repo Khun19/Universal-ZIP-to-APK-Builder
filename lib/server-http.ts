@@ -145,7 +145,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 
   // 3. ZIP Upload လက်ခံမည့်အပိုင်း
   if (req.method === 'POST' && req.url === '/api/upload-zip') {
-    const form = formidable({ maxFileSize: 50 * 1024 * 1024, keepExtensions: true });
+    // Keep upload temporaries in a dedicated directory owned by this server.
+    // Cleanup below reconstructs the target from this fixed directory and the
+    // generated basename, rather than deleting an arbitrary path value.
+    const uploadTempDir = path.resolve(process.cwd(), '.workspace', '.uploads');
+    fs.mkdirSync(uploadTempDir, { recursive: true });
+    const form = formidable({
+      uploadDir: uploadTempDir,
+      maxFileSize: 50 * 1024 * 1024,
+      keepExtensions: true,
+    });
 
     form.parse(req, async (err, fields, files) => {
       if (err) {
@@ -209,7 +218,13 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Server Error', details: error.message }));
       } finally {
-        fs.rmSync(uploadedFile.filepath, { force: true });
+        const uploadTempPath = path.resolve(
+          uploadTempDir,
+          path.basename(uploadedFile.filepath),
+        );
+        if (path.dirname(uploadTempPath) === uploadTempDir) {
+          fs.rmSync(uploadTempPath, { force: true });
+        }
       }
     });
   } else {
