@@ -129,6 +129,17 @@ This is a development acceptance gate, separate from build/runtime tests.
 - [ ] Download path is correct
 - [ ] Failed/blocked builds show useful diagnostics
 
+## Builder APK Runtime Evidence Levels
+
+For the isolated Community Chat Demo workflow, report these independently:
+
+- `CI BUILD PASS` — the Builder produced and structurally validated an APK for the recorded commit.
+- `EMULATOR INSTALL/LAUNCH PASS` — the exact uploaded APK was hash-checked, installed on API 35 x86_64 emulator, launched, remained alive during the bounded startup check, and has logcat/screenshot evidence.
+- `REAL DEVICE PASS` — a physical Android device test was performed separately and its device/APK identity evidence was recorded. Emulator success does not imply this state.
+- `NOT RUN` / `BLOCKED` — preserve these when a required runtime test did not execute.
+
+The emulator job must consume the Builder job artifact from the same workflow run and must not rebuild the APK. Evidence records the source commit, run ID, package ID, APK SHA-256, API level, launch result, logcat, and screenshot. A fatal startup signal or missing process after launch fails the emulator gate.
+
 ## Environment Matrix
 
 Where practical, validate across:
