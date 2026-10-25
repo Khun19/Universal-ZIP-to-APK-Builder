@@ -497,10 +497,15 @@ async function regenerateFlutterAndroidPlatform(
   try {
     logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
     await execAsync(
-      flutterCommand(
-        flutterExecutor,
-        'create -t app --project-name builder_android_scaffold --platforms=android ' + scaffoldPath,
-      ),
+      flutterCommand(flutterExecutor, [
+        'create',
+        '-t',
+        'app',
+        '--project-name',
+        'builder_android_scaffold',
+        '--platforms=android',
+        scaffoldPath,
+      ]),
       { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
     );
 
@@ -822,9 +827,17 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
   };
 }
 
-function flutterCommand(executor: FlutterExecutor, command: string): string {
-  if (executor.mode === 'native') return executor.commandPrefix + ' ' + command;
-  return executor.commandPrefix + ' ' + command.split(' ').map(shellQuote).join(' ');
+function flutterCommand(executor: FlutterExecutor, command: string | string[]): string {
+  if (typeof command === 'string') {
+    // These call sites use fixed, application-authored Flutter subcommands.
+    if (executor.mode === 'native') return executor.commandPrefix + ' ' + command;
+    return executor.commandPrefix + ' ' + command.split(' ').map(shellQuote).join(' ');
+  }
+
+  // Keep each argument distinct and quote it for both native-shell and PRoot
+  // execution. In particular, generated filesystem paths must never be
+  // concatenated into a shell command as raw user-influenced text.
+  return executor.commandPrefix + ' ' + command.map(shellQuote).join(' ');
 }
 
 export async function executeBuildJob(
