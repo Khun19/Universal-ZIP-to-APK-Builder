@@ -157,3 +157,90 @@ jobs:
             apk-path.txt
           if-no-files-found: error
           retention-days: 14
+
+  emulator-install-launch:
+    name: Emulator install and launch (same APK artifact)
+    needs: builder-zip-to-apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Download APK and build evidence from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: community-chat-demo-builder-apk
+          path: emulator-input
+
+      - name: Verify APK hash, package identity, and source commit
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find emulator-input -maxdepth 2 -type f -name '*.apk' -print -quit)"
+          test -n "$APK" && test -s "$APK"
+          test -s emulator-input/apk-sha256.txt
+          test -s emulator-input/apk-badging.txt
+          EXPECTED_SHA="$(awk 'NR==1 {print $1}' emulator-input/apk-sha256.txt)"
+          ACTUAL_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          test "$EXPECTED_SHA" = "$ACTUAL_SHA"
+          PACKAGE_ID="$(awk -F "'" '/^package:/ {print $2; exit}' emulator-input/apk-badging.txt)"
+          test -n "$PACKAGE_ID"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "package_id=$PACKAGE_ID" >> "$GITHUB_OUTPUT"
+          {
+            echo "SOURCE_COMMIT=$GITHUB_SHA"
+            echo "WORKFLOW_RUN_ID=$GITHUB_RUN_ID"
+            echo "APK_SHA256=$ACTUAL_SHA"
+            echo "PACKAGE_ID=$PACKAGE_ID"
+            echo "APK_PATH=$APK"
+            echo "EMULATOR_INSTALL_LAUNCH=IN PROGRESS"
+          } | tee emulator-evidence.txt
+
+      - name: Install and launch the exact Builder APK on Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p emulator-evidence
+            adb wait-for-device
+            adb shell getprop ro.build.version.sdk | tee emulator-evidence/android-api.txt
+            adb logcat -c
+            adb install -r "\${{ steps.identity.outputs.apk }}"
+            adb shell monkey -p "\${{ steps.identity.outputs.package_id }}" -c android.intent.category.LAUNCHER 1 | tee emulator-evidence/launch.txt
+            sleep 5
+            adb shell pidof "\${{ steps.identity.outputs.package_id }}" | tee emulator-evidence/pid.txt
+            test -s emulator-evidence/pid.txt
+            adb logcat -d -t 4000 > emulator-evidence/logcat.txt
+            if grep -E 'FATAL EXCEPTION|Fatal signal|Process .* has died' emulator-evidence/logcat.txt; then
+              echo "Fatal application startup signal found in logcat" >&2
+              exit 1
+            fi
+            adb shell screencap -p /sdcard/builder-emulator.png
+            adb pull /sdcard/builder-emulator.png emulator-evidence/screenshot.png
+            {
+              echo "SOURCE_COMMIT=$GITHUB_SHA"
+              echo "WORKFLOW_RUN_ID=$GITHUB_RUN_ID"
+              echo "APK_SHA256=$(sha256sum "\${{ steps.identity.outputs.apk }}" | awk '{print $1}')"
+              echo "PACKAGE_ID=\${{ steps.identity.outputs.package_id }}"
+              echo "EMULATOR_INSTALL_LAUNCH=PASS"
+              echo "REAL_DEVICE=NOT RUN"
+            } > emulator-evidence/result.txt
+
+      - name: Upload emulator evidence (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-chat-demo-emulator-evidence
+          path: |
+            emulator-input/apk-sha256.txt
+            emulator-input/apk-badging.txt
+            emulator-evidence.txt
+            emulator-evidence/**
+          if-no-files-found: warn
+          retention-days: 14
