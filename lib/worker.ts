@@ -758,7 +758,7 @@ function shellQuote(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 
-interface FlutterExecutor {
+export interface FlutterExecutor {
   mode: 'native' | 'ubuntu-proot';
   commandPrefix: string;
   displayCommand: string;
@@ -827,7 +827,7 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
   };
 }
 
-function flutterCommand(executor: FlutterExecutor, command: string | string[]): string {
+export function flutterCommand(executor: FlutterExecutor, command: string | string[]): string {
   if (typeof command === 'string') {
     // These call sites use fixed, application-authored Flutter subcommands.
     if (executor.mode === 'native') return executor.commandPrefix + ' ' + command;
