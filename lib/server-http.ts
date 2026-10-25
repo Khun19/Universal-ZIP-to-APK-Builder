@@ -1,6 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import formidable from 'formidable';
-import AdmZip from 'adm-zip';
 import * as path from 'path';
 import * as fs from 'fs';
 import { executeBuildJob } from './worker.ts';
@@ -9,11 +8,12 @@ import {
 } from './analyzer.ts';
 import { determineBuildStrategy } from './strategy.ts';
 import { URL } from 'url';
+import { randomUUID } from 'node:crypto';
 import { listTemplates, getTemplate } from './template-registry';
 import { generateFromTemplate } from './template-generator';
 import { handleBuildRequest } from './server.ts';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -161,17 +161,19 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         return;
       }
 
+      const buildId = `zip-build-${randomUUID()}`;
+      const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
       try {
-        const buildId = `zip-build-${Date.now()}`;
-        const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
-        
-          console.log(`\n📦 [${buildId}] Extracting...`);
-          const zip = new AdmZip(uploadedFile.filepath);
-          const extraction = (await import('./security/src/index.ts')).safeExtractAdmZip(zip, workspaceDir);
-          const filePaths = extraction.filePaths;
+        console.log(`\n📦 [${buildId}] Extracting...`);
+        const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
+        // Read only the root manifest through a fixed, workspace-owned path.
+        // Archive entry names are untrusted input and must not be used in filesystem joins.
+        const packageJson = filePaths.includes('package.json')
+          ? JSON.parse(fs.readFileSync(path.join(workspaceDir, 'package.json'), 'utf8'))
+          : {};
 
         console.log(`🚀 Building APK...`);
-        const analysis = analyzeProjectFiles(filePaths);
+        const analysis = analyzeProjectFiles(filePaths, packageJson);
         if (analysis.projectType === 'Unknown') {
           throw new Error('Unable to determine project type');
         }
@@ -195,12 +197,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
             apkPath: result.outputPath
           }));
         } else {
+          fs.rmSync(workspaceDir, { recursive: true, force: true });
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'APK Build Failed', logs: result.logs }));
         }
       } catch (error: any) {
+        fs.rmSync(workspaceDir, { recursive: true, force: true });
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Server Error', details: error.message }));
+      } finally {
+        fs.rmSync(uploadedFile.filepath, { force: true });
       }
     });
   } else {
