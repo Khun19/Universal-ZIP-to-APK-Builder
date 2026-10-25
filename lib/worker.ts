@@ -801,7 +801,7 @@ async function resolveFlutterExecutor(projectPath: string): Promise<FlutterExecu
         // Fall through to the Ubuntu PRoot Flutter SDK.
       }
     } else {
-      return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter' };
+      return { mode: 'native', commandPrefix: 'flutter', displayCommand: 'flutter', executable: 'flutter', prefixArgs: [] };
     }
   } catch {
     // No native Flutter command; try the configured Ubuntu PRoot SDK.
