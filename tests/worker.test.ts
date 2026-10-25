@@ -11,6 +11,7 @@ import {
   nodeInstallCommand,
   ensureReactNativeTermuxCmakeTooling,
   flutterCommand,
+  runFlutterCreate,
   type FlutterExecutor,
 } from '../lib/worker.ts';
 import { BuildStrategy } from '../lib/strategy.ts';
@@ -377,4 +378,29 @@ test('Flutter scaffold arguments are shell-quoted as distinct arguments', () => 
     flutterCommand(proot, ['create', hostilePath]),
     "proot-distro login 'ubuntu' -- sh -lc 'exec flutter \"$@\"' -- 'create' '/tmp/scaffold with spaces; touch /tmp/builder-pwned'",
   );
+});
+
+
+test('Flutter scaffold invokes execFile with hostile path as one argv item (no shell side effect)', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flutter-execfile-regression-'));
+  const executable = path.join(root, 'fake-flutter.cjs');
+  const projectPath = path.join(root, 'project');
+  const hostilePath = path.join(root, 'scaffold with spaces; touch SHOULD_NOT_EXIST');
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(executable, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));\n', { mode: 0o755 });
+  const executor: FlutterExecutor = {
+    mode: 'native', commandPrefix: executable, displayCommand: executable,
+    executable, prefixArgs: [],
+  };
+  try {
+    const result = await runFlutterCreate(executor, projectPath, hostilePath);
+    const argv = JSON.parse(result.stdout) as string[];
+    assert.deepStrictEqual(argv, [
+      'create', '-t', 'app', '--project-name', 'builder_android_scaffold',
+      '--platforms=android', hostilePath,
+    ]);
+    assert.strictEqual(fs.existsSync(path.join(root, 'SHOULD_NOT_EXIST')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
