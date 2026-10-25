@@ -499,20 +499,7 @@ async function regenerateFlutterAndroidPlatform(
     logs.push('Generating a fresh Flutter Android platform in a temporary scaffold.');
     // Use execFile so scaffoldPath is passed as one argv element and never
     // interpreted by a shell, even when it contains spaces or metacharacters.
-    await execFileAsync(
-      flutterExecutor.executable,
-      [
-        ...flutterExecutor.prefixArgs,
-        'create',
-        '-t',
-        'app',
-        '--project-name',
-        'builder_android_scaffold',
-        '--platforms=android',
-        scaffoldPath,
-      ],
-      { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
-    );
+    await runFlutterCreate(flutterExecutor, projectPath, scaffoldPath);
 
     const generatedAndroidPath = path.join(scaffoldPath, 'android');
     if (!fs.existsSync(path.join(generatedAndroidPath, 'app'))) {
@@ -761,6 +748,29 @@ export function isGradleJavaCompatibilityFailure(error: unknown): boolean {
 
 function shellQuote(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+
+/** Run Flutter scaffold generation without a shell; each path remains one argv item. */
+export async function runFlutterCreate(
+  executor: FlutterExecutor,
+  projectPath: string,
+  scaffoldPath: string,
+): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync(
+    executor.executable,
+    [
+      ...executor.prefixArgs,
+      'create',
+      '-t',
+      'app',
+      '--project-name',
+      'builder_android_scaffold',
+      '--platforms=android',
+      scaffoldPath,
+    ],
+    { cwd: projectPath, timeout: BUILD_TIMEOUT_MS, env: process.env },
+  );
 }
 
 export interface FlutterExecutor {
