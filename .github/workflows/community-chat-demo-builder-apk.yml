@@ -212,10 +212,10 @@ jobs:
             adb wait-for-device
             adb shell getprop ro.build.version.sdk | tee emulator-evidence/android-api.txt
             adb logcat -c
-            adb install -r "\${{ steps.identity.outputs.apk }}"
-            adb shell monkey -p "\${{ steps.identity.outputs.package_id }}" -c android.intent.category.LAUNCHER 1 | tee emulator-evidence/launch.txt
+            adb install -r "${{ steps.identity.outputs.apk }}"
+            adb shell monkey -p "${{ steps.identity.outputs.package_id }}" -c android.intent.category.LAUNCHER 1 | tee emulator-evidence/launch.txt
             sleep 5
-            adb shell pidof "\${{ steps.identity.outputs.package_id }}" | tee emulator-evidence/pid.txt
+            adb shell pidof "${{ steps.identity.outputs.package_id }}" | tee emulator-evidence/pid.txt
             test -s emulator-evidence/pid.txt
             adb logcat -d -t 4000 > emulator-evidence/logcat.txt
             if grep -E 'FATAL EXCEPTION|Fatal signal|Process .* has died' emulator-evidence/logcat.txt; then
@@ -227,8 +227,8 @@ jobs:
             {
               echo "SOURCE_COMMIT=$GITHUB_SHA"
               echo "WORKFLOW_RUN_ID=$GITHUB_RUN_ID"
-              echo "APK_SHA256=$(sha256sum "\${{ steps.identity.outputs.apk }}" | awk '{print $1}')"
-              echo "PACKAGE_ID=\${{ steps.identity.outputs.package_id }}"
+              echo "APK_SHA256=$(sha256sum "${{ steps.identity.outputs.apk }}" | awk '{print $1}')"
+              echo "PACKAGE_ID=${{ steps.identity.outputs.package_id }}"
               echo "EMULATOR_INSTALL_LAUNCH=PASS"
               echo "REAL_DEVICE=NOT RUN"
             } > emulator-evidence/result.txt
