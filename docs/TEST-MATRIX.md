@@ -227,4 +227,3 @@ The helper `scripts/android-emulator-ui-test.py` uses UIAutomator hierarchy text
 ## Android Emulator Runtime Acceptance
 
 The installation prerequisites, host-library checks, acceleration fallback, AVD boot protocol, APK identity gates, framework adapters, failure evidence, and PASS/FAIL definitions are specified in [Android Emulator Requirements and Installation Plan](ANDROID-EMULATOR-REQUIREMENTS.md). Apply this contract to the emulator CI workflow. The current automated fixture covers React Native Community Chat only; other frameworks remain uncovered until their own runtime fixtures and assertions pass.
-
