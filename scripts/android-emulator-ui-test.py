@@ -8,6 +8,7 @@ elements are missing.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -30,7 +31,7 @@ def adb(*args: str, check: bool = True) -> str:
     return result.stdout
 
 
-SCREENSHOT_FAILURES: list[str] = []
+SCREENSHOT_FAILURES: set[str] = set()
 
 
 def capture_screenshot(evidence: Path, name: str) -> None:
@@ -46,6 +47,8 @@ def capture_screenshot(evidence: Path, name: str) -> None:
         )
         if result.returncode == 0 and result.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
             target.write_bytes(result.stdout)
+            SCREENSHOT_FAILURES.discard(name)
+            (evidence / f"{name}-screenshot-error.txt").unlink(missing_ok=True)
             return
         errors.append(
             f"attempt={attempt} exit={result.returncode} "
@@ -53,7 +56,7 @@ def capture_screenshot(evidence: Path, name: str) -> None:
             f"stdout_bytes={len(result.stdout)}"
         )
         time.sleep(1)
-    SCREENSHOT_FAILURES.append(name)
+    SCREENSHOT_FAILURES.add(name)
     (evidence / f"{name}-screenshot-error.txt").write_text("\n".join(errors) + "\n")
 
 
@@ -161,6 +164,43 @@ def wait_for_text(evidence: Path, name: str, target: str, timeout: int = 120) ->
 
 def searchable(node: ET.Element) -> str:
     return " ".join((node.attrib.get("text", ""), node.attrib.get("content-desc", ""))).strip()
+
+
+def assert_profile_counter(root: ET.Element, label: str, expected_value: str) -> ET.Element:
+    """Require the exact numeric TextView paired with a profile-stat label."""
+    label_nodes = [
+        node for node in root.iter()
+        if node.attrib.get("class") == "android.widget.TextView"
+        and node.attrib.get("text", "").strip() == label
+    ]
+    if len(label_nodes) != 1:
+        raise AssertionError(
+            f"Expected one exact Profile counter label {label!r}, found {len(label_nodes)}"
+        )
+
+    label_node = label_nodes[0]
+    parent_by_node = {
+        child: parent for parent in root.iter() for child in parent
+    }
+    row = parent_by_node.get(label_node)
+    if row is None:
+        raise AssertionError(f"Profile counter label {label!r} has no UI row parent")
+
+    row_text_nodes = [
+        node for node in row
+        if node.attrib.get("class") == "android.widget.TextView"
+    ]
+    numeric_nodes = [
+        node for node in row_text_nodes
+        if re.fullmatch(r"\d+", node.attrib.get("text", "").strip())
+    ]
+    observed_values = [node.attrib.get("text", "").strip() for node in numeric_nodes]
+    if len(numeric_nodes) != 1 or observed_values[0] != expected_value:
+        raise AssertionError(
+            f"Profile counter {label!r} expected exact value {expected_value!r} "
+            f"in its sibling TextView row; observed row values={observed_values!r}"
+        )
+    return numeric_nodes[0]
 
 
 def find_node(root: ET.Element, target: str) -> ET.Element:
@@ -334,9 +374,11 @@ def main() -> None:
     # before returning to Chat to check the rendered message text.
     tap_node(root, "Profile")
     root = wait_for_text(evidence, "04-profile-after-send", "Your Demo Profile")
-    profile_labels = [searchable(node) for node in root.iter() if searchable(node)]
-    assert "Messages sent" in profile_labels, "Profile message counter missing"
-    assert "1" in profile_labels, "Profile did not record exactly one sent message"
+    counter_node = assert_profile_counter(root, "Messages sent", "1")
+    print(
+        "PASS: Profile counter row has exact value "
+        f"{counter_node.attrib.get('text', '').strip()!r}"
+    )
     print("PASS: send handler persisted one message")
 
     tap_node(root, "Chat")
@@ -351,12 +393,12 @@ def main() -> None:
     root = wait_for_text(evidence, "07-profile", "Your Demo Profile")
     assert any("Profile" in searchable(node) for node in root.iter()), "Profile screen missing"
     print("PASS: navigate to Profile screen")
-    print("ANDROID_EMULATOR_UI_TEST=PASS")
     if SCREENSHOT_FAILURES:
         raise RuntimeError(
             "UI interactions passed but screenshot evidence is incomplete for: "
-            + ", ".join(SCREENSHOT_FAILURES)
+            + ", ".join(sorted(SCREENSHOT_FAILURES))
         )
+    print("ANDROID_EMULATOR_UI_TEST=PASS")
 
 
 if __name__ == "__main__":
