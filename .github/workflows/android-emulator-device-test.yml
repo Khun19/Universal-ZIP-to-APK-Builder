@@ -403,7 +403,7 @@ jobs:
         if: always()
         timeout-minutes: 2
         env:
-          CANCELLED: ${{ cancelled() }}
+          CANCELLED: ${{ job.status == 'cancelled' }}
           PROVENANCE_OUTCOME: ${{ steps.provenance.outcome }}
           CREATE_AVD_OUTCOME: ${{ steps.create-avd.outcome }}
           BOOT_EMULATOR_OUTCOME: ${{ steps.boot-emulator.outcome }}
