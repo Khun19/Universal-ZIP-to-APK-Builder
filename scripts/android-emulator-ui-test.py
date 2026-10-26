@@ -194,13 +194,35 @@ def assert_profile_counter(root: ET.Element, label: str, expected_value: str) ->
         node for node in row_text_nodes
         if re.fullmatch(r"\d+", node.attrib.get("text", "").strip())
     ]
+    label_bounds = node_bounds(label_node)
+    if label_bounds is None:
+        raise AssertionError(
+            f"Profile counter label {label!r} has invalid UI bounds: "
+            f"{label_node.attrib.get('bounds', '')!r}"
+        )
+    aligned_values = []
+    for node in numeric_nodes:
+        value_bounds = node_bounds(node)
+        if value_bounds is None:
+            continue
+        vertical_overlap = min(label_bounds[3], value_bounds[3]) - max(
+            label_bounds[1], value_bounds[1]
+        )
+        shorter_node_height = min(
+            label_bounds[3] - label_bounds[1],
+            value_bounds[3] - value_bounds[1],
+        )
+        if vertical_overlap > 0 and vertical_overlap * 2 >= shorter_node_height:
+            aligned_values.append(node)
     observed_values = [node.attrib.get("text", "").strip() for node in numeric_nodes]
-    if len(numeric_nodes) != 1 or observed_values[0] != expected_value:
+    aligned_text = [node.attrib.get("text", "").strip() for node in aligned_values]
+    if len(aligned_values) != 1 or aligned_text[0] != expected_value:
         raise AssertionError(
             f"Profile counter {label!r} expected exact value {expected_value!r} "
-            f"in its sibling TextView row; observed row values={observed_values!r}"
+            f"in its vertically aligned sibling TextView; "
+            f"aligned row values={aligned_text!r}, sibling numeric values={observed_values!r}"
         )
-    return numeric_nodes[0]
+    return aligned_values[0]
 
 
 def find_node(root: ET.Element, target: str) -> ET.Element:

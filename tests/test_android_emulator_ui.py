@@ -72,13 +72,11 @@ class ProfileCounterTests(unittest.TestCase):
     def test_reads_exact_counter_textview_in_the_labeled_row(self) -> None:
         root = ET.fromstring(
             '<hierarchy><node class="android.view.ViewGroup">'
-            '<node class="android.view.ViewGroup" resource-id="messages-stat">'
-            '<node class="android.widget.TextView" text="Messages sent" />'
-            '<node class="android.widget.TextView" text="1" />'
-            '</node><node class="android.view.ViewGroup" resource-id="interaction-stat">'
-            '<node class="android.widget.TextView" text="Interactions tested" />'
-            '<node class="android.widget.TextView" text="0" />'
-            '</node></node></hierarchy>'
+            '<node class="android.widget.TextView" text="Messages sent" bounds="[10,100][150,120]" />'
+            '<node class="android.widget.TextView" text="1" bounds="[200,100][220,120]" />'
+            '<node class="android.widget.TextView" text="Interactions tested" bounds="[10,130][170,150]" />'
+            '<node class="android.widget.TextView" text="0" bounds="[200,130][220,150]" />'
+            '</node></hierarchy>'
         )
 
         value_node = ui_test.assert_profile_counter(root, "Messages sent", "1")
@@ -89,13 +87,11 @@ class ProfileCounterTests(unittest.TestCase):
     def test_unrelated_one_does_not_satisfy_messages_sent_counter(self) -> None:
         root = ET.fromstring(
             '<hierarchy><node class="android.view.ViewGroup">'
-            '<node class="android.view.ViewGroup" resource-id="messages-stat">'
-            '<node class="android.widget.TextView" text="Messages sent" />'
-            '<node class="android.widget.TextView" text="0" />'
-            '</node><node class="android.view.ViewGroup" resource-id="interaction-stat">'
-            '<node class="android.widget.TextView" text="Interactions tested" />'
-            '<node class="android.widget.TextView" text="1" />'
-            '</node></node></hierarchy>'
+            '<node class="android.widget.TextView" text="Messages sent" bounds="[10,100][150,120]" />'
+            '<node class="android.widget.TextView" text="0" bounds="[200,100][220,120]" />'
+            '<node class="android.widget.TextView" text="Interactions tested" bounds="[10,130][170,150]" />'
+            '<node class="android.widget.TextView" text="1" bounds="[200,130][220,150]" />'
+            '</node></hierarchy>'
         )
 
         with self.assertRaisesRegex(AssertionError, "Messages sent.*expected exact value '1'"):
