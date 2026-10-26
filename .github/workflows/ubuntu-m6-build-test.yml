@@ -140,10 +140,10 @@ jobs:
           java_properties_output = java_properties_result.stderr + "\n" + java_properties_result.stdout
           java_properties = {}
           for line in java_properties_output.splitlines():
-              if " = " in line:
-                  key, value = line.strip().split(" = ", 1)
-                  if key.startswith("java."):
-                      java_properties[key] = value
+              key, separator, value = line.partition("=")
+              key = key.strip()
+              if separator and key.startswith("java."):
+                  java_properties[key] = value.strip()
           java_identity = {
               "configured_distribution": "temurin",
               "vendor": java_properties.get("java.vendor", "UNKNOWN"),
@@ -217,10 +217,10 @@ jobs:
           java_properties_output = java_properties_result.stderr + "\n" + java_properties_result.stdout
           java_properties = {}
           for line in java_properties_output.splitlines():
-              if " = " in line:
-                  key, value = line.strip().split(" = ", 1)
-                  if key.startswith("java."):
-                      java_properties[key] = value
+              key, separator, value = line.partition("=")
+              key = key.strip()
+              if separator and key.startswith("java."):
+                  java_properties[key] = value.strip()
           java_identity = {
               "configured_distribution": "temurin",
               "vendor": java_properties.get("java.vendor", "UNKNOWN"),
