@@ -75,21 +75,29 @@ jobs:
           echo "BUILD_RUN_ID=$EVENT_RUN_ID" >> "$GITHUB_ENV"
           echo "BUILD_ARTIFACT_ID=$(jq -r .id <<<"$ARTIFACT")" >> "$GITHUB_ENV"
 
-      - name: Checkout exact source commit
+      - name: Checkout workflow code (PR mode checks out exact source commit)
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || inputs.source_commit || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Verify and record source commit
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_COMMIT="$(git rev-parse HEAD)"
           EXPECTED_COMMIT="${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || inputs.source_commit || github.sha }}"
-          test "$SOURCE_COMMIT" = "$EXPECTED_COMMIT"
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            SOURCE_COMMIT="$(git rev-parse HEAD)"
+            test "$SOURCE_COMMIT" = "$EXPECTED_COMMIT"
+          else
+            # In artifact mode, keep executing only the trusted workflow checkout.
+            # The build source SHA is treated as data and checked against run metadata
+            # and the artifact provenance before the APK is installed.
+            SOURCE_COMMIT="$EXPECTED_COMMIT"
+          fi
           echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
-          printf 'source_commit=%s\nworkflow_sha=%s\nworkflow_run_id=%s\nworkflow_run_attempt=%s\n' "$SOURCE_COMMIT" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > source-identity.txt
+          printf 'source_commit=%s\nworkflow_checkout_commit=%s\nworkflow_sha=%s\nworkflow_run_id=%s\nworkflow_run_attempt=%s\n' "$SOURCE_COMMIT" "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > source-identity.txt
 
       - name: Setup Temurin JDK 17
         uses: actions/setup-java@v6
