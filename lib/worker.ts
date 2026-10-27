@@ -85,8 +85,14 @@ export function findPnpmWorkspaceRoot(
 
   let workspaceRoot: string | undefined;
   for (let depth = 0; depth <= 4; depth += 1) {
+    const packageJson = readPackageJson(path.join(current, 'package.json'));
+    const hasPnpmWorkspace = fs.existsSync(path.join(current, 'pnpm-workspace.yaml'));
+    const hasNpmOrYarnWorkspace = Boolean(packageJson?.workspaces) && (
+      fs.existsSync(path.join(current, 'package-lock.json')) ||
+      fs.existsSync(path.join(current, 'yarn.lock'))
+    );
     if (
-      fs.existsSync(path.join(current, 'pnpm-workspace.yaml')) &&
+      (hasPnpmWorkspace || hasNpmOrYarnWorkspace) &&
       (!resolvedBoundary || isPathInsideDirectory(resolvedBoundary, current))
     ) {
       workspaceRoot = current;
