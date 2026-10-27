@@ -350,12 +350,12 @@ jobs:
             sleep 5
           done
           test "$booted" = "1"
-          adb shell settings put global window_animation_scale 0
-          adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
-          adb shell getprop ro.build.version.release | tee .ci-evidence/emulator-android-release.txt
-          adb shell getprop ro.build.version.sdk | tee .ci-evidence/emulator-api-level.txt
-          adb shell getprop ro.product.cpu.abi | tee .ci-evidence/emulator-abi.txt
+          timeout 10s adb shell settings put global window_animation_scale 0
+          timeout 10s adb shell settings put global transition_animation_scale 0
+          timeout 10s adb shell settings put global animator_duration_scale 0
+          timeout 10s adb shell getprop ro.build.version.release | tee .ci-evidence/emulator-android-release.txt
+          timeout 10s adb shell getprop ro.build.version.sdk | tee .ci-evidence/emulator-api-level.txt
+          timeout 10s adb shell getprop ro.product.cpu.abi | tee .ci-evidence/emulator-abi.txt
           adb devices -l | tee .ci-evidence/adb-devices.txt
 
       - name: Install, launch, and test UI interactions
@@ -370,9 +370,9 @@ jobs:
           # after boot. Wait for Android framework readiness, then retry installation
           # only while the emulator remains connected; preserve diagnostics on failure.
           mkdir -p .ci-evidence/install
-          adb shell getprop sys.boot_completed | tee .ci-evidence/install/boot-completed.txt
+          timeout 10s adb shell getprop sys.boot_completed | tee .ci-evidence/install/boot-completed.txt
           for attempt in $(seq 1 24); do
-            if adb shell service check package 2>&1 | tee .ci-evidence/install/package-service.txt | grep -q "found"; then
+            if timeout 10s adb shell service check package 2>&1 | tee .ci-evidence/install/package-service.txt | grep -q "found"; then
               break
             fi
             sleep 5
@@ -385,9 +385,9 @@ jobs:
               break
             fi
             adb devices -l > ".ci-evidence/install/adb-devices-attempt-${attempt}.txt" 2>&1 || true
-            adb shell getprop sys.boot_completed > ".ci-evidence/install/boot-attempt-${attempt}.txt" 2>&1 || true
-            adb shell service check package > ".ci-evidence/install/package-service-attempt-${attempt}.txt" 2>&1 || true
-            adb logcat -d -v threadtime > ".ci-evidence/install/logcat-attempt-${attempt}.txt" 2>&1 || true
+            timeout 10s adb shell getprop sys.boot_completed > ".ci-evidence/install/boot-attempt-${attempt}.txt" 2>&1 || true
+            timeout 10s adb shell service check package > ".ci-evidence/install/package-service-attempt-${attempt}.txt" 2>&1 || true
+            timeout 20s adb logcat -d -v threadtime > ".ci-evidence/install/logcat-attempt-${attempt}.txt" 2>&1 || true
             tail -n 200 .ci-evidence/emulator-console.log > ".ci-evidence/install/emulator-console-attempt-${attempt}.txt" 2>&1 || true
             if ! adb get-state 2>/dev/null | grep -qx device; then
               echo "Emulator disconnected; refusing further install retries"
@@ -398,13 +398,13 @@ jobs:
           if [ "$install_ok" -ne 1 ]; then
             echo "APK installation failed after retries; diagnostic evidence follows"
             adb devices -l || true
-            adb shell getprop sys.boot_completed || true
-            adb shell service check package || true
+            timeout 10s adb shell getprop sys.boot_completed || true
+            timeout 10s adb shell service check package || true
             tail -n 200 .ci-evidence/emulator-console.log || true
             exit 1
           fi
           python3 scripts/android-emulator-ui-test.py --package "$PACKAGE_ID" --evidence-dir .ci-evidence/ui
-          adb logcat -d -v threadtime > .ci-evidence/logcat.txt
+          timeout 30s adb logcat -d -v threadtime > .ci-evidence/logcat.txt
           # The emulator's full logcat includes unrelated system-service process
           # deaths. Fail only on a crash/death attributed to this APK's package.
           python3 - <<'PY'
