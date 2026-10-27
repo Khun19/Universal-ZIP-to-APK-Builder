@@ -44,7 +44,7 @@ The M6 workflow runs the validator after generating the APK and provenance:
 node scripts/apk-identity-gate.mjs \
   --apk .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk \
   --provenance .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json \
-  --expected-commit "$GITHUB_SHA" \
+  --expected-commit "${SOURCE_COMMIT:-$GITHUB_SHA}" \
   --expected-run-id "$GITHUB_RUN_ID" \
   --registry docs/tested-apk-registry.json \
   --output apk-identity-gate-report.json
