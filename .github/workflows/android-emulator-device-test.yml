@@ -34,6 +34,8 @@ jobs:
       ANDROID_API: '35'
       ANDROID_BUILD_TOOLS: '35.0.0'
       ANDROID_IMAGE: 'system-images;android-35;google_apis;x86_64'
+      ANDROID_EMULATOR_REVISION: '37.2.12'
+      ANDROID_PLATFORM_TOOLS_REVISION: '37.0.1'
     steps:
       - name: Checkout exact source revision
         uses: actions/checkout@v7
@@ -91,6 +93,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # sdkmanager resolves these tools to the latest stable package. Keep the
+          # resolved revisions fixed and fail closed if Google's package catalog drifts.
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-${ANDROID_API}" \
@@ -100,9 +104,39 @@ jobs:
             "${ANDROID_IMAGE}"
           mkdir -p .ci-evidence
           sdkmanager --list_installed | tee .ci-evidence/android-sdk-installed-packages.txt
-          awk '/Installed packages:/{installed=1; next} installed && /platform-tools|emulator/ {print}' \
-            .ci-evidence/android-sdk-installed-packages.txt > .ci-evidence/android-sdk-tool-versions.txt
-          test -s .ci-evidence/android-sdk-tool-versions.txt
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          expected = {
+              "emulator": os.environ["ANDROID_EMULATOR_REVISION"],
+              "platform-tools": os.environ["ANDROID_PLATFORM_TOOLS_REVISION"],
+          }
+          installed = {}
+          in_installed_section = False
+          for line in Path(".ci-evidence/android-sdk-installed-packages.txt").read_text().splitlines():
+              if line.strip() == "Installed packages:":
+                  in_installed_section = True
+                  continue
+              if in_installed_section and line.strip().lower().startswith("available packages:"):
+                  break
+              if in_installed_section:
+                  columns = [column.strip() for column in line.split("|")]
+                  if len(columns) >= 2 and columns[0] in expected:
+                      installed[columns[0]] = columns[1]
+
+          mismatches = {
+              package: {"expected": revision, "installed": installed.get(package)}
+              for package, revision in expected.items()
+              if installed.get(package) != revision
+          }
+          if mismatches:
+              raise SystemExit(f"Android SDK tool revision drift: {mismatches}")
+
+          Path(".ci-evidence/android-sdk-tool-versions.txt").write_text(
+              "".join(f"{package}={installed[package]}\n" for package in sorted(expected))
+          )
+          PY
           # Make SDK executables available in this step as well as later steps.
           export PATH="${ANDROID_HOME}/emulator:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/latest/bin:${PATH}"
           {

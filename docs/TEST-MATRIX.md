@@ -222,7 +222,9 @@ Required evidence for this fixture:
 
 The helper `scripts/android-emulator-ui-test.py` uses UIAutomator hierarchy text/content descriptions and calculated element bounds rather than fixed tap coordinates. Missing elements fail the test. Emulator API 35 x86_64 is a CI runtime target and does not replace physical-device acceptance.
 
-**Current status:** `IMPLEMENTED — CI VERIFICATION PENDING` until the new workflow passes on the exact PR head. Integration into M4, M5, and other framework-specific build workflows remains a separate follow-up; do not claim all-framework emulator coverage until each fixture has an explicit test contract and exact-head evidence.
+**Prior PR-head verification:** [Run #40418259332](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40418259332) completed successfully for PR head `716747497232e0c5e7df2f3f7f2e04790fa187b2` against base `262388886ad152c43ff5b490ea3c596fb430404c`. The retained artifact's provenance records build commit `c3237a0b843ad1e7ab786ad42f11ca367675d262` (the synthetic merge of that base and head), so it verifies that merge tree rather than a build checked out directly at the PR head. The follow-up exact-head checkout, fixture lockfile, package assertion, SDK revision enforcement, and bounded install changes remain pending a new run.
+
+**Current status:** `IMPLEMENTED — FOLLOW-UP EXACT-HEAD CI VERIFICATION PENDING`. Integration into M4, M5, and other framework-specific build workflows remains a separate follow-up; do not claim all-framework emulator coverage until each fixture has an explicit test contract and exact-head evidence.
 
 ## Android Emulator Runtime Acceptance
 
