@@ -93,7 +93,13 @@ function listManifestDirs(root: string): string[] {
   const queue: Array<{ dir: string; depth: number }> = [{ dir: root, depth: 0 }];
   while (queue.length && results.length < MAX_MANIFESTS) {
     const current = queue.shift()!;
-    if (fs.existsSync(path.join(current.dir, 'package.json'))) results.push(current.dir);
+    const hasPackage = fs.existsSync(path.join(current.dir, 'package.json'));
+    const hasFlutterManifest = fs.existsSync(path.join(current.dir, 'pubspec.yaml')) && fs.existsSync(path.join(current.dir, 'lib', 'main.dart'));
+    const hasNativeAndroid = hasAndroid(current.dir) && (
+      fs.existsSync(path.join(current.dir, 'build.gradle')) ||
+      fs.existsSync(path.join(current.dir, 'build.gradle.kts'))
+    );
+    if (hasPackage || hasFlutterManifest || hasNativeAndroid) results.push(current.dir);
     if (current.depth >= MAX_DEPTH) continue;
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(current.dir, { withFileTypes: true }); } catch { continue; }
