@@ -103,7 +103,7 @@ export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
   if (isStagedProject) {
     if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
       return {
-        command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+        command: 'pnpm install --ignore-workspace --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
         cwd: projectPath,
       };
     }
