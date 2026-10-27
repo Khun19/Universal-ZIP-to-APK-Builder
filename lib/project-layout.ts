@@ -148,6 +148,22 @@ export function resolveProjectLayout(extractionRoot: string): ProjectLayout {
     });
   }
 
+  // A React Native/Expo app's nested android/ directory is its native
+  // platform project, not a second independent app root. Suppress only this
+  // structural child candidate; independent nested native apps remain ambiguous.
+  const embeddedAndroidRoots = new Set(
+    candidates
+      .filter(parent => parent.framework === 'React Native' || parent.framework === 'Expo')
+      .map(parent => path.resolve(parent.appRoot, 'android')),
+  );
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    const candidate = candidates[index];
+    if (candidate.framework === 'Native Android' && embeddedAndroidRoots.has(path.resolve(candidate.appRoot))) {
+      logs.push(`[Layout] ignored embedded Android platform root: ${candidate.relativeAppRoot}`);
+      candidates.splice(index, 1);
+    }
+  }
+
   // Also support native/Flutter projects that do not have package.json.
   if (!candidates.length && fs.existsSync(path.join(archiveRoot, 'pubspec.yaml')) && fs.existsSync(path.join(archiveRoot, 'lib', 'main.dart'))) {
     candidates.push({ appRoot: archiveRoot, relativeAppRoot: '.', framework: 'Flutter', score: 95, hasAndroidProject: hasAndroid(archiveRoot) });
