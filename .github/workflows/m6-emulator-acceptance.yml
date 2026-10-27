@@ -139,9 +139,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.android/avd"
-          echo "no" | avdmanager create avd --force --name m6-api35 --package "$ANDROID_IMAGE" --device pixel_2
+          # Select the ABI explicitly; otherwise older avdmanager builds can report
+          # an ABI but fail to persist the AVD when SDK package metadata is newer.
+          printf 'no\n' | avdmanager create avd --force --name m6-api35 --package "$ANDROID_IMAGE" --abi google_apis/x86_64 --device pixel_2 2>&1 | tee .ci-evidence/avd-create.log
           emulator -list-avds | tee .ci-evidence/avd-list.txt
-          grep -qx m6-api35 .ci-evidence/avd-list.txt
+          if ! grep -qx m6-api35 .ci-evidence/avd-list.txt; then
+            avdmanager list avd 2>&1 | tee .ci-evidence/avd-manager-list.txt
+            echo "AVD creation did not register m6-api35; see AVD diagnostics." >&2
+            exit 1
+          fi
 
       - name: Boot Android Emulator
         shell: bash
