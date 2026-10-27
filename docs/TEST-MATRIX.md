@@ -210,21 +210,25 @@ Do not convert skipped tests to PASS. A fixture can only receive its final PASS 
 The workflow `.github/workflows/android-emulator-device-test.yml` currently exercises the Community Chat React Native fixture through the actual Builder CLI on GitHub Actions Ubuntu and Android Emulator API 35 (Google APIs, x86_64). It is the first implementation of the shared emulator-testing foundation, not proof that every framework adapter has already been integrated.
 
 Required evidence for this fixture:
-- [ ] APK structure and embedded React Native bundle are valid.
-- [ ] APK package ID, size, SHA-256, source commit and run ID are recorded.
-- [ ] Emulator boots and reports its Android API level and ABI.
-- [ ] APK installs successfully through `adb install`.
-- [ ] Launcher activity starts and Communities UI renders.
-- [ ] Community chat opens and expected starter message is visible.
-- [ ] A local message can be entered and appears in the chat.
-- [ ] Profile screen opens and expected profile text renders.
-- [ ] Screenshot, UI hierarchy XML, emulator log, install output and logcat are uploaded even on failure where available.
+- [x] APK structure and embedded React Native bundle are valid.
+- [x] APK package ID, size, SHA-256, source commit and run ID are recorded.
+- [x] Emulator boots and reports its Android API level and ABI.
+- [x] APK installs successfully through `adb install`.
+- [x] Launcher activity starts and Communities UI renders.
+- [x] Community chat opens and expected starter message is visible.
+- [x] A local message can be entered and appears in the chat.
+- [x] Profile screen opens and expected profile text renders.
+- [x] Screenshot, UI hierarchy XML, emulator log, install output and logcat are uploaded even on failure where available.
 
 The helper `scripts/android-emulator-ui-test.py` uses UIAutomator hierarchy text/content descriptions and calculated element bounds rather than fixed tap coordinates. Missing elements fail the test. Emulator API 35 x86_64 is a CI runtime target and does not replace physical-device acceptance.
 
-**Prior PR-head verification:** [Run #40418259332](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40418259332) completed successfully for PR head `716747497232e0c5e7df2f3f7f2e04790fa187b2` against base `262388886ad152c43ff5b490ea3c596fb430404c`. The retained artifact's provenance records build commit `c3237a0b843ad1e7ab786ad42f11ca367675d262` (the synthetic merge of that base and head), so it verifies that merge tree rather than a build checked out directly at the PR head. The follow-up exact-head checkout, fixture lockfile, package assertion, SDK revision enforcement, and bounded install changes remain pending a new run.
+**Historical run:** [Run #40418259332](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40418259332) succeeded for PR head `716747497232e0c5e7df2f3f7f2e04790fa187b2` against base `262388886ad152c43ff5b490ea3c596fb430404c`, but its provenance records build commit `c3237a0b843ad1e7ab786ad42f11ca367675d262` (the synthetic merge). It is historical merge-tree evidence, not exact-head evidence.
 
-**Current status:** `IMPLEMENTED — FOLLOW-UP EXACT-HEAD CI VERIFICATION PENDING`. Integration into M4, M5, and other framework-specific build workflows remains a separate follow-up; do not claim all-framework emulator coverage until each fixture has an explicit test contract and exact-head evidence.
+**Exact-head PR #91 verification:** [Run #40432300621](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40432300621) completed successfully for build commit and PR head `cfe5f51ff4a39a32851177fe92e73783b9a76a54`, against base `262388886ad152c43ff5b490ea3c596fb430404c`. Artifact `12702078456` (`android-emulator-evidence-40432300621-1`) is 35,080,242 bytes; GitHub artifact metadata reports digest `sha256:b5b435740082b949db74bc4fe38c427fe6d481716960c09ae38db8c78c9683e8`. Its provenance records `apk_sha256=bda7342e310a675bb9cec7cebfff98ca47036e819848c044cf3037e7071b7d98`, matching `.ci-evidence/emulator-apk.sha256`, and `runtime_test_status=PASS`. The recorded application ID is `com.communitychatdemo`; emulator and platform-tools revisions are `37.2.12` and `37.0.1`. The uploaded archive includes the APK, seven UI screenshots and matching hierarchy XML files, install output, emulator logs, logcat, and provenance. The provenance and sidecar entries were inspected via HTTP byte ranges; the full archive/APK was not downloaded for this check.
+
+The companion [Ubuntu M6 build run #40432300671](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40432300671) and [isolated ZIP-to-APK run #40432300672](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40432300672) also passed on source head `cfe5f51ff4a39a32851177fe92e73783b9a76a54`. These are build/provenance checks; the emulator result above is the runtime evidence. Physical-device acceptance remains `NOT RUN`.
+
+**Current status:** `CI-VERIFIED — COMMUNITY CHAT REACT NATIVE FIXTURE` on the exact source revision above. Integration into other framework-specific runtime workflows remains separate; do not claim all-framework emulator coverage until each fixture has its own contract and exact-head evidence.
 
 ## Android Emulator Runtime Acceptance
 
