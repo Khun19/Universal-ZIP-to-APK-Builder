@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { resolveProjectLayout } from '../lib/project-layout.ts';
-import { nodeInstallCommand } from '../lib/worker.ts';
+import { nodeInstallCommand, recoverPnpmWorkspaceConfig } from '../lib/worker.ts';
 
 async function withTemp<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(path.join(tmpdir(), 'builder-project-layout-'));
@@ -88,4 +88,38 @@ test('native Android Gradle project without package.json is still detected', asy
   assert.equal(layout.status, 'selected');
   assert.equal(layout.relativeAppRoot, '.');
   assert.equal(layout.framework, 'Native Android');
+}));
+
+test('missing pnpm workspace config is reconstructed from explicit package.json metadata', async () => withTemp(async temp => {
+  const extraction = path.join(temp, '.workspace', 'cli-build-recovery');
+  await put(extraction, 'package.json', JSON.stringify({
+    name: 'repo',
+    private: true,
+    workspaces: {
+      packages: ['artifacts/*'],
+      catalog: { expo: '52.0.49', react: '18.3.1', 'react-native': '0.76.9' },
+    },
+  }));
+  await put(extraction, 'pnpm-lock.yaml', 'lockfileVersion: 9.0\\n');
+  await put(extraction, 'artifacts/focus-mode/package.json', JSON.stringify({
+    dependencies: { expo: 'catalog:', react: 'catalog:', 'react-native': 'catalog:' },
+  }));
+  const appRoot = path.join(extraction, 'artifacts', 'focus-mode');
+  const result = recoverPnpmWorkspaceConfig(appRoot);
+  assert.equal(result.recovered, true);
+  assert.equal(result.workspaceRoot, extraction);
+  const generated = await import('node:fs/promises').then(fs => fs.readFile(path.join(extraction, 'pnpm-workspace.yaml'), 'utf8'));
+  assert.match(generated, /artifacts\\/\\*/);
+  assert.match(generated, /catalog:/);
+  assert.match(generated, /react-native/);
+}));
+
+test('workspace recovery refuses catalog references without an explicit catalog map', async () => withTemp(async temp => {
+  const extraction = path.join(temp, '.workspace', 'cli-build-no-catalog');
+  await put(extraction, 'package.json', JSON.stringify({ name: 'repo', private: true, workspaces: ['artifacts/*'] }));
+  await put(extraction, 'pnpm-lock.yaml', 'lockfileVersion: 9.0\\n');
+  await put(extraction, 'artifacts/focus-mode/package.json', JSON.stringify({ dependencies: { expo: 'catalog:' } }));
+  const result = recoverPnpmWorkspaceConfig(path.join(extraction, 'artifacts', 'focus-mode'));
+  assert.equal(result.recovered, false);
+  assert.match(result.error ?? '', /no workspaces.catalog map/);
 }));
