@@ -72,7 +72,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          set +o pipefail
           yes | sdkmanager --licenses
+          set -o pipefail
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
 
       - name: Record exact source and toolchain
