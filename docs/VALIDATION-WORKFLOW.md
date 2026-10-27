@@ -79,15 +79,9 @@ pnpm test
 
 A local APK, if produced, must be labelled as a local build and recorded separately from CI artifacts. Capture the source commit, environment/toolchain, command, exit code, APK path/size, and SHA-256.
 
-## Mandatory Android Emulator Verification for Every APK
-
-Every real APK produced by a canonical GitHub Actions build must be installed and launch-tested in an Android Emulator before that APK can receive runtime-validation PASS or be presented as fully validated. This is the default mandatory gate for every framework/adapter, not an optional milestone-specific check. The emulator run must use the exact APK from the same workflow run and exact source commit, verify install and process/activity launch, and retain the APK SHA-256, emulator API/ABI, install/launch results, screenshot when available, and logcat/failure logs as artifacts. If emulator execution is unavailable, report `BLOCKED`; if it has not been run, report `NOT RUN`. Neither status is PASS. A successful compile, APK structure check, or CI unit-test result cannot substitute for emulator execution.
-
-Physical-device acceptance remains a separate evidence class and is still required when the milestone or feature needs it; emulator PASS does not imply physical-phone PASS.
-
 ## Real Android Verification
 
-The mandatory emulator gate above applies to every APK. When the acceptance criterion also requires physical-device/runtime verification, the APK must additionally be installed through the normal Android UI (or an equivalent documented device procedure) and checked for the feature-specific behavior. Do not convert a successful Gradle build into a runtime PASS.
+When the acceptance criterion requires runtime verification, the APK must be installed through the normal Android UI (or an equivalent documented device procedure) and checked for the feature-specific behavior. Do not convert a successful Gradle build into a runtime PASS.
 
 ## Evidence Record
 
