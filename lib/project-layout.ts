@@ -135,8 +135,7 @@ export function resolveProjectLayout(extractionRoot: string): ProjectLayout {
 
   const candidates: ProjectCandidate[] = [];
   for (const dir of listManifestDirs(archiveRoot)) {
-    const pkg = readJson(path.join(dir, 'package.json'));
-    if (!pkg) continue;
+    const pkg = readJson(path.join(dir, 'package.json')) ?? {};
     const signature = frameworkFor(dir, pkg);
     if (!signature.buildable) continue;
     candidates.push({
