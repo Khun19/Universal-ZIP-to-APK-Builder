@@ -116,3 +116,20 @@ The first automated runtime fixture is `.github/workflows/android-emulator-devic
 A runtime failure must remain a failure. Use the screenshot, UI hierarchy, logcat, and Builder build log to identify the failed phase before changing code. Keep the original failure evidence, make the smallest root-cause fix, and rerun the exact-head checks. Never use an earlier APK or another commit's emulator result to mark the new candidate PASS.
 
 This first workflow is the shared foundation and a React Native fixture implementation. M4/Vite, M5/Flutter, native Android, Capacitor, and other adapters must be connected and verified separately before the project can claim emulator coverage for all frameworks. The physical phone remains a separate evidence class.
+
+
+## Emulator Readiness Pilot — Non-blocking
+
+The nested Expo Emulator workflow is a diagnostic/readiness pilot, not the project-wide mandatory release gate. Until the Emulator readiness review is explicitly approved, this pilot must not be described as proving that every Builder-produced APK is Emulator-accepted, and its existence does not change the release policy for unrelated canonical build workflows.
+
+The pilot records separate outcomes:
+- `PASS` — Emulator health, exact fixture APK installation, launch command, process check, and screenshot collection succeeded. This is a limited smoke-test result, not full UI acceptance.
+- `BLOCKED_EMULATOR` — ADB or Emulator did not reach a ready state. Do not mark the APK as failed or passed.
+- `BLOCKED_EVIDENCE` — The expected APK is missing or empty. No APK acceptance decision can be made.
+- `INCONCLUSIVE_INSTALL` / `INCONCLUSIVE_LAUNCH` — The command failed, but the cause is not yet proven to be the APK or Emulator.
+- `FAIL_APP_RUNTIME` — Runtime failure evidence supports an app crash classification.
+- `INCONCLUSIVE_RUNTIME` / `INCONCLUSIVE_EVIDENCE` — Required checks or evidence are insufficient to assign a reliable pass/fail cause.
+
+Each run should retain the exact source SHA, APK SHA-256, emulator API/ABI, health/install/launch/process outputs, logcat, screenshot, and a machine-readable result. Retry and recovery policies must remain bounded; uncertain failures require investigation rather than automatic success.
+
+Before the project activates a mandatory Emulator gate for every canonical APK, a separate readiness review must verify environment stability, APK identity/provenance, test-runner reliability, framework-specific profiles, failure-injection/classification tests, bounded recovery, evidence completeness, repeatability, and non-blocking pilot results. Emulator PASS remains separate from physical-device acceptance.
