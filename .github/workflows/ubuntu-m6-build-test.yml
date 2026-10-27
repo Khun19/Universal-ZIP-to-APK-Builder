@@ -146,8 +146,30 @@ jobs:
             exit 1
           fi
           grep -E 'M6_GRADLE_BUILD_EVIDENCE_(BEGIN|END)|Using the project Gradle Wrapper|Executing Gradle command:|Installed Gradle fallback available:|Executing fallback Gradle command:|Installed Gradle fallback completed successfully|Installed Gradle detected:|Gradle Wrapper bootstrap failed|Gradle Java compatibility' "$BUILD_LOG"
-          echo "GRADLE_VERSION_SOURCE=build-path-log-only"
-          echo "GRADLE_VERSION_PROBE_STATUS=NOT_RUN_POST_BUILD"
+          # Record the Gradle version from the successful build path only.
+          # Never invoke a second wrapper build/version probe after APK creation.
+          if grep -q 'Installed Gradle fallback completed successfully\.' "$BUILD_LOG"; then
+            GRADLE_VERSION_USED="$(grep 'Installed Gradle fallback available:' "$BUILD_LOG" | tail -n 1 | sed 's/.*Installed Gradle fallback available: //')"
+            GRADLE_VERSION_SOURCE="installed-gradle-fallback-build-log"
+          elif grep -q 'Using the project Gradle Wrapper\.' "$BUILD_LOG"; then
+            WRAPPER_URL="$(grep -h -m 1 '^distributionUrl=' "${WRAPPERS[@]}" 2>/dev/null | head -n 1 | cut -d= -f2- || true)"
+            GRADLE_VERSION_USED="$(printf '%s' "$WRAPPER_URL" | sed -nE 's#.*gradle-([0-9][0-9A-Za-z._-]*)-(bin|all)\\.zip.*#\\1#p')"
+            GRADLE_VERSION_SOURCE="successful-project-wrapper-distributionUrl"
+          elif grep -q 'Installed Gradle detected:' "$BUILD_LOG"; then
+            GRADLE_VERSION_USED="$(grep 'Installed Gradle detected:' "$BUILD_LOG" | tail -n 1 | sed 's/.*Installed Gradle detected: //')"
+            GRADLE_VERSION_SOURCE="installed-gradle-build-log"
+          else
+            echo "GRADLE_VERSION_USED=NOT_CAPTURED"
+            echo "GRADLE_VERSION_SOURCE=NOT_CAPTURED"
+            exit 1
+          fi
+          if [ -z "$GRADLE_VERSION_USED" ] || [ "$GRADLE_VERSION_USED" = "unknown version" ]; then
+            echo "GRADLE_VERSION_USED=NOT_CAPTURED"
+            echo "GRADLE_VERSION_SOURCE=$GRADLE_VERSION_SOURCE"
+            exit 1
+          fi
+          echo "GRADLE_VERSION_USED=$GRADLE_VERSION_USED"
+          echo "GRADLE_VERSION_SOURCE=$GRADLE_VERSION_SOURCE"
           echo "=== Android SDK packages ==="
           sdkmanager --list_installed
 
