@@ -157,7 +157,7 @@ jobs:
           test -s "$APK_PATH"
           test -s "$(dirname "$APK_PATH")/SHA256SUMS.txt"
           test -s "$(dirname "$APK_PATH")/provenance.json"
-          (cd "$(dirname "$APK_PATH")" && sha256sum --check SHA256SUMS.txt)
+          sha256sum --check "$(dirname "$APK_PATH")/SHA256SUMS.txt"
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$(dirname "$APK_PATH")/provenance.json" \
