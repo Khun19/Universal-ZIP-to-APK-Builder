@@ -74,7 +74,9 @@ function frameworkFor(root: string, pkg: Record<string, unknown>): { framework: 
   if (android && (fs.existsSync(path.join(root, 'build.gradle')) || fs.existsSync(path.join(root, 'build.gradle.kts')))) {
     return { framework: 'Native Android', score: 88, buildable: true };
   }
-  if (typeof deps.vite === 'string' && (typeof deps.react === 'string' || fs.existsSync(path.join(root, 'index.html')))) {
+  const hasViteConfig = fs.readdirSync(root, { withFileTypes: true }).some(entry => entry.isFile() && /^vite\\.config\\.[^/]+$/.test(entry.name));
+  const hasWebEntry = fs.existsSync(path.join(root, 'index.html'));
+  if (typeof deps.vite === 'string' && (typeof deps.react === 'string' || hasWebEntry) && (hasWebEntry || hasViteConfig)) {
     return { framework: 'React/Vite Web App', score: 70, buildable: true };
   }
   // A workspace root with only tooling and workspace references is not itself an app.
