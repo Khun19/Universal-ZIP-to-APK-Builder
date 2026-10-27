@@ -34,23 +34,23 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout exact commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9.15.4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20.19.5
           cache: pnpm
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -120,41 +120,11 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          script: |
-            set +e
-            APK="tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk"
-            PACKAGE="com.rzbuilder.fixture.focusmode"
-            adb wait-for-device
-            adb install -r "$APK" > emulator-install.txt 2>&1
-            install_rc=$?
-            if [ "$install_rc" -eq 0 ]; then
-              adb shell monkey -p "$PACKAGE" 1 > emulator-launch.txt 2>&1
-              launch_rc=$?
-              sleep 8
-              adb shell pidof "$PACKAGE" > emulator-process.txt 2>&1
-              process_rc=$?
-              adb exec-out screencap -p > emulator-screenshot.png 2>/dev/null
-              adb logcat -d > emulator-logcat.txt 2>&1
-            else
-              launch_rc=99
-              process_rc=99
-              printf 'Install failed; launch not attempted.\n' > emulator-launch.txt
-              adb logcat -d > emulator-logcat.txt 2>&1
-            fi
-            {
-              echo "SOURCE_SHA=$GITHUB_SHA"
-              echo "APK_SHA256=$(sha256sum "$APK" | cut -d ' ' -f1)"
-              echo "EMULATOR_API=35"
-              echo "EMULATOR_ABI=x86_64"
-              echo "INSTALL_EXIT_CODE=$install_rc"
-              echo "LAUNCH_EXIT_CODE=$launch_rc"
-              echo "PROCESS_CHECK_EXIT_CODE=$process_rc"
-            } | tee -a apk-evidence.txt
-            test "$install_rc" -eq 0 && test "$launch_rc" -eq 0 && test "$process_rc" -eq 0
+          script: bash scripts/ci/test-nested-expo-emulator.sh
 
       - name: Upload APK and build/emulator evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nested-expo-debug-apk-${{ github.sha }}
           path: |
