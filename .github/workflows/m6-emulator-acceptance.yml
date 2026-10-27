@@ -138,10 +138,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.android/avd"
+          # Pin the AVD manager and emulator to the same user/AVD directories.
+          # Hosted runners may otherwise create AVDs under ~/.config/.android/avd
+          # while emulator -list-avds searches ~/.android/avd.
+          export ANDROID_USER_HOME="$HOME/.android"
+          export ANDROID_EMULATOR_HOME="$HOME/.android"
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          printf 'ANDROID_USER_HOME=%s\nANDROID_EMULATOR_HOME=%s\nANDROID_AVD_HOME=%s\n' "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$ANDROID_AVD_HOME"
           # Select the ABI explicitly; otherwise older avdmanager builds can report
           # an ABI but fail to persist the AVD when SDK package metadata is newer.
           printf 'no\n' | avdmanager create avd --force --name m6-api35 --package "$ANDROID_IMAGE" --abi google_apis/x86_64 --device pixel_2 2>&1 | tee .ci-evidence/avd-create.log
+          test -d "$ANDROID_AVD_HOME/m6-api35.avd"
           emulator -list-avds | tee .ci-evidence/avd-list.txt
           if ! grep -qx m6-api35 .ci-evidence/avd-list.txt; then
             avdmanager list avd 2>&1 | tee .ci-evidence/avd-manager-list.txt
