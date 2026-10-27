@@ -1073,6 +1073,15 @@ export async function executeBuildJob(
       // when the project explicitly declares the Expo runtime dependency.
       const usesExpo = typeof dependencies.expo === 'string';
 
+      const workspaceRecovery = recoverPnpmWorkspaceConfig(projectPath);
+      if (workspaceRecovery.error) {
+        logs.push(`[Workspace recovery] BLOCKED — ${workspaceRecovery.error}`);
+        return { success: false, logs, error: workspaceRecovery.error };
+      }
+      if (workspaceRecovery.recovered) {
+        logs.push(`[Workspace recovery] Reconstructed pnpm-workspace.yaml in isolated build workspace at ${workspaceRecovery.workspaceRoot}; original ZIP contents remain unchanged.`);
+      }
+
       const installPlan = nodeInstallCommand(projectPath);
       logs.push(
         `Installing React Native dependencies from ${installPlan.cwd}: ${installPlan.command}`,
@@ -1086,9 +1095,36 @@ export async function executeBuildJob(
         if (installResult.stdout) logs.push(`[Dependency stdout]: ${installResult.stdout.slice(-4000)}`);
         if (installResult.stderr) logs.push(`[Dependency stderr]: ${installResult.stderr.slice(-2000)}`);
       } catch (installError: any) {
-        const message = `React Native dependency installation failed: ${commandErrorText(installError)}`;
-        logs.push(`Error: ${message}`);
-        return { success: false, logs, error: message };
+        const installErrorText = commandErrorText(installError);
+        const lockfileRecoveryAllowed = workspaceRecovery.recovered &&
+          installPlan.command.startsWith('pnpm install') &&
+          /frozen-lockfile|ERR_PNPM_OUTDATED_LOCKFILE|lockfile.*(config|out of date|incompatible)|cannot install with.*frozen/i.test(installErrorText);
+        if (lockfileRecoveryAllowed) {
+          const recoveryCommand = installPlan.command.replace('--frozen-lockfile', '--no-frozen-lockfile');
+          logs.push(`[Workspace recovery] Frozen lockfile was incompatible with recovered workspace metadata; retrying only in the isolated extraction: ${recoveryCommand}`);
+          try {
+            const recoveryResult = await execAsync(recoveryCommand, {
+              cwd: installPlan.cwd,
+              timeout: BUILD_TIMEOUT_MS,
+              env: process.env,
+            });
+            if (recoveryResult.stdout) logs.push(`[Dependency recovery stdout]: ${recoveryResult.stdout.slice(-4000)}`);
+            if (recoveryResult.stderr) logs.push(`[Dependency recovery stderr]: ${recoveryResult.stderr.slice(-2000)}`);
+            const lockfilePath = path.join(installPlan.cwd, 'pnpm-lock.yaml');
+            if (fs.existsSync(lockfilePath)) {
+              const lockHash = crypto.createHash('sha256').update(fs.readFileSync(lockfilePath)).digest('hex');
+              logs.push(`[Workspace recovery] Isolated lockfile regenerated; SHA-256 ${lockHash}. Source archive was not modified.`);
+            }
+          } catch (recoveryError: any) {
+            const message = `React Native dependency installation and isolated lockfile recovery failed: ${commandErrorText(recoveryError)}`;
+            logs.push(`Error: ${message}`);
+            return { success: false, logs, error: message };
+          }
+        } else {
+          const message = `React Native dependency installation failed: ${installErrorText}`;
+          logs.push(`Error: ${message}`);
+          return { success: false, logs, error: message };
+        }
       }
 
       if (!findAndroidProjectRoot(projectPath) && usesExpo) {
