@@ -69,10 +69,10 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
   const appFilePaths = appRelativeRoot === '.'
     ? filePaths
     : filePaths.map((filePath) => {
-        const normalized = filePath.replace(/\\\\/g, '/');
+        const normalized = filePath.replace(/\\/g, '/');
         const relative = path.isAbsolute(filePath)
           ? path.relative(projectPath, filePath).split(path.sep).join('/')
-          : normalized.replace(/^\\.\\//, '');
+          : normalized.replace(/^\.\//, '');
         return relative.startsWith(appRelativeRoot + '/')
           ? relative.slice(appRelativeRoot.length + 1)
           : '';
