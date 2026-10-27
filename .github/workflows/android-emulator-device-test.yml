@@ -38,6 +38,7 @@ jobs:
       - name: Checkout exact source revision
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Run Android Emulator UI regression tests
@@ -97,6 +98,11 @@ jobs:
             "ndk;26.1.10909125" \
             "emulator" \
             "${ANDROID_IMAGE}"
+          mkdir -p .ci-evidence
+          sdkmanager --list_installed | tee .ci-evidence/android-sdk-installed-packages.txt
+          awk '/Installed packages:/{installed=1; next} installed && /platform-tools|emulator/ {print}' \
+            .ci-evidence/android-sdk-installed-packages.txt > .ci-evidence/android-sdk-tool-versions.txt
+          test -s .ci-evidence/android-sdk-tool-versions.txt
           # Make SDK executables available in this step as well as later steps.
           export PATH="${ANDROID_HOME}/emulator:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/latest/bin:${PATH}"
           {
@@ -171,6 +177,7 @@ jobs:
           set -euo pipefail
           cd examples/react-native-chat-demo
           test -s package.json
+          test -s pnpm-lock.yaml
           test -s App.js
           test -s index.js
           zip -r "$GITHUB_WORKSPACE/community-chat-demo.zip" . \
@@ -201,6 +208,7 @@ jobs:
           aapt dump badging "$APK" | tee emulator-apk-badging.txt
           PACKAGE_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" emulator-apk-badging.txt | head -n 1)"
           test -n "$PACKAGE_ID"
+          test "$PACKAGE_ID" = 'com.communitychatdemo'
           SHA256="$(sha256sum "$APK" | awk '{print $1}')"
           SIZE="$(stat -c '%s' "$APK")"
           echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
@@ -230,6 +238,7 @@ jobs:
           from pathlib import Path
           build_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
           build_tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+          sdk_tools = Path(".ci-evidence/android-sdk-tool-versions.txt").read_text().splitlines()
           record = {
               "schema_version": 2,
               "evidence_type": "android-emulator-test",
@@ -244,6 +253,7 @@ jobs:
               "apk_path": os.environ["APK_PATH"],
               "apk_size_bytes": int(os.environ["APK_SIZE"]),
               "apk_sha256": os.environ["APK_SHA256"],
+              "android_sdk_tool_versions": sdk_tools,
               "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
               "runtime_test_status": "PENDING"
           }
@@ -336,7 +346,7 @@ jobs:
           install_ok=0
           for attempt in 1 2 3; do
             echo "APK install attempt $attempt/3" | tee -a .ci-evidence/adb-install.log
-            if adb install -r "$APK_PATH" 2>&1 | tee -a .ci-evidence/adb-install.log; then
+            if timeout 120s adb install -r "$APK_PATH" 2>&1 | tee -a .ci-evidence/adb-install.log; then
               install_ok=1
               break
             fi
