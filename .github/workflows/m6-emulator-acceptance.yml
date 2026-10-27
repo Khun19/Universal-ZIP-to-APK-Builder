@@ -1,0 +1,302 @@
+name: M6 Exact APK Emulator Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/fixtures/react-native-project/**'
+      - 'tests/react-native-pipeline.test.ts'
+      - 'lib/**'
+      - '.github/workflows/m6-emulator-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m6-emulator-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-apk-emulator-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      ANDROID_API: '35'
+      ANDROID_IMAGE: system-images;android-35;google_apis;x86_64
+      APK_PATH: .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk
+      PACKAGE_ID: com.builder.m6reactnative
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify and record source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          EXPECTED_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$SOURCE_COMMIT" = "$EXPECTED_COMMIT"
+          echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+          printf 'source_commit=%s\nworkflow_sha=%s\nworkflow_run_id=%s\nworkflow_run_attempt=%s\n' "$SOURCE_COMMIT" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > source-identity.txt
+
+      - name: Setup Temurin JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.23.0
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+          packages: platform-tools emulator
+
+      - name: Install Android SDK and Emulator packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes libpulse0 libnss3 libx11-xcb1 libxcomposite1 libxcursor1 libxi6 libxtst6 libxrandr2 libxrender1 libfontconfig1 libxkbcommon0
+          sdkmanager --install "platform-tools" "platforms;android-34" "platforms;android-35" "build-tools;34.0.0" "ndk;25.2.9519653" "ndk;26.1.10909125" "cmake;3.22.1" "emulator" "$ANDROID_IMAGE"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/build-tools/34.0.0" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          # GITHUB_PATH is applied to later steps, not this running shell.
+          export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          java -version 2> java-version.txt
+          node --version > node-version.txt
+          pnpm --version > pnpm-version.txt
+          adb version > adb-version.txt
+          emulator -version > emulator-version.txt
+          sdkmanager --list_installed > android-sdk-installed.txt
+          ldd "$ANDROID_HOME/emulator/emulator" | tee emulator-ldd.txt
+          if grep -q "not found" emulator-ldd.txt; then exit 1; fi
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Build and validate M6 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
+          test -s "$APK_PATH"
+          unzip -t "$APK_PATH" | tee apk-zip-test.txt
+          unzip -Z1 "$APK_PATH" > apk-entries.txt
+          grep -qx 'AndroidManifest.xml' apk-entries.txt
+          grep -qx 'assets/index.android.bundle' apk-entries.txt
+          aapt dump badging "$APK_PATH" | tee apk-badging.txt
+          grep -q "package: name='$PACKAGE_ID'" apk-badging.txt
+          mkdir -p .ci-evidence/ui
+          APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
+          echo "$APK_SHA256  $APK_PATH" | tee .ci-evidence/apk.sha256
+          echo "APK_SHA256=$APK_SHA256" >> "$GITHUB_ENV"
+          export APK_SHA256
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          apk = Path(os.environ["APK_PATH"])
+          version = subprocess.run(["java", "-version"], capture_output=True, text=True, check=True)
+          props = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True, check=True)
+          values = {}
+          for line in (props.stderr + "\n" + props.stdout).splitlines():
+              key, sep, value = line.partition("=")
+              key = key.strip()
+              if sep and key.startswith("java."): values[key] = value.strip()
+          record = {
+              "schema_version": 1, "evidence_type": "m6-exact-apk-emulator-acceptance",
+              "source_commit": os.environ["SOURCE_COMMIT"], "workflow_sha": os.environ["GITHUB_SHA"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"], "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "application_id": os.environ["PACKAGE_ID"], "apk_path": str(apk),
+              "apk_size_bytes": apk.stat().st_size, "apk_sha256": os.environ["APK_SHA256"],
+              "jdk": {"configured_distribution": "temurin", "vendor": values.get("java.vendor", "UNKNOWN"),
+                      "version": values.get("java.version", "UNKNOWN"), "runtime_version": values.get("java.runtime.version", "UNKNOWN"),
+                      "java_version_output": (version.stderr or version.stdout).strip()},
+              "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
+              "runtime_test_status": "PENDING"
+          }
+          Path(".ci-evidence/emulator-test-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+          PY
+
+      - name: Create AVD
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pin the AVD manager and emulator to the same user/AVD directories.
+          # Hosted runners may otherwise create AVDs under ~/.config/.android/avd
+          # while emulator -list-avds searches ~/.android/avd.
+          export ANDROID_USER_HOME="$HOME/.android"
+          export ANDROID_EMULATOR_HOME="$HOME/.android"
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          printf 'ANDROID_USER_HOME=%s\nANDROID_EMULATOR_HOME=%s\nANDROID_AVD_HOME=%s\n' "$ANDROID_USER_HOME" "$ANDROID_EMULATOR_HOME" "$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$ANDROID_AVD_HOME"
+          # Select the ABI explicitly; otherwise older avdmanager builds can report
+          # an ABI but fail to persist the AVD when SDK package metadata is newer.
+          printf 'no\n' | avdmanager create avd --force --name m6-api35 --package "$ANDROID_IMAGE" --abi google_apis/x86_64 --device pixel_2 2>&1 | tee .ci-evidence/avd-create.log
+          test -d "$ANDROID_AVD_HOME/m6-api35.avd"
+          emulator -list-avds | tee .ci-evidence/avd-list.txt
+          if ! grep -qx m6-api35 .ci-evidence/avd-list.txt; then
+            avdmanager list avd 2>&1 | tee .ci-evidence/avd-manager-list.txt
+            echo "AVD creation did not register m6-api35; see AVD diagnostics." >&2
+            exit 1
+          fi
+
+      - name: Boot Android Emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+          if emulator -accel-check > .ci-evidence/accel-check.txt 2>&1; then MODE=on; else MODE=off; export ANDROID_I_WANT_MY_TCG=yes; fi
+          echo "acceleration_mode=$MODE" > .ci-evidence/emulator-runtime-config.txt
+          nohup emulator -avd m6-api35 -accel "$MODE" -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > .ci-evidence/emulator-console.log 2>&1 &
+          echo $! > .ci-evidence/emulator.pid
+          timeout 120s adb wait-for-device
+          for attempt in $(seq 1 90); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then break; fi
+            sleep 5
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb devices -l | tee .ci-evidence/adb-devices.txt
+          adb shell getprop ro.build.version.sdk > .ci-evidence/android-api.txt
+          adb shell getprop ro.product.cpu.abi > .ci-evidence/android-abi.txt
+
+      - name: Install, launch, and capture UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb install -r "$APK_PATH" 2>&1 | tee .ci-evidence/adb-install.txt
+          adb shell pm path "$PACKAGE_ID" | tee .ci-evidence/package-path.txt
+          grep -q '/base.apk' .ci-evidence/package-path.txt
+          adb shell am force-stop "$PACKAGE_ID"
+          adb shell am start -W -n "$PACKAGE_ID/.MainActivity" 2>&1 | tee .ci-evidence/launch.txt
+          grep -Eq 'Status:[[:space:]]+ok' .ci-evidence/launch.txt
+          for attempt in $(seq 1 30); do
+            if adb shell pidof "$PACKAGE_ID" | grep -Eq '[0-9]+'; then break; fi
+            sleep 2
+          done
+          adb shell pidof "$PACKAGE_ID" | tee .ci-evidence/app-pid.txt
+          test -s .ci-evidence/app-pid.txt
+          adb exec-out screencap -p > .ci-evidence/ui/01-launch.png
+          python3 - <<'PY'
+          import time, xml.etree.ElementTree as ET, subprocess
+          from pathlib import Path
+          target = Path(".ci-evidence/ui/01-launch.xml")
+          deadline = time.monotonic() + 120
+          labels = []
+          while time.monotonic() < deadline:
+              d = subprocess.run(["adb","shell","uiautomator","dump","/sdcard/window.xml"],capture_output=True,text=True,timeout=45)
+              p = subprocess.run(["adb","pull","/sdcard/window.xml",str(target)],capture_output=True,text=True,timeout=30)
+              if d.returncode == 0 and p.returncode == 0 and target.exists():
+                  try:
+                      root = ET.parse(target).getroot()
+                      labels = [v for n in root.iter() for v in (n.attrib.get("text",""),n.attrib.get("content-desc","")) if v]
+                      if "M6 React Native direct build fixture" in labels and "Tap count: 0" in labels and "Increment tap count" in labels: break
+                  except ET.ParseError: pass
+              time.sleep(3)
+          else: raise SystemExit("Expected M6 UI labels missing after launch: " + repr(labels))
+          Path(".ci-evidence/ui/01-launch-visible-labels.txt").write_text("\n".join(labels) + "\n")
+          PY
+
+      - name: Tap UI control and verify state change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess, time, re, xml.etree.ElementTree as ET
+          from pathlib import Path
+          out = Path(".ci-evidence/ui")
+          def dump(name):
+              remote = "/sdcard/" + name + ".xml"
+              local = out / (name + ".xml")
+              subprocess.run(["adb","shell","uiautomator","dump",remote],check=True,capture_output=True,text=True,timeout=45)
+              subprocess.run(["adb","pull",remote,str(local)],check=True,capture_output=True,text=True,timeout=30)
+              return ET.parse(local).getroot()
+          root = dump("02-before-tap")
+          button = next((n for n in root.iter() if n.attrib.get("content-desc") == "Increment tap count"),None)
+          if button is None: raise SystemExit("Accessible Increment tap count button missing")
+          bounds = [int(v) for v in re.findall(r"-?\d+",button.attrib.get("bounds",""))]
+          if len(bounds) != 4: raise SystemExit("Invalid button bounds: " + repr(button.attrib.get("bounds")))
+          x,y = (bounds[0]+bounds[2])//2,(bounds[1]+bounds[3])//2
+          subprocess.run(["adb","shell","input","tap",str(x),str(y)],check=True,timeout=20)
+          time.sleep(2)
+          root = dump("03-after-tap")
+          labels = [v for n in root.iter() for v in (n.attrib.get("text",""),n.attrib.get("content-desc","")) if v]
+          if "Tap count: 1" not in labels: raise SystemExit("Tap interaction did not update count to 1: " + repr(labels))
+          Path(".ci-evidence/ui/03-after-tap-visible-labels.txt").write_text("\n".join(labels)+"\n")
+          print("PASS: tapped Increment tap count; visible state changed from 0 to 1")
+          PY
+          adb exec-out screencap -p > .ci-evidence/ui/03-after-tap.png
+          adb logcat -d -v threadtime > .ci-evidence/logcat.txt
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          package = re.escape(os.environ["PACKAGE_ID"])
+          lines = Path(".ci-evidence/logcat.txt").read_text(errors="replace").splitlines()
+          failures = []
+          for i,line in enumerate(lines):
+              if "FATAL EXCEPTION" in line and any(re.search(r"\bProcess:\s*"+package+r"\s*,\s*PID:\s*\d+",x) for x in lines[i:i+50]): failures.append(line)
+              if re.search(r"\bProcess\s+"+package+r"\s+\(pid\s+\d+\)\s+has died\b",line): failures.append(line)
+          if failures: raise SystemExit("App-specific crash found: " + "\n".join(failures))
+          record_path = Path(".ci-evidence/emulator-test-provenance.json")
+          record = __import__("json").loads(record_path.read_text())
+          record["runtime_test_status"] = "PASS"
+          record["test_scope"] = ["install","launch","UI hierarchy","screenshots","tap Increment tap count","verify Tap count: 1","app-specific logcat crash scan"]
+          record_path.write_text(__import__("json").dumps(record,indent=2,sort_keys=True)+"\n")
+          PY
+          sha256sum "$APK_PATH" | tee .ci-evidence/apk.sha256.final
+          test "$(awk '{print $1}' .ci-evidence/apk.sha256.final)" = "$APK_SHA256"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = json.loads(Path(".ci-evidence/emulator-test-provenance.json").read_text())
+          assert p["source_commit"] == os.environ["SOURCE_COMMIT"]
+          assert p["apk_sha256"] == os.environ["APK_SHA256"]
+          assert p["workflow_run_id"] == os.environ["GITHUB_RUN_ID"]
+          assert p["runtime_test_status"] == "PASS"
+          print("M6_EMULATOR_ACCEPTANCE=PASS")
+          print("SOURCE_COMMIT=" + p["source_commit"])
+          print("APK_SHA256=" + p["apk_sha256"])
+          print("WORKFLOW_RUN_ID=" + p["workflow_run_id"])
+          PY
+
+      - name: Upload APK and Emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: m6-exact-apk-emulator-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .ci-evidence/
+            source-identity.txt
+            java-version.txt
+            node-version.txt
+            pnpm-version.txt
+            adb-version.txt
+            emulator-version.txt
+            android-sdk-installed.txt
+            emulator-ldd.txt
+            apk-zip-test.txt
+            apk-entries.txt
+            apk-badging.txt
+            ${{ env.APK_PATH }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30

@@ -134,7 +134,26 @@ jobs:
           application_id = next((line.split("name=\x27", 1)[1].split("\x27", 1)[0] for line in badging.splitlines() if line.startswith("package: name=\x27")), None)
           if not application_id:
               raise SystemExit("Could not read application ID from APK manifest")
+          java_version_result = subprocess.run(["java", "-version"], capture_output=True, text=True, check=True)
+          java_version_output = (java_version_result.stderr or java_version_result.stdout).strip()
+          java_properties_result = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True, check=True)
+          java_properties_output = java_properties_result.stderr + "\n" + java_properties_result.stdout
+          java_properties = {}
+          for line in java_properties_output.splitlines():
+              key, separator, value = line.partition("=")
+              key = key.strip()
+              if separator and key.startswith("java."):
+                  java_properties[key] = value.strip()
+          java_identity = {
+              "configured_distribution": "temurin",
+              "vendor": java_properties.get("java.vendor", "UNKNOWN"),
+              "version": java_properties.get("java.version", "UNKNOWN"),
+              "runtime_version": java_properties.get("java.runtime.version", "UNKNOWN"),
+              "java_version_output": java_version_output,
+          }
+          print(json.dumps({"jdk": java_identity, "run_id": os.environ["GITHUB_RUN_ID"]}, indent=2))
           provenance = {
+              "jdk": java_identity,
               "application_id": application_id,
               "source_commit": os.environ["SOURCE_COMMIT"],
               "workflow_sha": os.environ["WORKFLOW_SHA"],
@@ -192,7 +211,26 @@ jobs:
           app_id = next((line.split("name=\x27", 1)[1].split("\x27", 1)[0] for line in badging.splitlines() if line.startswith("package: name=\x27")), None)
           if not app_id:
               raise SystemExit("Could not read application ID from bare-scaffold APK")
+          java_version_result = subprocess.run(["java", "-version"], capture_output=True, text=True, check=True)
+          java_version_output = (java_version_result.stderr or java_version_result.stdout).strip()
+          java_properties_result = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True, check=True)
+          java_properties_output = java_properties_result.stderr + "\n" + java_properties_result.stdout
+          java_properties = {}
+          for line in java_properties_output.splitlines():
+              key, separator, value = line.partition("=")
+              key = key.strip()
+              if separator and key.startswith("java."):
+                  java_properties[key] = value.strip()
+          java_identity = {
+              "configured_distribution": "temurin",
+              "vendor": java_properties.get("java.vendor", "UNKNOWN"),
+              "version": java_properties.get("java.version", "UNKNOWN"),
+              "runtime_version": java_properties.get("java.runtime.version", "UNKNOWN"),
+              "java_version_output": java_version_output,
+          }
+          print(json.dumps({"jdk": java_identity, "run_id": os.environ["GITHUB_RUN_ID"]}, indent=2))
           provenance = {
+              "jdk": java_identity,
               "application_id": app_id,
               "source_commit": os.environ["SOURCE_COMMIT"],
               "workflow_sha": os.environ["WORKFLOW_SHA"],
