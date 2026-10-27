@@ -1,0 +1,142 @@
+name: Nested Expo Emulator Readiness Pilot
+
+on:
+  pull_request:
+    branches: [main, fix/issue-104-nested-app-root-20261028]
+    paths:
+      - 'lib/project-layout.ts'
+      - 'lib/server.ts'
+      - 'lib/worker.ts'
+      - 'tests/project-layout.test.ts'
+      - 'tests/fixtures/nested-expo-monorepo/**'
+      - '.github/workflows/nested-expo-build.yml'
+      - 'scripts/ci/test-nested-expo-emulator.sh'
+      - 'docs/VALIDATION-WORKFLOW.md'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/project-layout.ts'
+      - 'lib/server.ts'
+      - 'lib/worker.ts'
+      - 'tests/project-layout.test.ts'
+      - 'tests/fixtures/nested-expo-monorepo/**'
+      - '.github/workflows/nested-expo-build.yml'
+      - 'scripts/ci/test-nested-expo-emulator.sh'
+      - 'docs/VALIDATION-WORKFLOW.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nested-expo-emulator-pilot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  expo-emulator-pilot:
+    name: Nested Expo APK — Emulator readiness pilot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20.19.5
+          cache: pnpm
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure runner-provided Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="/usr/local/lib/android/sdk"
+          test -d "$SDK_ROOT/cmdline-tools"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMANAGER"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+      - name: Install Android platform and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +o pipefail
+          yes | sdkmanager --licenses
+          set -o pipefail
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Record exact source and toolchain
+        run: |
+          echo "SOURCE_SHA=$GITHUB_SHA"
+          node --version
+          pnpm --version
+          java -version
+          sdkmanager --list_installed
+
+      - name: Install fixture workspace dependencies
+        run: pnpm install --no-frozen-lockfile --config.node-linker=hoisted
+        working-directory: tests/fixtures/nested-expo-monorepo
+
+      - name: Generate native Android project from nested Expo app
+        run: pnpm exec expo prebuild --platform android --no-install
+        working-directory: tests/fixtures/nested-expo-monorepo/artifacts/focus-mode
+
+      - name: Build real debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        working-directory: tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android
+
+      - name: Validate APK and calculate SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -Z1 "$APK" | grep -Fx "AndroidManifest.xml"
+          echo "APK_SHA256=$(sha256sum "$APK" | cut -d ' ' -f1)" | tee apk-evidence.txt
+          stat --printf='APK_SIZE_BYTES=%s\n' "$APK" | tee -a apk-evidence.txt
+          echo "SOURCE_SHA=$GITHUB_SHA" | tee -a apk-evidence.txt
+          echo "BUILD_STATUS=APK_PRESENT_AND_MANIFEST_VALID" | tee -a apk-evidence.txt
+
+      - name: Run Emulator readiness pilot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          script: bash scripts/ci/test-nested-expo-emulator.sh
+
+      - name: Upload APK and diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nested-expo-emulator-pilot-${{ github.sha }}
+          path: |
+            tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk
+            apk-evidence.txt
+            emulator-health.txt
+            emulator-install.txt
+            emulator-launch.txt
+            emulator-process.txt
+            emulator-screenshot.png
+            emulator-logcat.txt
+            emulator-result.json
+          if-no-files-found: warn
+          retention-days: 7
