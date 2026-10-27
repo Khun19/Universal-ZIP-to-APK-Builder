@@ -169,6 +169,7 @@ jobs:
           APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
           echo "$APK_SHA256  $APK_PATH" | tee .ci-evidence/apk.sha256
           echo "APK_SHA256=$APK_SHA256" >> "$GITHUB_ENV"
+          export APK_SHA256
           python3 - <<'PY'
           import json, os, subprocess
           from pathlib import Path
