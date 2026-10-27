@@ -10,6 +10,8 @@ import {
   findPnpmWorkspaceRoot,
   nodeInstallCommand,
   ensureReactNativeTermuxCmakeTooling,
+  flutterCommand,
+  type FlutterExecutor,
 } from '../lib/worker.ts';
 import { BuildStrategy } from '../lib/strategy.ts';
 import * as fs from 'fs';
@@ -412,4 +414,31 @@ test('Configures x86_64 PRoot CMake/Ninja wrappers for React Native Termux build
     else process.env.BUILDER_X86_64_PROOT_DISTRO = previous.distro;
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('Flutter scaffold arguments are shell-quoted as distinct arguments', () => {
+  const native: FlutterExecutor = {
+    mode: 'native',
+    commandPrefix: 'flutter',
+    displayCommand: 'flutter',
+    executable: 'flutter',
+    prefixArgs: [],
+  };
+  const hostilePath = "/tmp/scaffold with spaces; touch /tmp/builder-pwned";
+  assert.equal(
+    flutterCommand(native, ['create', '--platforms=android', hostilePath]),
+    "flutter 'create' '--platforms=android' '/tmp/scaffold with spaces; touch /tmp/builder-pwned'",
+  );
+
+  const proot: FlutterExecutor = {
+    mode: 'ubuntu-proot',
+    commandPrefix: "proot-distro login 'ubuntu' -- sh -lc 'exec flutter \"$@\"' --",
+    displayCommand: 'proot-distro login ubuntu -- flutter',
+    executable: 'proot-distro',
+    prefixArgs: ['login', 'ubuntu', '--', 'sh', '-lc', 'exec flutter "$@"', '--'],
+  };
+  assert.equal(
+    flutterCommand(proot, ['create', hostilePath]),
+    "proot-distro login 'ubuntu' -- sh -lc 'exec flutter \"$@\"' -- 'create' '/tmp/scaffold with spaces; touch /tmp/builder-pwned'",
+  );
 });
