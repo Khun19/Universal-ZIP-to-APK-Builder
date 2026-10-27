@@ -145,7 +145,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 
   // 3. ZIP Upload လက်ခံမည့်အပိုင်း
   if (req.method === 'POST' && req.url === '/api/upload-zip') {
-    const form = formidable({ maxFileSize: 50 * 1024 * 1024, keepExtensions: true });
+    // Keep upload temporaries in a dedicated directory owned by this server.
+    // Cleanup below reconstructs the target from this fixed directory and the
+    // generated basename, rather than deleting an arbitrary path value.
+    const uploadTempDir = path.resolve(process.cwd(), '.workspace', '.uploads');
+    fs.mkdirSync(uploadTempDir, { recursive: true });
+    const form = formidable({
+      uploadDir: uploadTempDir,
+      maxFileSize: 50 * 1024 * 1024,
+      keepExtensions: true,
+    });
 
     form.parse(req, async (err, fields, files) => {
       if (err) {
@@ -164,13 +173,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       const buildId = `zip-build-${randomUUID()}`;
       const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
       try {
-          console.log(`\n📦 [${buildId}] Extracting...`);
-          const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
-          // Only read the root manifest through a fixed, workspace-owned path.
-          // Archive entry names are untrusted input and must not be used in filesystem joins.
-          const packageJson = filePaths.includes('package.json')
-            ? JSON.parse(fs.readFileSync(path.join(workspaceDir, 'package.json'), 'utf8'))
-            : {};
+        console.log(`\n📦 [${buildId}] Extracting...`);
+        const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
+        // Read only the root manifest through a fixed, workspace-owned path.
+        // Archive entry names are untrusted input and must not be used in filesystem joins.
+        const parsedPackageJson: unknown = filePaths.includes('package.json')
+          ? JSON.parse(fs.readFileSync(path.join(workspaceDir, 'package.json'), 'utf8'))
+          : {};
+        const packageJson = parsedPackageJson && typeof parsedPackageJson === 'object' && !Array.isArray(parsedPackageJson)
+          ? parsedPackageJson as Record<string, unknown>
+          : {};
 
         console.log(`🚀 Building APK...`);
         const analysis = analyzeProjectFiles(filePaths, packageJson);
@@ -206,7 +218,13 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Server Error', details: error.message }));
       } finally {
-        fs.rmSync(uploadedFile.filepath, { force: true });
+        const uploadTempPath = path.resolve(
+          uploadTempDir,
+          path.basename(uploadedFile.filepath),
+        );
+        if (path.dirname(uploadTempPath) === uploadTempDir) {
+          fs.rmSync(uploadTempPath, { force: true });
+        }
       }
     });
   } else {
