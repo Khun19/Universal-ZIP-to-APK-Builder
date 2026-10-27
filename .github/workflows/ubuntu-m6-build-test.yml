@@ -22,24 +22,24 @@ jobs:
 
     steps:
       - name: Checkout exact commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
           cache: gradle
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22.13.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.23.0
 
@@ -49,7 +49,7 @@ jobs:
           which pnpm
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: 12266719
           accept-android-sdk-licenses: true
@@ -104,9 +104,52 @@ jobs:
           echo "Workflow checkout/merge SHA: $WORKFLOW_SHA"
 
       - name: Run M6 React Native pipeline test
+        shell: bash
         run: |
+          set -euo pipefail
           pnpm exec tsx --test tests/apk-identity-gate.test.ts
-          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts tests/react-native-bare-scaffold.test.ts
+          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts tests/react-native-bare-scaffold.test.ts 2>&1 | tee "$GITHUB_WORKSPACE/m6-react-native-pipeline-test.log"
+
+      - name: Audit generated Android toolchain versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXTURE="tests/fixtures/react-native-project"
+          GENERATED=".workspace/m6-react-native-direct-integration/android"
+          echo "=== Requested CI toolchain ==="
+          java -version
+          node --version
+          pnpm --version
+          echo "=== Fixture framework and AGP declarations ==="
+          node -e 'const p=require("./tests/fixtures/react-native-project/package.json"); console.log("react-native="+p.dependencies["react-native"]); console.log("react="+p.dependencies["react"])'
+          grep -nE "com.android.application|com.facebook.react" "$FIXTURE/android/build.gradle"
+          echo "=== Gradle version and command evidence from the successful build path ==="
+          BUILD_LOG="$GITHUB_WORKSPACE/m6-react-native-pipeline-test.log"
+          if [ ! -s "$BUILD_LOG" ]; then
+            echo "GRADLE_BUILD_EVIDENCE_STATUS=NOT_CAPTURED"
+            exit 1
+          fi
+          grep -E 'M6_GRADLE_BUILD_EVIDENCE_(BEGIN|END)|Using the project Gradle Wrapper|Executing Gradle command:|Installed Gradle fallback available:|Executing fallback Gradle command:|Installed Gradle fallback completed successfully|Installed Gradle detected:|Gradle Wrapper bootstrap failed|Gradle Java compatibility' "$BUILD_LOG" || true
+          mapfile -t WRAPPERS < <(find "$GENERATED" -path '*/gradle/wrapper/gradle-wrapper.properties' -type f -print 2>/dev/null || true)
+          for wrapper in "${WRAPPERS[@]}"; do
+            echo "GRADLE_WRAPPER_FILE=$wrapper"
+            grep -E '^distributionUrl=' "$wrapper" || true
+          done
+          # Do not launch a second Gradle process after the APK build; it could
+          # download a distribution, fail independently, or report another version.
+          if ! grep -q 'M6_GRADLE_BUILD_EVIDENCE_BEGIN' "$BUILD_LOG" || ! grep -q 'M6_GRADLE_BUILD_EVIDENCE_END' "$BUILD_LOG"; then
+            echo "GRADLE_BUILD_EVIDENCE_STATUS=NOT_CAPTURED"
+            exit 1
+          fi
+          if ! grep -Eq 'Executing Gradle command:|Executing fallback Gradle command:' "$BUILD_LOG"; then
+            echo "GRADLE_BUILD_COMMAND_STATUS=NOT_CAPTURED"
+            exit 1
+          fi
+          grep -E 'M6_GRADLE_BUILD_EVIDENCE_(BEGIN|END)|Using the project Gradle Wrapper|Executing Gradle command:|Installed Gradle fallback available:|Executing fallback Gradle command:|Installed Gradle fallback completed successfully|Installed Gradle detected:|Gradle Wrapper bootstrap failed|Gradle Java compatibility' "$BUILD_LOG"
+          echo "GRADLE_VERSION_SOURCE=build-path-log-only"
+          echo "GRADLE_VERSION_PROBE_STATUS=NOT_RUN_POST_BUILD"
+          echo "=== Android SDK packages ==="
+          sdkmanager --list_installed
 
       - name: Find APK
         run: |
@@ -255,7 +298,7 @@ jobs:
             --output bare-scaffold-apk-identity-gate-report.json
 
       - name: Upload APK checksum and provenance
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: m6-build-apk
           path: |
