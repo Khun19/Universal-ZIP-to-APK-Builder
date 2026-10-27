@@ -113,12 +113,57 @@ jobs:
           echo "SOURCE_SHA=$GITHUB_SHA" | tee -a apk-evidence.txt
           echo "BUILD_STATUS=APK_PRESENT_AND_MANIFEST_VALID" | tee -a apk-evidence.txt
 
-      - name: Upload APK and evidence
+      - name: Install and launch APK in Android Emulator
+        id: emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            set +e
+            APK="tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk"
+            PACKAGE="com.rzbuilder.fixture.focusmode"
+            adb wait-for-device
+            adb install -r "$APK" > emulator-install.txt 2>&1
+            install_rc=$?
+            if [ "$install_rc" -eq 0 ]; then
+              adb shell monkey -p "$PACKAGE" 1 > emulator-launch.txt 2>&1
+              launch_rc=$?
+              sleep 8
+              adb shell pidof "$PACKAGE" > emulator-process.txt 2>&1
+              process_rc=$?
+              adb exec-out screencap -p > emulator-screenshot.png 2>/dev/null
+              adb logcat -d > emulator-logcat.txt 2>&1
+            else
+              launch_rc=99
+              process_rc=99
+              printf 'Install failed; launch not attempted.\n' > emulator-launch.txt
+              adb logcat -d > emulator-logcat.txt 2>&1
+            fi
+            {
+              echo "SOURCE_SHA=$GITHUB_SHA"
+              echo "APK_SHA256=$(sha256sum "$APK" | cut -d ' ' -f1)"
+              echo "EMULATOR_API=35"
+              echo "EMULATOR_ABI=x86_64"
+              echo "INSTALL_EXIT_CODE=$install_rc"
+              echo "LAUNCH_EXIT_CODE=$launch_rc"
+              echo "PROCESS_CHECK_EXIT_CODE=$process_rc"
+            } | tee -a apk-evidence.txt
+            test "$install_rc" -eq 0 && test "$launch_rc" -eq 0 && test "$process_rc" -eq 0
+
+      - name: Upload APK and build/emulator evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nested-expo-debug-apk-${{ github.sha }}
           path: |
             tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk
             apk-evidence.txt
-          if-no-files-found: error
+            emulator-install.txt
+            emulator-launch.txt
+            emulator-process.txt
+            emulator-screenshot.png
+            emulator-logcat.txt
+          if-no-files-found: warn
           retention-days: 7
