@@ -32,8 +32,10 @@ permissions:
   actions: read
 
 concurrency:
-  group: m6-emulator-acceptance-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Keep build-triggered and manually dispatched acceptance runs isolated.
+  # Never cancel an in-progress acceptance run merely because another trigger arrives.
+  group: m6-emulator-acceptance-${{ github.event.pull_request.number || github.event.workflow_run.id || inputs.artifact_run_id || github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   exact-apk-emulator-acceptance:
