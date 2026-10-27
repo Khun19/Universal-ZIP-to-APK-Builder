@@ -72,14 +72,63 @@ jobs:
           test -n "$SDKMANAGER"
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
+      - name: Diagnose host network, DNS, HTTPS, and proxy configuration
+        id: network-preflight
+        shell: bash
+        run: |
+          set +e
+          REPORT=network-diagnostics.txt
+          {
+            echo "CHECKED_AT_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "CLASSIFICATION=NETWORK_OR_DEPENDENCY_SETUP"
+            for name in dl.google.com redirector.gvt1.com registry.npmjs.org; do
+              echo "DNS_HOST=$name"
+              getent ahosts "$name" 2>&1
+              echo "DNS_EXIT_CODE=$?"
+            done
+            for url in https://dl.google.com/android/repository/repository2-1.xml https://registry.npmjs.org/; do
+              echo "HTTPS_URL=$url"
+              curl --location --silent --show-error --output /dev/null --max-time 20 --write-out 'HTTP_CODE=%{http_code} DNS_SECONDS=%{time_namelookup} CONNECT_SECONDS=%{time_connect} TLS_SECONDS=%{time_appconnect} TOTAL_SECONDS=%{time_total}\n' "$url"
+              echo "HTTPS_EXIT_CODE=$?"
+            done
+            if [ -n "${HTTPS_PROXY:-}${https_proxy:-}${HTTP_PROXY:-}${http_proxy:-}${ALL_PROXY:-}${all_proxy:-}" ]; then
+              echo "PROXY_CONFIGURED=true"
+            else
+              echo "PROXY_CONFIGURED=false"
+            fi
+            echo "PROXY_VALUES_REDACTED=true"
+          } > "$REPORT" 2>&1
+          cat "$REPORT"
+          # Diagnostics are non-fatal by themselves; later SDK/dependency step outcomes
+          # decide whether setup is blocked. Never infer an Emulator failure from DNS.
+          exit 0
+
       - name: Install Android platform and build tools
+        id: sdk-install
         shell: bash
         run: |
           set -euo pipefail
           set +o pipefail
           yes | sdkmanager --licenses
           set -o pipefail
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+          start_ms="$(date +%s%3N)"
+          set +e
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1" > sdk-install.log 2>&1
+          rc=$?
+          set -e
+          end_ms="$(date +%s%3N)"
+          {
+            echo "SDK_INSTALL_EXIT_CODE=$rc"
+            echo "SDK_INSTALL_DURATION_MS=$((end_ms - start_ms))"
+            if [ "$rc" -eq 0 ]; then
+              echo "SDK_SETUP_RESULT=PASS"
+            else
+              echo "SDK_SETUP_RESULT=FAIL"
+              echo "FAILURE_PHASE=SDK_SETUP_OR_PACKAGE_DOWNLOAD"
+            fi
+          } | tee -a sdk-install.log
+          cat sdk-install.log
+          exit "$rc"
 
       - name: Record exact source and toolchain
         run: |
@@ -89,8 +138,41 @@ jobs:
           java -version
           sdkmanager --list_installed
 
+      - name: Record host resource baseline
+        shell: bash
+        run: |
+          {
+            echo "CAPTURED_AT_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "DISK_USAGE"
+            df -h "$GITHUB_WORKSPACE" /tmp
+            echo "MEMORY"
+            free -h
+            echo "CPU"
+            nproc
+            echo "LOAD_AVERAGE"
+            cat /proc/loadavg
+          } > host-resource-baseline.txt
+          cat host-resource-baseline.txt
+
       - name: Install fixture workspace dependencies
-        run: pnpm install --no-frozen-lockfile --config.node-linker=hoisted
+        run: |
+          set +e
+          start_ms="$(date +%s%3N)"
+          pnpm install --no-frozen-lockfile --config.node-linker=hoisted > dependency-install.log 2>&1
+          rc=$?
+          end_ms="$(date +%s%3N)"
+          {
+            echo "DEPENDENCY_INSTALL_EXIT_CODE=$rc"
+            echo "DEPENDENCY_INSTALL_DURATION_MS=$((end_ms - start_ms))"
+            if [ "$rc" -eq 0 ]; then
+              echo "DEPENDENCY_SETUP_RESULT=PASS"
+            else
+              echo "DEPENDENCY_SETUP_RESULT=FAIL"
+              echo "FAILURE_PHASE=DEPENDENCY_SETUP"
+            fi
+          } | tee -a dependency-install.log
+          cat dependency-install.log
+          exit "$rc"
         working-directory: tests/fixtures/nested-expo-monorepo
 
       - name: Generate native Android project from nested Expo app
@@ -131,7 +213,12 @@ jobs:
           path: |
             tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk
             apk-evidence.txt
+            network-diagnostics.txt
+            sdk-install.log
+            dependency-install.log
+            host-resource-baseline.txt
             emulator-health.txt
+            emulator-adb-before.txt
             emulator-install.txt
             emulator-launch.txt
             emulator-process.txt
