@@ -37,7 +37,7 @@ payload = {
 }
 with open("emulator-result.json", "w", encoding="utf-8") as f:
     json.dump(payload, f, indent=2)
-    f.write("\\n")
+    f.write("\n")
 PY
   {
     echo "EMULATOR_RESULT=$STATUS"
@@ -95,7 +95,7 @@ if ! command -v adb >/dev/null 2>&1; then
   STATUS="BLOCKED_EMULATOR"
   REASON="adb executable is unavailable; SDK/tool setup failure must be inspected before assigning an Emulator runtime cause"
   HEALTH_RC=127
-  printf '%s\\n' "$REASON" > emulator-health.txt
+  printf '%s\n' "$REASON" > emulator-health.txt
   write_result
   exit 20
 fi
@@ -104,11 +104,11 @@ fi
 adb devices -l > emulator-adb-before.txt 2>&1 || true
 timeout 60 adb wait-for-device >> emulator-adb-before.txt 2>&1
 wait_rc=$?
-device_state="$(timeout 10 adb get-state 2>/dev/null | tr -d '\\r')"
+device_state="$(timeout 10 adb get-state 2>/dev/null | tr -d '\r')"
 boot_completed=""
 package_manager_ready=0
 for attempt in $(seq 1 24); do
-  boot_completed="$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\\r' || true)"
+  boot_completed="$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
   if [[ "$device_state" == "device" && "$boot_completed" == "1" ]]; then
     if timeout 10 adb shell cmd package list packages >/dev/null 2>&1; then
       package_manager_ready=1
@@ -117,7 +117,7 @@ for attempt in $(seq 1 24); do
     fi
   fi
   sleep 5
-  device_state="$(timeout 10 adb get-state 2>/dev/null | tr -d '\\r' || true)"
+  device_state="$(timeout 10 adb get-state 2>/dev/null | tr -d '\r' || true)"
 done
 HEALTH_END_MS="$(date +%s%3N)"
 HEALTH_PROBE_MS=$((HEALTH_END_MS - HEALTH_START_MS))
@@ -127,7 +127,7 @@ if [[ "$wait_rc" -ne 0 || "$device_state" != "device" || "$boot_completed" != "1
   STATUS="BLOCKED_EMULATOR"
   REASON="Emulator/ADB readiness failed within bounded probe: wait_rc=$wait_rc device_state=$device_state sys_boot_completed=$boot_completed package_manager_ready=$package_manager_ready"
   collect_diagnostics
-  printf 'ADB_STATE=%s\\nSYS_BOOT_COMPLETED=%s\\nPACKAGE_MANAGER_READY=%s\\nREADINESS_PROBE_MS=%s\\n' "$device_state" "$boot_completed" "$package_manager_ready" "$HEALTH_PROBE_MS" >> emulator-health.txt
+  printf 'ADB_STATE=%s\nSYS_BOOT_COMPLETED=%s\nPACKAGE_MANAGER_READY=%s\nREADINESS_PROBE_MS=%s\n' "$device_state" "$boot_completed" "$package_manager_ready" "$HEALTH_PROBE_MS" >> emulator-health.txt
   collect_logcat
   write_result
   exit 20
@@ -153,7 +153,7 @@ collect_diagnostics
 if [[ ! -s "$APK" ]]; then
   STATUS="BLOCKED_EVIDENCE"
   REASON="Expected APK file is missing or empty: $APK"
-  printf '%s\\n' "$REASON" > emulator-install.txt
+  printf '%s\n' "$REASON" > emulator-install.txt
   collect_logcat
   write_result
   exit 21
