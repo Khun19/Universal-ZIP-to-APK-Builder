@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Focus Mode Fixture",
+    "slug": "focus-mode-fixture",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "android": {
+      "package": "com.rzbuilder.fixture.focusmode"
+    }
+  }
+}
