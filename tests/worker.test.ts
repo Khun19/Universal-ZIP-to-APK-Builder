@@ -54,6 +54,70 @@ test('Installs extracted projects inside .workspace locally, not at the reposito
   }
 });
 
+test('Keeps a staged pnpm upload scoped to its extraction root instead of the host workspace', () => {
+  const workspaceRoot = path.resolve('.');
+  const projectPath = path.join(workspaceRoot, '.workspace', 'staged-pnpm-isolation-test');
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(projectPath, 'package.json'),
+    JSON.stringify({ name: 'staged-pnpm-isolation-test', private: true }),
+  );
+  fs.writeFileSync(path.join(projectPath, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+
+  try {
+    assert.strictEqual(findPnpmWorkspaceRoot(projectPath), workspaceRoot);
+    assert.strictEqual(findPnpmWorkspaceRoot(projectPath, projectPath), undefined);
+
+    const plan = nodeInstallCommand(projectPath);
+    assert.strictEqual(plan.cwd, projectPath);
+    assert.notStrictEqual(plan.cwd, workspaceRoot);
+    assert.match(plan.command, /^pnpm install/);
+    assert.match(plan.command, /--config\.node-linker=hoisted/);
+    assert.match(plan.command, /--frozen-lockfile/);
+    assert.match(plan.command, /--ignore-workspace/);
+  } finally {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('Accepts a pnpm workspace declared inside the staged upload boundary', () => {
+  const workspaceRoot = path.resolve('.');
+  const projectPath = path.join(workspaceRoot, '.workspace', 'staged-owned-pnpm-workspace-test');
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(projectPath, 'package.json'),
+    JSON.stringify({ name: 'staged-owned-pnpm-workspace-test', private: true }),
+  );
+  fs.writeFileSync(path.join(projectPath, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+  fs.writeFileSync(path.join(projectPath, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+
+  try {
+    assert.strictEqual(findPnpmWorkspaceRoot(projectPath, projectPath), projectPath);
+
+    const plan = nodeInstallCommand(projectPath);
+    assert.strictEqual(plan.cwd, projectPath);
+    assert.match(plan.command, /--frozen-lockfile/);
+    assert.doesNotMatch(plan.command, /--ignore-workspace/);
+  } finally {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('Does not resolve a pnpm workspace outside the supplied extraction boundary', () => {
+  const workspaceRoot = path.resolve('.');
+  const projectPath = path.join(workspaceRoot, '.workspace', 'staged-boundary-test');
+  fs.mkdirSync(projectPath, { recursive: true });
+
+  try {
+    assert.strictEqual(
+      findPnpmWorkspaceRoot(path.resolve(projectPath, '..'), projectPath),
+      undefined,
+    );
+  } finally {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('Keeps standalone pnpm projects outside a workspace', () => {
   const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zip2apk-standalone-pnpm-'));
   fs.mkdirSync(projectPath, { recursive: true });
