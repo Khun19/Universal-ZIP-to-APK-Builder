@@ -118,10 +118,12 @@ test("HTTP /api/upload-zip rejects malicious ZIP and leaves no workspace output"
   skip: !enabled,
   timeout: 30_000,
 }, async () => {
+  const port = await getAvailablePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
   const server = spawn("pnpm", ["exec", "tsx", "lib/server-http.ts"], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PORT: "3000" },
+    env: { ...process.env, PORT: String(port) },
   });
   let logs = "";
   server.stdout?.on("data", (chunk) => { logs += chunk.toString(); });
@@ -130,7 +132,6 @@ test("HTTP /api/upload-zip rejects malicious ZIP and leaves no workspace output"
     ? fs.readdirSync(".workspace").filter((name) => name.startsWith("zip-build-"))
     : [];
   try {
-    const baseUrl = "http://127.0.0.1:3000";
     await waitForServer(server, baseUrl);
     // Use raw ZIP header rewriting so these names reach the HTTP extractor
     // unchanged (including backslashes and unzip pattern metacharacters).
