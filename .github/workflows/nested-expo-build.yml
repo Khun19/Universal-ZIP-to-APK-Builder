@@ -158,7 +158,7 @@ jobs:
         run: |
           set +e
           start_ms="$(date +%s%3N)"
-          pnpm install --no-frozen-lockfile --config.node-linker=hoisted > dependency-install.log 2>&1
+          pnpm install --no-frozen-lockfile --config.node-linker=hoisted > "$GITHUB_WORKSPACE/dependency-install.log" 2>&1
           rc=$?
           end_ms="$(date +%s%3N)"
           {
@@ -170,8 +170,8 @@ jobs:
               echo "DEPENDENCY_SETUP_RESULT=FAIL"
               echo "FAILURE_PHASE=DEPENDENCY_SETUP"
             fi
-          } | tee -a dependency-install.log
-          cat dependency-install.log
+          } | tee -a "$GITHUB_WORKSPACE/dependency-install.log"
+          cat "$GITHUB_WORKSPACE/dependency-install.log"
           exit "$rc"
         working-directory: tests/fixtures/nested-expo-monorepo
 
