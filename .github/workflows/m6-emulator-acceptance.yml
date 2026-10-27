@@ -49,21 +49,43 @@ jobs:
       BUILD_ARTIFACT_NAME: m6-build-apk
     steps:
       - name: Verify build run and artifact identity
-        if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
+        if: always()
         id: build
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT_RUN_ID: ${{ github.event.workflow_run.id || inputs.artifact_run_id }}
-          EVENT_ARTIFACT_ID: ${{ inputs.artifact_id }}
-          EXPECTED_SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.source_commit }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id || inputs.artifact_run_id || '' }}
+          EVENT_ARTIFACT_ID: ${{ inputs.artifact_id || '' }}
+          EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || inputs.source_commit }}
           TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ -z "$EVENT_RUN_ID" || "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
           [[ -z "$EVENT_ARTIFACT_ID" || "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
           [[ "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          test "$TRIGGER_CONCLUSION" = success
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # Wait for the M6 build workflow for this exact PR head, then consume its artifact.
+            found=false
+            for attempt in $(seq 1 90); do
+              RUNS="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/ubuntu-m6-build-test.yml/runs?head_sha=$EXPECTED_SOURCE_COMMIT&event=pull_request&per_page=100")"
+              RUN="$(jq -cer --arg sha "$EXPECTED_SOURCE_COMMIT" '[.workflow_runs[] | select(.head_sha == $sha and .event == "pull_request")] | sort_by(.run_number) | last // empty' <<<"$RUNS" 2>/dev/null || true)"
+              if [ -n "$RUN" ]; then
+                RUN_STATUS="$(jq -r .status <<<"$RUN")"
+                RUN_CONCLUSION="$(jq -r '.conclusion // ""' <<<"$RUN")"
+                if [ "$RUN_STATUS" = completed ]; then
+                  test "$RUN_CONCLUSION" = success || { echo "Exact-head M6 build did not pass: $RUN_CONCLUSION" >&2; exit 1; }
+                  EVENT_RUN_ID="$(jq -r .id <<<"$RUN")"
+                  found=true
+                  break
+                fi
+              fi
+              sleep 30
+            done
+            test "$found" = true || { echo "Timed out waiting for successful M6 build on exact PR head $EXPECTED_SOURCE_COMMIT" >&2; exit 1; }
+          else
+            [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
+            test "$TRIGGER_CONCLUSION" = success
+          fi
           RUN_JSON="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$EVENT_RUN_ID")"
           RUN_SHA="$(jq -r .head_sha <<<"$RUN_JSON")"
           RUN_CONCLUSION="$(jq -r .conclusion <<<"$RUN_JSON")"
@@ -149,7 +171,7 @@ jobs:
           if grep -q "not found" emulator-ldd.txt; then exit 1; fi
 
       - name: Download exact build artifact
-        if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
         uses: actions/download-artifact@v4
         with:
           name: m6-build-apk
@@ -158,7 +180,7 @@ jobs:
           path: .
 
       - name: Validate exact artifact provenance and checksum
-        if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           BUILD_RUN_ID: ${{ steps.build.outputs.run_id }}
@@ -213,7 +235,7 @@ jobs:
         run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
       - name: Build and validate M6 APK
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.build.outputs.run_id == ''
         shell: bash
         run: |
           set -euo pipefail

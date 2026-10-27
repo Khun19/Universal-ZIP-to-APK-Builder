@@ -88,6 +88,16 @@ test(
       })),
     });
 
+    // Preserve the actual build-path evidence for CI's toolchain audit. Do not
+    // infer the build's Gradle source from a post-build wrapper probe.
+    console.log('M6_GRADLE_BUILD_EVIDENCE_BEGIN');
+    for (const line of result.logs.filter((entry) =>
+      /Using the project Gradle Wrapper|Executing Gradle command:|Installed Gradle fallback available:|Executing fallback Gradle command:|Installed Gradle fallback completed successfully|Installed Gradle detected:|Gradle Wrapper bootstrap failed|Gradle Java compatibility/i.test(entry),
+    )) {
+      console.log(line);
+    }
+    console.log('M6_GRADLE_BUILD_EVIDENCE_END');
+
     assert.strictEqual(result.success, true, result.error || result.logs.join('\n'));
     assert.strictEqual(result.projectType, 'React Native');
     assert.strictEqual(result.strategyName, 'react-native');
