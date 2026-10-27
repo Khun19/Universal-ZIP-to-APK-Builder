@@ -53,10 +53,19 @@ function isPathInsideDirectory(directory: string, candidate: string): boolean {
  * Uploaded projects are extracted directly into a child of .workspace. Treat
  * that path as an isolation boundary without depending on host-repository files.
  */
-function isBuilderStagedProject(projectPath: string): boolean {
+function findBuilderStagingRoot(projectPath: string): string | undefined {
   const resolvedProjectPath = path.resolve(projectPath);
-  const stagingDirectory = path.dirname(resolvedProjectPath);
-  return path.basename(stagingDirectory) === '.workspace';
+  let current = resolvedProjectPath;
+  while (true) {
+    if (path.basename(path.dirname(current)) === '.workspace') return current;
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+function isBuilderStagedProject(projectPath: string): boolean {
+  return Boolean(findBuilderStagingRoot(projectPath));
 }
 
 /**
@@ -92,15 +101,56 @@ export function findPnpmWorkspaceRoot(
   return workspaceRoot;
 }
 
+function readPackageJson(filePath: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
   const resolvedProjectPath = path.resolve(projectPath);
-  const isStagedProject = isBuilderStagedProject(resolvedProjectPath);
-  // The extraction directory is the validated boundary for uploaded files.
-  // Tracked fixture packages still discover their owning repository workspace.
+  const stagedRoot = findBuilderStagingRoot(resolvedProjectPath);
+  const isStagedProject = Boolean(stagedRoot);
+  // Keep discovery inside the extracted upload, but permit nested app roots to
+  // resolve the uploaded monorepo workspace above them.
   const workspaceRoot = findPnpmWorkspaceRoot(
     resolvedProjectPath,
-    isStagedProject ? resolvedProjectPath : undefined,
+    stagedRoot,
   );
+
+  if (isStagedProject && workspaceRoot && workspaceRoot !== resolvedProjectPath) {
+    const workspacePackage = readPackageJson(path.join(workspaceRoot, 'package.json'));
+    const workspaceLock = ['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
+      .find((name) => fs.existsSync(path.join(workspaceRoot, name)));
+    const hasPnpmWorkspace = fs.existsSync(path.join(workspaceRoot, 'pnpm-workspace.yaml'));
+    if (hasPnpmWorkspace && fs.existsSync(path.join(workspaceRoot, 'pnpm-lock.yaml'))) {
+      return {
+        command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
+        cwd: workspaceRoot,
+      };
+    }
+    if (workspacePackage?.workspaces && workspaceLock) {
+      if (workspaceLock === 'package-lock.json') return { command: 'npm ci --no-audit --no-fund', cwd: workspaceRoot };
+      if (workspaceLock === 'yarn.lock') return { command: 'yarn install --frozen-lockfile', cwd: workspaceRoot };
+      return { command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds', cwd: workspaceRoot };
+    }
+    // A nested app may live in a monorepo, but without a compatible root lock
+    // and workspace declaration we must not silently install from the app root.
+    if (fs.existsSync(path.join(resolvedProjectPath, 'package.json'))) {
+      const appPackage = readPackageJson(path.join(resolvedProjectPath, 'package.json'));
+      const dependencies = {
+        ...((appPackage?.dependencies as Record<string, unknown> | undefined) ?? {}),
+        ...((appPackage?.devDependencies as Record<string, unknown> | undefined) ?? {}),
+      };
+      const refs = Object.entries(dependencies).filter(([, value]) => typeof value === 'string' && /^(workspace:|catalog:)/.test(value as string));
+      if (refs.length) throw new Error(`Nested app has workspace dependency references but no compatible workspace install root/lockfile: ${refs.map(([name, value]) => name + '=' + String(value)).join(', ')}`);
+    }
+  }
 
   if (isStagedProject) {
     if (fs.existsSync(path.join(resolvedProjectPath, 'pnpm-lock.yaml'))) {
