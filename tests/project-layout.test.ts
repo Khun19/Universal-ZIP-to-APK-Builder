@@ -105,6 +105,8 @@ test('missing pnpm workspace config is reconstructed from explicit package.json 
     dependencies: { expo: 'catalog:', react: 'catalog:', 'react-native': 'catalog:' },
   }));
   const appRoot = path.join(extraction, 'artifacts', 'focus-mode');
+  const layout = resolveProjectLayout(extraction);
+  assert.equal(layout.status, 'selected');
   const result = recoverPnpmWorkspaceConfig(appRoot);
   assert.equal(result.recovered, true);
   assert.equal(result.workspaceRoot, extraction);
