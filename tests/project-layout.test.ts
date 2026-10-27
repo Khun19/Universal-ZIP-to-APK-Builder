@@ -112,8 +112,8 @@ test('missing pnpm workspace config is reconstructed from explicit package.json 
   assert.equal(result.workspaceRoot, extraction);
   const generated = await import('node:fs/promises').then(fs => fs.readFile(path.join(extraction, 'pnpm-workspace.yaml'), 'utf8'));
   assert.match(generated, /artifacts\/\*/);
-  assert.match(generated, /artifacts\/\*/);
-  assert.match(generated, /artifacts\/\*/);
+  assert.match(generated, /catalog:/);
+  assert.match(generated, /react-native/);
 }));
 
 test('workspace recovery refuses catalog references without an explicit catalog map', async () => withTemp(async temp => {
