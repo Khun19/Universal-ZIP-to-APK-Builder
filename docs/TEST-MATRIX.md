@@ -228,6 +228,8 @@ The helper `scripts/android-emulator-ui-test.py` uses UIAutomator hierarchy text
 
 The companion [Ubuntu M6 build run #40432300671](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40432300671) and [isolated ZIP-to-APK run #40432300672](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40432300672) also passed on source head `cfe5f51ff4a39a32851177fe92e73783b9a76a54`. These are build/provenance checks; the emulator result above is the runtime evidence. Physical-device acceptance remains `NOT RUN`.
 
+**Latest exact-head PR #91 run (2026-10-27):** [Android Emulator Device Test run #40434539359](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40434539359) completed successfully on PR head `c2c926536921900c89f5270abda5b602996e7cb3`. The companion [Builder Quality Gates run #40434538990](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40434538990) and [CodeQL Advanced run #40434538827](https://github.com/Khun19/Universal-ZIP-to-APK-Builder/actions/runs/40434538827) also completed successfully on that exact head. Evidence artifact `12703234457` (`android-emulator-evidence-40434539359-1`) exists and is not expired (35,071,378 bytes). This check verified GitHub run conclusions and artifact metadata; the archive contents for this run were not independently re-inspected. Physical-device acceptance remains `NOT RUN`.
+
 **Current status:** `CI-VERIFIED — COMMUNITY CHAT REACT NATIVE FIXTURE` on the exact source revision above. Integration into other framework-specific runtime workflows remains separate; do not claim all-framework emulator coverage until each fixture has its own contract and exact-head evidence.
 
 ## Android Emulator Runtime Acceptance
