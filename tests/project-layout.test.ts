@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { resolveProjectLayout } from '../lib/project-layout.ts';
+import { nodeInstallCommand } from '../lib/worker.ts';
 
 async function withTemp<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(path.join(tmpdir(), 'builder-project-layout-'));
@@ -64,4 +65,16 @@ test('catalog protocol without pnpm workspace configuration is blocked', async (
   const layout = resolveProjectLayout(root);
   assert.equal(layout.status, 'blocked');
   assert.match(layout.error ?? '', /pnpm-workspace.yaml/);
+}));
+
+test('nested app dependency installation uses the uploaded pnpm workspace root', async () => withTemp(async temp => {
+  const extraction = path.join(temp, '.workspace', 'cli-build-test');
+  await put(extraction, 'package.json', JSON.stringify({ name: 'repo', private: true }));
+  await put(extraction, 'pnpm-workspace.yaml', 'packages:\\n  - artifacts/*\\n');
+  await put(extraction, 'pnpm-lock.yaml', 'lockfileVersion: 9.0\\n');
+  await put(extraction, 'artifacts/focus-mode/package.json', JSON.stringify({ dependencies: { expo: '^52.0.0' } }));
+  const plan = nodeInstallCommand(path.join(extraction, 'artifacts', 'focus-mode'));
+  assert.equal(plan.cwd, extraction);
+  assert.match(plan.command, /pnpm install/);
+  assert.match(plan.command, /--frozen-lockfile/);
 }));
