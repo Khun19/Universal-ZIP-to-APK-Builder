@@ -39,43 +39,50 @@ export interface NodeInstallPlan {
   cwd: string;
 }
 
+function isPathInsideDirectory(directory: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(directory), path.resolve(candidate));
+  return relative === '' || (
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
 /**
- * Resolve a pnpm workspace root for extracted projects. React Native projects
- * can be nested inside a workspace fixture, so installing with --ignore-workspace
- * breaks the dependency topology that Metro expects. Limit the upward search to
- * avoid accidentally adopting an unrelated parent workspace.
+ * Uploaded projects are extracted directly into a child of .workspace. Treat
+ * that path as an isolation boundary without depending on host-repository files.
  */
-export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
+function isBuilderStagedProject(projectPath: string): boolean {
+  const resolvedProjectPath = path.resolve(projectPath);
+  const stagingDirectory = path.dirname(resolvedProjectPath);
+  return path.basename(stagingDirectory) === '.workspace';
+}
+
+/**
+ * Resolve a pnpm workspace root, optionally stopping at a validated project
+ * boundary. A submitted pnpm-workspace.yaml is authoritative; host ancestors
+ * are never considered when the caller supplies the extraction boundary.
+ */
+export function findPnpmWorkspaceRoot(
+  projectPath: string,
+  boundaryRoot?: string,
+): string | undefined {
   let current = path.resolve(projectPath);
+  const resolvedBoundary = boundaryRoot ? path.resolve(boundaryRoot) : undefined;
+  if (resolvedBoundary && !isPathInsideDirectory(resolvedBoundary, current)) {
+    return undefined;
+  }
+
   let workspaceRoot: string | undefined;
-
-  // Walk the bounded ancestry and prefer the outermost workspace root. Nested
-  // fixture/package workspaces must not shadow the repository workspace that
-  // owns the lockfile and shared dependency graph.
   for (let depth = 0; depth <= 4; depth += 1) {
-    // Only treat a directory as an owning workspace when its package.json
-    // declares workspaces. Extracted fixtures may gain generated lockfiles or
-    // workspace markers during tests; those must not shadow the repository root.
-    const packageJsonPath = path.join(current, 'package.json');
-    let declaresWorkspaces = false;
-    if (fs.existsSync(packageJsonPath)) {
-      try {
-        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
-          workspaces?: unknown;
-        };
-        declaresWorkspaces = Boolean(packageJson.workspaces);
-      } catch {
-        declaresWorkspaces = false;
-      }
-    }
-
     if (
-      declaresWorkspaces &&
-      fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))
+      fs.existsSync(path.join(current, 'pnpm-workspace.yaml')) &&
+      (!resolvedBoundary || isPathInsideDirectory(resolvedBoundary, current))
     ) {
       workspaceRoot = current;
     }
 
+    if (resolvedBoundary && current === resolvedBoundary) break;
     const parent = path.dirname(current);
     if (parent === current) break;
     current = parent;
@@ -85,35 +92,34 @@ export function findPnpmWorkspaceRoot(projectPath: string): string | undefined {
 }
 
 export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
-  const workspaceRoot = findPnpmWorkspaceRoot(projectPath);
-
-  // Builder pipeline projects are extracted into the repository-local .workspace
-  // directory during CI/integration tests. They are arbitrary user projects, not
-  // declared pnpm workspace packages, so installing from the repository root
-  // leaves their own node_modules empty and breaks relative Gradle includeBuild()
-  // paths such as android/../node_modules/@react-native/gradle-plugin.
   const resolvedProjectPath = path.resolve(projectPath);
-  const stagedWorkspaceRoot = workspaceRoot
-    ? path.join(workspaceRoot, '.workspace') + path.sep
-    : undefined;
-  const isStagedProject = Boolean(
-    stagedWorkspaceRoot && resolvedProjectPath.startsWith(stagedWorkspaceRoot),
+  const isStagedProject = isBuilderStagedProject(resolvedProjectPath);
+  // The extraction directory is the validated boundary for uploaded files.
+  // Tracked fixture packages still discover their owning repository workspace.
+  const workspaceRoot = findPnpmWorkspaceRoot(
+    resolvedProjectPath,
+    isStagedProject ? resolvedProjectPath : undefined,
   );
 
   if (isStagedProject) {
-    if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
+    if (fs.existsSync(path.join(resolvedProjectPath, 'pnpm-lock.yaml'))) {
+      // pnpm otherwise walks above the extraction boundary and adopts the
+      // builder's workspace/lockfile. Keep a workspace only when the upload
+      // itself declares one at its validated root.
+      const ignoreParentWorkspace = workspaceRoot !== resolvedProjectPath;
       return {
-        command: 'pnpm install --ignore-workspace --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds',
-        cwd: projectPath,
+        command: 'pnpm install --config.node-linker=hoisted --frozen-lockfile --dangerously-allow-all-builds' +
+          (ignoreParentWorkspace ? ' --ignore-workspace' : ''),
+        cwd: resolvedProjectPath,
       };
     }
-    if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) {
-      return { command: 'yarn install --frozen-lockfile', cwd: projectPath };
+    if (fs.existsSync(path.join(resolvedProjectPath, 'yarn.lock'))) {
+      return { command: 'yarn install --frozen-lockfile', cwd: resolvedProjectPath };
     }
-    if (fs.existsSync(path.join(projectPath, 'bun.lockb')) || fs.existsSync(path.join(projectPath, 'bun.lock'))) {
-      return { command: 'bun install', cwd: projectPath };
+    if (fs.existsSync(path.join(resolvedProjectPath, 'bun.lockb')) || fs.existsSync(path.join(resolvedProjectPath, 'bun.lock'))) {
+      return { command: 'bun install', cwd: resolvedProjectPath };
     }
-    return { command: 'npm install --no-audit --no-fund', cwd: projectPath };
+    return { command: 'npm install --no-audit --no-fund', cwd: resolvedProjectPath };
   }
   const workspaceLockfile = workspaceRoot
     ? path.join(workspaceRoot, 'pnpm-lock.yaml')
