@@ -64,7 +64,7 @@ test('catalog protocol without pnpm workspace configuration is blocked', async (
   await put(root, 'artifacts/focus-mode/package.json', JSON.stringify({ dependencies: { expo: 'catalog:' } }));
   const layout = resolveProjectLayout(root);
   assert.equal(layout.status, 'blocked');
-  assert.match(layout.error ?? '', /pnpm-workspace.yaml/);
+  assert.match(layout.error ?? '', /workspace root/);
 }));
 
 test('nested app dependency installation uses the uploaded pnpm workspace root', async () => withTemp(async temp => {
