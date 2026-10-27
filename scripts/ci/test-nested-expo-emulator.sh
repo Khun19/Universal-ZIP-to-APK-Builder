@@ -88,7 +88,7 @@ collect_diagnostics() {
     timeout 10 adb shell getprop init.svc.bootanim 2>&1 || true
     echo "PACKAGE_SERVICE"
     timeout 10 adb shell service check package 2>&1 || true
-  } > emulator-health.txt 2>&1
+  } >> emulator-health.txt 2>&1
 }
 
 if ! command -v adb >/dev/null 2>&1; then
