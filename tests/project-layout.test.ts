@@ -78,3 +78,14 @@ test('nested app dependency installation uses the uploaded pnpm workspace root',
   assert.match(plan.command, /pnpm install/);
   assert.match(plan.command, /--frozen-lockfile/);
 }));
+
+test('native Android Gradle project without package.json is still detected', async () => withTemp(async root => {
+  await put(root, 'settings.gradle', "rootProject.name = 'native-fixture'\\ninclude ':app'\\n");
+  await put(root, 'build.gradle', 'plugins {}\\n');
+  await put(root, 'app/build.gradle', 'plugins { id \'com.android.application\' }\\n');
+  await put(root, 'app/src/main/AndroidManifest.xml', '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.fixture" />');
+  const layout = resolveProjectLayout(root);
+  assert.equal(layout.status, 'selected');
+  assert.equal(layout.relativeAppRoot, '.');
+  assert.equal(layout.framework, 'Native Android');
+}));
