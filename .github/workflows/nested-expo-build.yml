@@ -1,0 +1,108 @@
+name: Nested Expo Android Build Fixture
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/project-layout.ts'
+      - 'lib/server.ts'
+      - 'lib/worker.ts'
+      - 'tests/project-layout.test.ts'
+      - 'tests/fixtures/nested-expo-monorepo/**'
+      - '.github/workflows/nested-expo-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/project-layout.ts'
+      - 'lib/server.ts'
+      - 'lib/worker.ts'
+      - 'tests/project-layout.test.ts'
+      - 'tests/fixtures/nested-expo-monorepo/**'
+      - '.github/workflows/nested-expo-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nested-expo-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  expo-android:
+    name: Nested Expo app — real debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.5
+          cache: pnpm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Record exact source and toolchain
+        run: |
+          echo "SOURCE_SHA=$GITHUB_SHA"
+          node --version
+          pnpm --version
+          java -version
+          sdkmanager --list_installed
+
+      - name: Install fixture workspace dependencies
+        run: pnpm install --no-frozen-lockfile --config.node-linker=hoisted
+        working-directory: tests/fixtures/nested-expo-monorepo
+
+      - name: Generate native Android project from nested Expo app
+        run: pnpm exec expo prebuild --platform android --no-install
+        working-directory: tests/fixtures/nested-expo-monorepo/artifacts/focus-mode
+
+      - name: Build real debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        working-directory: tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android
+
+      - name: Validate APK and calculate SHA-256
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -Z1 "$APK" | grep -Fx "AndroidManifest.xml"
+          echo "APK_PATH=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK_SHA256=$(sha256sum "$APK" | cut -d ' ' -f1)" | tee apk-evidence.txt
+          stat --printf='APK_SIZE_BYTES=%s\n' "$APK" | tee -a apk-evidence.txt
+          echo "SOURCE_SHA=$GITHUB_SHA" | tee -a apk-evidence.txt
+          echo "BUILD_STATUS=APK_PRESENT_AND_MANIFEST_VALID" | tee -a apk-evidence.txt
+
+      - name: Upload APK and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nested-expo-debug-apk-${{ github.sha }}
+          path: |
+            tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk
+            apk-evidence.txt
+          if-no-files-found: error
+          retention-days: 7
