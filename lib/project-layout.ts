@@ -186,8 +186,21 @@ export function resolveProjectLayout(extractionRoot: string): ProjectLayout {
   if (protocols.length && !workspaceRoot) {
     return { status: 'blocked', archiveRoot, candidates, dependencyProtocols: protocols, logs, error: `Workspace dependency references require a workspace root, but none was found: ${protocols.join(', ')}` };
   }
-  if (protocols.some(value => value.includes('=catalog:')) && (!workspaceRoot || !fs.existsSync(path.join(workspaceRoot, 'pnpm-workspace.yaml')))) {
-    return { status: 'blocked', archiveRoot, candidates, dependencyProtocols: protocols, logs, error: 'catalog: dependencies were found but a pnpm-workspace.yaml is missing at the detected workspace root.' };
+  const workspacePackage = workspaceRoot ? readJson(path.join(workspaceRoot, 'package.json')) : undefined;
+  const workspaceMetadata = record(workspacePackage?.workspaces);
+  const workspacePackages = Array.isArray(workspacePackage?.workspaces)
+    ? workspacePackage?.workspaces as unknown[]
+    : Array.isArray(workspaceMetadata.packages) ? workspaceMetadata.packages as unknown[] : [];
+  const workspaceCatalog = record(workspaceMetadata.catalog);
+  const canRecoverPnpmWorkspace = Boolean(
+    workspaceRoot &&
+    workspacePackages.length > 0 &&
+    fs.existsSync(path.join(workspaceRoot, 'pnpm-lock.yaml')) &&
+    Object.keys(workspaceCatalog).length > 0
+  );
+  if (protocols.some(value => value.includes('=catalog:')) &&
+      (!workspaceRoot || (!fs.existsSync(path.join(workspaceRoot, 'pnpm-workspace.yaml')) && !canRecoverPnpmWorkspace))) {
+    return { status: 'blocked', archiveRoot, candidates, dependencyProtocols: protocols, logs, error: 'catalog: dependencies were found but pnpm workspace/catalog metadata is incomplete. Builder can recover a missing pnpm-workspace.yaml only when package.json provides workspace package patterns and a catalog map.' };
   }
   if (workspaceRoot && protocols.length && !workspaceLockfile) {
     return { status: 'blocked', archiveRoot, candidates, dependencyProtocols: protocols, logs, error: 'Workspace dependencies were found but no workspace lockfile is present. Refusing an implicit install that could rewrite dependency state.' };
