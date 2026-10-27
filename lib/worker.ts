@@ -87,12 +87,14 @@ export function findPnpmWorkspaceRoot(
   for (let depth = 0; depth <= 4; depth += 1) {
     const packageJson = readPackageJson(path.join(current, 'package.json'));
     const hasPnpmWorkspace = fs.existsSync(path.join(current, 'pnpm-workspace.yaml'));
+    const hasPnpmMetadataWorkspace = Boolean(packageJson?.workspaces) &&
+      fs.existsSync(path.join(current, 'pnpm-lock.yaml'));
     const hasNpmOrYarnWorkspace = Boolean(packageJson?.workspaces) && (
       fs.existsSync(path.join(current, 'package-lock.json')) ||
       fs.existsSync(path.join(current, 'yarn.lock'))
     );
     if (
-      (hasPnpmWorkspace || hasNpmOrYarnWorkspace) &&
+      (hasPnpmWorkspace || hasPnpmMetadataWorkspace || hasNpmOrYarnWorkspace) &&
       (!resolvedBoundary || isPathInsideDirectory(resolvedBoundary, current))
     ) {
       workspaceRoot = current;
@@ -116,6 +118,67 @@ function readPackageJson(filePath: string): Record<string, unknown> | undefined 
   } catch {
     return undefined;
   }
+}
+
+export interface WorkspaceRecoveryResult {
+  recovered: boolean;
+  workspaceRoot?: string;
+  error?: string;
+}
+
+/**
+ * Recover pnpm's workspace config only inside the isolated upload extraction.
+ * The recovery is permitted only when package.json provides explicit package
+ * patterns; catalog references additionally require an explicit catalog map.
+ */
+export function recoverPnpmWorkspaceConfig(projectPath: string): WorkspaceRecoveryResult {
+  const stagedRoot = findBuilderStagingRoot(projectPath);
+  if (!stagedRoot) return { recovered: false };
+  const workspaceRoot = findPnpmWorkspaceRoot(projectPath, stagedRoot);
+  if (!workspaceRoot || fs.existsSync(path.join(workspaceRoot, 'pnpm-workspace.yaml'))) {
+    return { recovered: false, workspaceRoot };
+  }
+
+  const workspacePackage = readPackageJson(path.join(workspaceRoot, 'package.json'));
+  const workspacesValue = workspacePackage?.workspaces;
+  const workspaceMetadata = workspacesValue && typeof workspacesValue === 'object' && !Array.isArray(workspacesValue)
+    ? workspacesValue as Record<string, unknown>
+    : {};
+  const packagePatterns = Array.isArray(workspacesValue)
+    ? workspacesValue
+    : Array.isArray(workspaceMetadata.packages) ? workspaceMetadata.packages : [];
+  if (!packagePatterns.length || packagePatterns.some(value => typeof value !== 'string' || !value.trim())) {
+    return { recovered: false, workspaceRoot, error: 'Cannot recover pnpm workspace config: package.json has no valid workspaces package patterns.' };
+  }
+
+  const appPackage = readPackageJson(path.join(projectPath, 'package.json'));
+  const appDependencies = {
+    ...((appPackage?.dependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((appPackage?.devDependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((appPackage?.optionalDependencies as Record<string, unknown> | undefined) ?? {}),
+  };
+  const needsCatalog = Object.values(appDependencies).some(value => typeof value === 'string' && value.startsWith('catalog:'));
+  const catalog = workspaceMetadata.catalog && typeof workspaceMetadata.catalog === 'object' && !Array.isArray(workspaceMetadata.catalog)
+    ? workspaceMetadata.catalog as Record<string, unknown>
+    : {};
+  if (needsCatalog && !Object.keys(catalog).length) {
+    return { recovered: false, workspaceRoot, error: 'Cannot recover pnpm workspace config: app uses catalog: dependencies but package.json has no workspaces.catalog map.' };
+  }
+
+  const lines = ['packages:', ...packagePatterns.map(value => `  - ${JSON.stringify(value)}`)];
+  if (Object.keys(catalog).length) {
+    lines.push('catalog:');
+    for (const [name, version] of Object.entries(catalog)) {
+      if (typeof version !== 'string' || !version.trim()) {
+        return { recovered: false, workspaceRoot, error: `Cannot recover pnpm workspace config: invalid catalog entry for ${name}.` };
+      }
+      lines.push(`  ${JSON.stringify(name)}: ${JSON.stringify(version)}`);
+    }
+  }
+
+  const workspaceConfigPath = path.join(workspaceRoot, 'pnpm-workspace.yaml');
+  fs.writeFileSync(workspaceConfigPath, `${lines.join('\\n')}\\n`, { flag: 'wx' });
+  return { recovered: true, workspaceRoot };
 }
 
 export function nodeInstallCommand(projectPath: string): NodeInstallPlan {
