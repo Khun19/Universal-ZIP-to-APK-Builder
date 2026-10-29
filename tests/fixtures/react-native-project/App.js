@@ -20,6 +20,14 @@ export default function App() {
       >
         <Text style={styles.buttonText}>Tap to verify interaction</Text>
       </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Reset tap count"
+        onPress={() => setCount(0)}
+        style={[styles.button, styles.resetButton]}
+      >
+        <Text style={styles.buttonText}>Reset counter</Text>
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -52,6 +60,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#2458d3',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  resetButton: {
+    marginTop: 12,
+    backgroundColor: '#4b5563',
   },
   buttonText: {
     color: '#ffffff',
