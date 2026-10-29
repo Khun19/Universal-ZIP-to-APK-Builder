@@ -1,9 +1,8 @@
 name: M6 Exact APK Emulator Acceptance
 
 on:
-  workflow_run:
-    workflows: [Ubuntu M6 Build Test]
-    types: [completed]
+  # workflow_run only executes workflow definitions present on the default branch.
+  # Dispatch this workflow explicitly on the PR ref after its exact M6 build succeeds.
   workflow_dispatch:
     inputs:
       artifact_run_id:
@@ -26,7 +25,7 @@ permissions:
 concurrency:
   # Keep build-triggered and manually dispatched acceptance runs isolated.
   # Never cancel an in-progress acceptance run merely because another trigger arrives.
-  group: m6-emulator-acceptance-${{ github.event.workflow_run.id || inputs.artifact_run_id || github.run_id }}
+  group: m6-emulator-acceptance-${{ inputs.artifact_run_id || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -41,14 +40,14 @@ jobs:
       BUILD_ARTIFACT_NAME: m6-build-apk
     steps:
       - name: Verify build run and artifact identity
-        if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch'
         id: build
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT_RUN_ID: ${{ github.event.workflow_run.id || inputs.artifact_run_id }}
+          EVENT_RUN_ID: ${{ inputs.artifact_run_id }}
           EVENT_ARTIFACT_ID: ${{ inputs.artifact_id }}
           EXPECTED_SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.source_commit }}
-          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'success' }}
+          TRIGGER_CONCLUSION: success
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +77,7 @@ jobs:
       - name: Verify and record source commit
         shell: bash
         env:
-          EXPECTED_SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.source_commit || github.sha }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: |
           set -euo pipefail
           EXPECTED_COMMIT="$EXPECTED_SOURCE_COMMIT"
