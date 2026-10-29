@@ -1,17 +1,9 @@
 name: M6 Exact APK Emulator Acceptance
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'tests/fixtures/react-native-project/**'
-      - 'tests/react-native-pipeline.test.ts'
-      - 'lib/**'
-      - '.github/workflows/m6-emulator-acceptance.yml'
   workflow_run:
     workflows: [Ubuntu M6 Build Test]
     types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       artifact_run_id:
@@ -77,10 +69,10 @@ jobs:
           echo "BUILD_RUN_ID=$EVENT_RUN_ID" >> "$GITHUB_ENV"
           echo "BUILD_ARTIFACT_ID=$(jq -r .id <<<"$ARTIFACT")" >> "$GITHUB_ENV"
 
-      - name: Checkout workflow code (PR mode checks out exact source commit)
+      - name: Checkout trusted workflow code
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: main
           persist-credentials: false
 
       - name: Verify and record source commit
@@ -157,8 +149,7 @@ jobs:
           github-token: ${{ github.token }}
           path: .
 
-      - name: Validate exact artifact provenance and checksum
-        if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
+      - name: Validate exact artifact provenance, behavior change, and checksum
         shell: bash
         env:
           BUILD_RUN_ID: ${{ steps.build.outputs.run_id }}
@@ -169,13 +160,24 @@ jobs:
           test -s "$APK_PATH"
           test -s "$(dirname "$APK_PATH")/SHA256SUMS.txt"
           test -s "$(dirname "$APK_PATH")/provenance.json"
+          test -s apk-identity-gate-report.json
           sha256sum --check "$(dirname "$APK_PATH")/SHA256SUMS.txt"
+
+          # Do not accept a rebuilt APK or a source revision without an M6 behavior diff.
+          git fetch origin main "$SOURCE_COMMIT" --depth=1
+          if git diff --quiet origin/main "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
+            echo "No M6 fixture/test behavior diff from main; refusing device acceptance."
+            exit 1
+          fi
+          GATE_ARGS=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
+          GATE_ARGS+=(--behavior-change-verified true)
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$(dirname "$APK_PATH")/provenance.json" \
             --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$BUILD_RUN_ID" \
             --expected-application-id "$PACKAGE_ID" \
+            "${GATE_ARGS[@]}" \
             --registry docs/tested-apk-registry.json \
             --output .ci-evidence/apk-identity-gate-report.json
           APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
@@ -185,71 +187,41 @@ jobs:
           python3 - <<'PY'
           import json, os, subprocess
           from pathlib import Path
+          apk = Path(os.environ["APK_PATH"])
+          provenance = json.loads((apk.parent / "provenance.json").read_text())
+          gate = json.loads(Path(".ci-evidence/apk-identity-gate-report.json").read_text())
+          build_gate = json.loads(Path("apk-identity-gate-report.json").read_text())
+          expected = {
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "run_id": os.environ["BUILD_RUN_ID"],
+              "application_id": os.environ["PACKAGE_ID"],
+              "sha256": os.environ["APK_SHA256"],
+              "size_bytes": apk.stat().st_size,
+          }
+          assert provenance["source_commit"] == expected["source_commit"], "provenance source commit mismatch"
+          assert str(provenance["run_id"]) == expected["run_id"], "provenance build run ID mismatch"
+          assert provenance["application_id"] == expected["application_id"], "provenance package mismatch"
+          assert provenance["artifact"]["sha256"] == expected["sha256"], "provenance APK SHA-256 mismatch"
+          assert int(provenance["artifact"]["size_bytes"]) == expected["size_bytes"], "provenance APK size mismatch"
+          assert build_gate["valid"] is True, "build identity gate did not pass"
+          assert build_gate["device_test_eligible"] is True, "build artifact was not marked eligible"
+          assert build_gate["source_commit"] == expected["source_commit"], "build gate source commit mismatch"
+          assert str(build_gate["run_id"]) == expected["run_id"], "build gate run ID mismatch"
+          assert gate["valid"] is True and gate["device_test_eligible"] is True, "acceptance identity gate did not pass"
           props = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True, check=True)
           values = {}
           for line in (props.stderr + "\n" + props.stdout).splitlines():
               key, sep, value = line.partition("=")
               if sep and key.strip().startswith("java."): values[key.strip()] = value.strip()
-          apk = Path(os.environ["APK_PATH"])
           record = {
               "schema_version": 1, "evidence_type": "m6-exact-apk-emulator-acceptance",
-              "source_commit": os.environ["SOURCE_COMMIT"], "workflow_sha": os.environ["GITHUB_SHA"],
+              "source_commit": expected["source_commit"], "workflow_sha": os.environ["GITHUB_SHA"],
               "workflow_run_id": os.environ["GITHUB_RUN_ID"], "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-              "build_run_id": os.environ["BUILD_RUN_ID"], "build_artifact_id": os.environ["BUILD_ARTIFACT_ID"],
-              "application_id": os.environ["PACKAGE_ID"], "apk_path": str(apk),
-              "apk_size_bytes": apk.stat().st_size, "apk_sha256": os.environ["APK_SHA256"],
+              "build_run_id": expected["run_id"], "build_artifact_id": os.environ["BUILD_ARTIFACT_ID"],
+              "application_id": expected["application_id"], "apk_path": str(apk),
+              "apk_size_bytes": expected["size_bytes"], "apk_sha256": expected["sha256"],
               "jdk": {"configured_distribution": "temurin", "vendor": values.get("java.vendor", "UNKNOWN"),
                       "version": values.get("java.version", "UNKNOWN"), "runtime_version": values.get("java.runtime.version", "UNKNOWN")},
-              "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
-              "build_status": "PASS", "provenance_status": "PASS",
-              "emulator_acceptance_status": "PENDING", "physical_device_acceptance_status": "NOT_RUN",
-              "runtime_test_status": "PENDING"
-          }
-          Path(".ci-evidence/emulator-test-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-          PY
-
-      - name: Install locked dependencies
-        if: github.event_name == 'pull_request'
-        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
-
-      - name: Build and validate M6 APK
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          RUN_ANDROID_INTEGRATION=1 pnpm exec tsx --test tests/react-native-pipeline.test.ts
-          test -s "$APK_PATH"
-          unzip -t "$APK_PATH" | tee apk-zip-test.txt
-          unzip -Z1 "$APK_PATH" > apk-entries.txt
-          grep -qx 'AndroidManifest.xml' apk-entries.txt
-          grep -qx 'assets/index.android.bundle' apk-entries.txt
-          aapt dump badging "$APK_PATH" | tee apk-badging.txt
-          grep -q "package: name='$PACKAGE_ID'" apk-badging.txt
-          mkdir -p .ci-evidence/ui
-          APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
-          echo "$APK_SHA256  $APK_PATH" | tee .ci-evidence/apk.sha256
-          echo "APK_SHA256=$APK_SHA256" >> "$GITHUB_ENV"
-          export APK_SHA256
-          python3 - <<'PY'
-          import json, os, subprocess
-          from pathlib import Path
-          apk = Path(os.environ["APK_PATH"])
-          version = subprocess.run(["java", "-version"], capture_output=True, text=True, check=True)
-          props = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True, check=True)
-          values = {}
-          for line in (props.stderr + "\n" + props.stdout).splitlines():
-              key, sep, value = line.partition("=")
-              key = key.strip()
-              if sep and key.startswith("java."): values[key] = value.strip()
-          record = {
-              "schema_version": 1, "evidence_type": "m6-exact-apk-emulator-acceptance",
-              "source_commit": os.environ["SOURCE_COMMIT"], "workflow_sha": os.environ["GITHUB_SHA"],
-              "workflow_run_id": os.environ["GITHUB_RUN_ID"], "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-              "application_id": os.environ["PACKAGE_ID"], "apk_path": str(apk),
-              "apk_size_bytes": apk.stat().st_size, "apk_sha256": os.environ["APK_SHA256"],
-              "jdk": {"configured_distribution": "temurin", "vendor": values.get("java.vendor", "UNKNOWN"),
-                      "version": values.get("java.version", "UNKNOWN"), "runtime_version": values.get("java.runtime.version", "UNKNOWN"),
-                      "java_version_output": (version.stderr or version.stdout).strip()},
               "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
               "build_status": "PASS", "provenance_status": "PASS",
               "emulator_acceptance_status": "PENDING", "physical_device_acceptance_status": "NOT_RUN",
@@ -354,20 +326,29 @@ jobs:
               subprocess.run(["adb","shell","uiautomator","dump",remote],check=True,capture_output=True,text=True,timeout=45)
               subprocess.run(["adb","pull",remote,str(local)],check=True,capture_output=True,text=True,timeout=30)
               return ET.parse(local).getroot()
+          def tap_accessible(root, label):
+              button = next((n for n in root.iter() if n.attrib.get("content-desc") == label), None)
+              if button is None: raise SystemExit("Accessible button missing: " + label)
+              bounds = [int(v) for v in re.findall(r"-?\\d+", button.attrib.get("bounds", ""))]
+              if len(bounds) != 4: raise SystemExit("Invalid bounds for " + label + ": " + repr(button.attrib.get("bounds")))
+              x, y = (bounds[0]+bounds[2])//2, (bounds[1]+bounds[3])//2
+              subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True, timeout=20)
           root = dump("02-before-tap")
-          button = next((n for n in root.iter() if n.attrib.get("content-desc") == "Increment tap count"),None)
-          if button is None: raise SystemExit("Accessible Increment tap count button missing")
-          bounds = [int(v) for v in re.findall(r"-?\d+",button.attrib.get("bounds",""))]
-          if len(bounds) != 4: raise SystemExit("Invalid button bounds: " + repr(button.attrib.get("bounds")))
-          x,y = (bounds[0]+bounds[2])//2,(bounds[1]+bounds[3])//2
-          subprocess.run(["adb","shell","input","tap",str(x),str(y)],check=True,timeout=20)
-          time.sleep(2)
-          root = dump("03-after-tap")
           labels = [v for n in root.iter() for v in (n.attrib.get("text",""),n.attrib.get("content-desc","")) if v]
-          if "Tap count: 1" not in labels: raise SystemExit("Tap interaction did not update count to 1: " + repr(labels))
-          Path(".ci-evidence/ui/03-after-tap-visible-labels.txt").write_text("\n".join(labels)+"\n")
-          print("PASS: tapped Increment tap count; visible state changed from 0 to 1")
-          PY
+          if "Tap count: 0" not in labels: raise SystemExit("Initial counter was not zero: " + repr(labels))
+          tap_accessible(root, "Increment tap count")
+          time.sleep(2)
+          root = dump("03-after-increment")
+          labels = [v for n in root.iter() for v in (n.attrib.get("text",""),n.attrib.get("content-desc","")) if v]
+          if "Tap count: 1" not in labels: raise SystemExit("Increment did not update count to 1: " + repr(labels))
+          Path(".ci-evidence/ui/03-after-increment-visible-labels.txt").write_text("\\n".join(labels)+"\\n")
+          tap_accessible(root, "Reset tap count")
+          time.sleep(2)
+          root = dump("04-after-reset")
+          labels = [v for n in root.iter() for v in (n.attrib.get("text",""),n.attrib.get("content-desc","")) if v]
+          if "Tap count: 0" not in labels: raise SystemExit("Reset did not restore count to 0: " + repr(labels))
+          Path(".ci-evidence/ui/04-after-reset-visible-labels.txt").write_text("\\n".join(labels)+"\\n")
+          print("PASS: increment changed 0 to 1; Reset tap count restored 1 to 0")
           adb exec-out screencap -p > .ci-evidence/ui/03-after-tap.png
           adb logcat -d -v threadtime > .ci-evidence/logcat.txt
           python3 - <<'PY'
@@ -384,7 +365,7 @@ jobs:
           record = __import__("json").loads(record_path.read_text())
           record["runtime_test_status"] = "PASS"
           record["emulator_acceptance_status"] = "PASS"
-          record["test_scope"] = ["install","launch","UI hierarchy","screenshots","tap Increment tap count","verify Tap count: 1","app-specific logcat crash scan"]
+          record["test_scope"] = ["download exact build artifact","verify source commit/run ID/artifact SHA-256/provenance","install","launch","UI hierarchy","screenshots","tap Increment tap count","verify Tap count: 1","tap Reset tap count","verify Tap count: 0","app-specific logcat crash scan"]
           record_path.write_text(__import__("json").dumps(record,indent=2,sort_keys=True)+"\n")
           PY
           sha256sum "$APK_PATH" | tee .ci-evidence/apk.sha256.final
