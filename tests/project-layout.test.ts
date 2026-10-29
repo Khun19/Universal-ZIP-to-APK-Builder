@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { parse as parseYaml } from 'yaml';
 import { resolveProjectLayout } from '../lib/project-layout.ts';
 import { nodeInstallCommand, recoverPnpmWorkspaceConfig } from '../lib/worker.ts';
 
@@ -114,6 +115,11 @@ test('missing pnpm workspace config is reconstructed from explicit package.json 
   assert.match(generated, /artifacts\/\*/);
   assert.match(generated, /catalog:/);
   assert.match(generated, /react-native/);
+  const parsed = parseYaml(generated) as { packages?: unknown[]; catalog?: Record<string, unknown> };
+  assert.deepEqual(parsed.packages, ['artifacts/*']);
+  assert.equal(parsed.catalog?.expo, '52.0.49');
+  assert.equal(parsed.catalog?.react, '18.3.1');
+  assert.equal(parsed.catalog?.['react-native'], '0.76.9');
 }));
 
 test('workspace recovery refuses catalog references without an explicit catalog map', async () => withTemp(async temp => {
