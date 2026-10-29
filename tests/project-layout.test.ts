@@ -68,29 +68,39 @@ test('catalog protocol without pnpm workspace configuration is blocked', async (
   assert.match(layout.error ?? '', /workspace root/);
 }));
 
-test('nested app dependency installation uses the uploaded pnpm workspace root', async () => withTemp(async temp => {
+test('nested app dependency installation uses the uploaded pnpm workspace root and valid lockfiles', async () => withTemp(async temp => {
   const extraction = path.join(temp, '.workspace', 'cli-build-test');
   await put(extraction, 'package.json', JSON.stringify({ name: 'repo', private: true }));
-  await put(extraction, 'pnpm-workspace.yaml', 'packages:\\n  - artifacts/*\\n');
-  await put(extraction, 'pnpm-lock.yaml', 'lockfileVersion: 9.0\\n');
+  await put(extraction, 'pnpm-workspace.yaml', 'packages:\n  - artifacts/*\n');
+  await put(extraction, 'pnpm-lock.yaml', 'lockfileVersion: 9.0\n');
   await put(extraction, 'artifacts/focus-mode/package.json', JSON.stringify({ dependencies: { expo: '^52.0.0' } }));
+
+  const workspaceConfigText = await import('node:fs/promises').then(fs => fs.readFile(path.join(extraction, 'pnpm-workspace.yaml'), 'utf8'));
+  const lockfileText = await import('node:fs/promises').then(fs => fs.readFile(path.join(extraction, 'pnpm-lock.yaml'), 'utf8'));
+  const workspaceConfig = parseYaml(workspaceConfigText) as { packages?: unknown[] };
+  const lockfile = parseYaml(lockfileText) as { lockfileVersion?: number };
+  assert.deepEqual(workspaceConfig.packages, ['artifacts/*']);
+  assert.equal(lockfile.lockfileVersion, 9);
+
   const plan = nodeInstallCommand(path.join(extraction, 'artifacts', 'focus-mode'));
   assert.equal(plan.cwd, extraction);
+  assert.equal(path.resolve(plan.cwd, 'pnpm-lock.yaml'), path.join(extraction, 'pnpm-lock.yaml'));
   assert.match(plan.command, /pnpm install/);
   assert.match(plan.command, /--frozen-lockfile/);
 }));
-
 test('native Android Gradle project without package.json is still detected', async () => withTemp(async root => {
-  await put(root, 'settings.gradle', "rootProject.name = 'native-fixture'\\ninclude ':app'\\n");
-  await put(root, 'build.gradle', 'plugins {}\\n');
-  await put(root, 'app/build.gradle', 'plugins { id \'com.android.application\' }\\n');
+  await put(root, 'settings.gradle', "rootProject.name = 'native-fixture'\ninclude ':app'\n");
+  await put(root, 'build.gradle', 'plugins {}\n');
+  await put(root, 'app/build.gradle', "plugins { id 'com.android.application' }\n");
   await put(root, 'app/src/main/AndroidManifest.xml', '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.fixture" />');
+  assert.equal(await import('node:fs/promises').then(fs => fs.readFile(path.join(root, 'settings.gradle'), 'utf8')), "rootProject.name = 'native-fixture'\ninclude ':app'\n");
+  assert.equal(await import('node:fs/promises').then(fs => fs.readFile(path.join(root, 'build.gradle'), 'utf8')), 'plugins {}\n');
+  assert.equal(await import('node:fs/promises').then(fs => fs.readFile(path.join(root, 'app/build.gradle'), 'utf8')), "plugins { id 'com.android.application' }\n");
   const layout = resolveProjectLayout(root);
   assert.equal(layout.status, 'selected');
   assert.equal(layout.relativeAppRoot, '.');
   assert.equal(layout.framework, 'Native Android');
 }));
-
 test('missing pnpm workspace config is reconstructed from explicit package.json metadata', async () => withTemp(async temp => {
   const extraction = path.join(temp, '.workspace', 'cli-build-recovery');
   await put(extraction, 'package.json', JSON.stringify({
