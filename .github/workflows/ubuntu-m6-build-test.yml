@@ -187,6 +187,8 @@ jobs:
             --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
             --expected-application-id "com.builder.m6reactnative" \
+            --target-behavior "Tap count increments by one; Reset tap count returns it to zero" \
+            --behavior-change-verified true \
             --registry docs/tested-apk-registry.json \
             --output apk-identity-gate-report.json
 
