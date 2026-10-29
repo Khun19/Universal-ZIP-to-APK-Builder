@@ -325,7 +325,7 @@ jobs:
           def tap_accessible(root, label):
               button = next((n for n in root.iter() if n.attrib.get("content-desc") == label), None)
               if button is None: raise SystemExit("Accessible button missing: " + label)
-              bounds = [int(v) for v in re.findall(r"-?\\d+", button.attrib.get("bounds", ""))]
+              bounds = [int(v) for v in re.findall(r"-?\d+", button.attrib.get("bounds", ""))]
               if len(bounds) != 4: raise SystemExit("Invalid bounds for " + label + ": " + repr(button.attrib.get("bounds")))
               x, y = (bounds[0]+bounds[2])//2, (bounds[1]+bounds[3])//2
               subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True, timeout=20)
@@ -337,7 +337,7 @@ jobs:
           root = dump("03-after-increment")
           labels = [v for n in root.iter() for v in (n.attrib.get("text",""),n.attrib.get("content-desc","")) if v]
           if "Tap count: 1" not in labels: raise SystemExit("Increment did not update count to 1: " + repr(labels))
-          Path(".ci-evidence/ui/03-after-increment-visible-labels.txt").write_text("\\n".join(labels)+"\\n")
+          Path(".ci-evidence/ui/03-after-increment-visible-labels.txt").write_text("\n".join(labels)+"\n")
           tap_accessible(root, "Reset tap count")
           time.sleep(2)
           root = dump("04-after-reset")
@@ -345,6 +345,7 @@ jobs:
           if "Tap count: 0" not in labels: raise SystemExit("Reset did not restore count to 0: " + repr(labels))
           Path(".ci-evidence/ui/04-after-reset-visible-labels.txt").write_text("\\n".join(labels)+"\\n")
           print("PASS: increment changed 0 to 1; Reset tap count restored 1 to 0")
+          PY
           adb exec-out screencap -p > .ci-evidence/ui/04-after-reset.png
           adb logcat -d -v threadtime > .ci-evidence/logcat.txt
           python3 - <<'PY'
