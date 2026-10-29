@@ -201,7 +201,9 @@ jobs:
           assert build_gate["device_test_eligible"] is True, "build artifact was not marked eligible"
           assert build_gate["source_commit"] == expected["source_commit"], "build gate source commit mismatch"
           assert str(build_gate["run_id"]) == expected["run_id"], "build gate run ID mismatch"
+          assert build_gate["apk"]["sha256"] == expected["sha256"], "build gate APK SHA-256 mismatch"
           assert gate["valid"] is True and gate["device_test_eligible"] is True, "acceptance identity gate did not pass"
+          assert gate["apk"]["sha256"] == expected["sha256"], "acceptance gate APK SHA-256 mismatch"
           props = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True, check=True)
           values = {}
           for line in (props.stderr + "\n" + props.stdout).splitlines():
