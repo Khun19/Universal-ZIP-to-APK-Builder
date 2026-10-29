@@ -65,6 +65,10 @@ test(
     assert.match(appSource, /accessibilityLabel="Increment tap count"/);
     assert.match(appSource, /Tap count: \{count\}/);
     assert.match(appSource, /onPress=\{\(\) => setCount/);
+    assert.match(appSource, /onPress=\{\(\) => setCount\(\(current\) => current \+ 1\)\}/);
+    assert.match(appSource, /accessibilityLabel="Reset tap count"/);
+    assert.match(appSource, /onPress=\{\(\) => setCount\(0\)\}/);
+    assert.match(appSource, /Reset counter/);
     const fixtureFiles = [
       'package.json',
       'index.js',

@@ -181,12 +181,23 @@ jobs:
           set -euo pipefail
           APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
           PROVENANCE_PATH="$(dirname "$APK_PATH")/provenance.json"
+          # Only assert a verified behavior change when this candidate changes the
+          # M6 fixture and its regression test relative to current main.
+          git fetch origin main --depth=1
+          GATE_ARGS=()
+          if git diff --quiet origin/main...HEAD -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
+            echo "No M6 app-behavior/test diff from main; device eligibility must remain blocked."
+          else
+            GATE_ARGS+=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
+            GATE_ARGS+=(--behavior-change-verified true)
+          fi
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$PROVENANCE_PATH" \
             --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
             --expected-application-id "com.builder.m6reactnative" \
+            "${GATE_ARGS[@]}" \
             --registry docs/tested-apk-registry.json \
             --output apk-identity-gate-report.json
 
