@@ -177,7 +177,7 @@ export function recoverPnpmWorkspaceConfig(projectPath: string): WorkspaceRecove
   }
 
   const workspaceConfigPath = path.join(workspaceRoot, 'pnpm-workspace.yaml');
-  fs.writeFileSync(workspaceConfigPath, `${lines.join('\\n')}\\n`, { flag: 'wx' });
+  fs.writeFileSync(workspaceConfigPath, `${lines.join('\n')}\n`, { flag: 'wx' });
   return { recovered: true, workspaceRoot };
 }
 
