@@ -26,7 +26,7 @@ permissions:
 concurrency:
   # Keep build-triggered and manually dispatched acceptance runs isolated.
   # Never cancel an in-progress acceptance run merely because another trigger arrives.
-  group: m6-emulator-acceptance-${{ github.event.pull_request.number || github.event.workflow_run.id || inputs.artifact_run_id || github.run_id }}
+  group: m6-emulator-acceptance-${{ github.event.workflow_run.id || inputs.artifact_run_id || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -78,20 +78,14 @@ jobs:
       - name: Verify and record source commit
         shell: bash
         env:
-          EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || inputs.source_commit || github.sha }}
+          EXPECTED_SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.source_commit || github.sha }}
         run: |
           set -euo pipefail
           EXPECTED_COMMIT="$EXPECTED_SOURCE_COMMIT"
           [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            SOURCE_COMMIT="$(git rev-parse HEAD)"
-            test "$SOURCE_COMMIT" = "$EXPECTED_COMMIT"
-          else
-            # In artifact mode, keep executing only the trusted workflow checkout.
-            # The build source SHA is treated as data and checked against run metadata
-            # and the artifact provenance before the APK is installed.
-            SOURCE_COMMIT="$EXPECTED_COMMIT"
-          fi
+          # Execute trusted workflow code from main; treat the build source SHA as data
+          # and verify it against workflow-run metadata and artifact provenance.
+          SOURCE_COMMIT="$EXPECTED_COMMIT"
           echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
           printf 'source_commit=%s\nworkflow_checkout_commit=%s\nworkflow_sha=%s\nworkflow_run_id=%s\nworkflow_run_attempt=%s\n' "$SOURCE_COMMIT" "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > source-identity.txt
 
@@ -349,7 +343,7 @@ jobs:
           if "Tap count: 0" not in labels: raise SystemExit("Reset did not restore count to 0: " + repr(labels))
           Path(".ci-evidence/ui/04-after-reset-visible-labels.txt").write_text("\\n".join(labels)+"\\n")
           print("PASS: increment changed 0 to 1; Reset tap count restored 1 to 0")
-          adb exec-out screencap -p > .ci-evidence/ui/03-after-tap.png
+          adb exec-out screencap -p > .ci-evidence/ui/04-after-reset.png
           adb logcat -d -v threadtime > .ci-evidence/logcat.txt
           python3 - <<'PY'
           import os, re
