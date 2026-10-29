@@ -1,4 +1,5 @@
 import { analyzeProjectFiles, validateZipEntry } from './analyzer.ts';
+import { resolveProjectLayout } from './project-layout.ts';
 import { determineBuildStrategy } from './strategy.ts';
 import { executeBuildJob } from './worker.ts';
 import * as fs from 'fs';
@@ -36,32 +37,64 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
     }
   }
 
-  // 2. Project Analysis & Framework Detection
+  // 2. Resolve the actual app root without assuming the archive root is the app.
+  const layout = resolveProjectLayout(projectPath);
+  const layoutLogs = layout.logs;
+  if (layout.status !== 'selected' || !layout.appRoot || !layout.relativeAppRoot) {
+    return {
+      success: false,
+      logs: [...layoutLogs, ...(layout.candidates.length ? layout.candidates.map((candidate) =>
+        `[Layout candidate] ${candidate.relativeAppRoot} — ${candidate.framework} (score ${candidate.score})`,
+      ) : [])],
+      error: layout.error || 'Unable to resolve a unique buildable app root',
+    };
+  }
+
+  const appRoot = layout.appRoot;
+  const appRelativeRoot = layout.relativeAppRoot;
+  const packageJsonPath = path.join(appRoot, 'package.json');
   let packageJson: Record<string, unknown> = {};
-  const packageJsonPath = path.join(projectPath, 'package.json');
   if (fs.existsSync(packageJsonPath)) {
     try {
       packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
     } catch {
       return {
         success: false,
-        logs: ['Unable to parse package.json for project analysis'],
+        logs: [...layoutLogs, 'Unable to parse package.json for the selected app root'],
         error: 'Invalid package.json',
       };
     }
   }
-  const analysis = analyzeProjectFiles(filePaths, packageJson);
-  const detectionLogs = analysis.checks.map((check) =>
-    '[Detection ' + check.stage + '] ' + (check.passed ? 'PASS' : 'FAIL') + ' — ' + check.detail,
-  );
+
+  const appFilePaths = appRelativeRoot === '.'
+    ? filePaths
+    : filePaths.map((filePath) => {
+        const normalized = filePath.replace(/\\/g, '/');
+        const relative = path.isAbsolute(filePath)
+          ? path.relative(projectPath, filePath).split(path.sep).join('/')
+          : normalized.replace(/^\.\//, '');
+        return relative.startsWith(appRelativeRoot + '/')
+          ? relative.slice(appRelativeRoot.length + 1)
+          : '';
+      }).filter(Boolean);
+
+  const analysis = analyzeProjectFiles(appFilePaths, packageJson);
+  const detectionLogs = [
+    ...layoutLogs,
+    `[Layout] app root selected: ${appRelativeRoot}`,
+    `[Layout] workspace root: ${layout.relativeWorkspaceRoot ?? 'none'}`,
+    ...analysis.checks.map((check) =>
+      '[Detection ' + check.stage + '] ' + (check.passed ? 'PASS' : 'FAIL') + ' — ' + check.detail,
+    ),
+  ];
   detectionLogs.push('[Detection result] ' + analysis.projectType + ' (' + analysis.confidence + '% confidence)');
   detectionLogs.push(...analysis.evidence.map((item) => '[Detection evidence] ' + item));
   detectionLogs.push(...analysis.warnings.map((item) => '[Detection warning] ' + item));
   if (analysis.projectType === 'Unknown') {
     return {
       success: false,
-      logs: analysis.warnings,
-      error: 'Unable to determine project type'
+      logs: detectionLogs,
+      error: 'Unable to determine project type from the selected app root',
     };
   }
 
@@ -70,7 +103,7 @@ async function handleBuildRequest(payload: BuildRequestPayload): Promise<BuildRe
 
   // 4. Build Worker Execution
   const jobResult = await executeBuildJob(
-    projectPath,
+    appRoot,
     strategy,
     payload.appName,
   );
