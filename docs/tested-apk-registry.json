@@ -34,6 +34,19 @@
       "evidence": "User-reported physical-phone install, launch, community/channel/chat navigation, chat send text visible, profile screen and UI state interaction; exact APK SHA-256 was independently recorded.",
       "target_behavior": "Install and launch Community Chat Demo; verify community/channel/chat navigation, send-message UI and profile interaction.",
       "device_tested_at": "2026-10-16"
+    },
+    {
+      "fixture": "M6 React Native counter reset — physical-phone tested candidate",
+      "application_id": "com.builder.m6reactnative",
+      "sha256": "a7958924fed7037aa10865ca7f6d752708deddfb0e2fcac2d29bb6478877c3af",
+      "source_commit": "d8cdff46a3c62d79086d19bf66e52f817d702c59",
+      "workflow_run_id": "40967698817",
+      "artifact_id": "12939715528",
+      "artifact_name": "m6-build-apk",
+      "device_result": "PASS",
+      "evidence": "User-confirmed physical-phone PASS on 2026-10-30 for the Increment 0→1 and Reset 1→0 interactions. The APK bytes, SHA-256, application ID, source commit, workflow run ID, and artifact ID were independently verified from the exact GitHub Actions artifact. Device-side SHA, screenshots, and logcat were not independently captured.",
+      "target_behavior": "Install and launch the M6 React Native app; verify the counter increments from 0 to 1 and Reset returns it to 0.",
+      "device_tested_at": "2026-10-30"
     }
   ]
 }
