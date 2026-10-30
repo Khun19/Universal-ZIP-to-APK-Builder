@@ -38,13 +38,21 @@ The automated artifact validator is an identity/provenance check, not an automat
 
 ## Required commands
 
+For GitHub Actions, set `SOURCE_COMMIT` to the PR head SHA for `pull_request` events and to `github.sha` for push/manual runs. Record `github.sha` separately as `workflow_sha` because on a PR event it identifies the synthetic merge checkout, not the source branch head. Example workflow environment:
+
+```yaml
+env:
+  SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+  WORKFLOW_SHA: ${{ github.sha }}
+```
+
 The M6 workflow runs the validator after generating the APK and provenance:
 
 ```sh
 node scripts/apk-identity-gate.mjs \
   --apk .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk \
   --provenance .workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/provenance.json \
-  --expected-commit "$GITHUB_SHA" \
+  --expected-commit "$SOURCE_COMMIT" \
   --expected-run-id "$GITHUB_RUN_ID" \
   --registry docs/tested-apk-registry.json \
   --output apk-identity-gate-report.json
