@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Request, Response } from "express";
 import { createRateLimit } from "../artifacts/api-server/src/middleware/rate-limit.ts";
+
+type Request = Parameters<ReturnType<typeof createRateLimit>>[0];
+type Response = Parameters<ReturnType<typeof createRateLimit>>[1];
 
 function requestFor(ip: string): Request {
   return {
