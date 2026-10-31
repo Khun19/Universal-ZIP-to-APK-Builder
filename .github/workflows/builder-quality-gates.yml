@@ -78,6 +78,12 @@ jobs:
       - name: Retain historical M6 importer record
         run: ruby scripts/ci/preserve-workspace-lock-importer.rb
 
+      - name: Inspect regenerated lockfile header
+        run: |
+          test -s pnpm-lock.yaml
+          wc -c pnpm-lock.yaml
+          sed -n '1,24p' pnpm-lock.yaml
+
       - name: Validate active workspace frozen install
         run: pnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-scripts
 
