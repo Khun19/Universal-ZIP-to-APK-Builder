@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { rateLimit } from "express-rate-limit";
+import { createRateLimit } from "../middleware/rate-limit";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import multer from "multer";
@@ -8,8 +8,8 @@ import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjec
 import { safeExtract } from "@workspace/security";
 
 const router = Router();
-const uploadRateLimit = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: "draft-8", legacyHeaders: false });
-const mutationRateLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
+const uploadRateLimit = createRateLimit({ windowMs: 60_000, limit: 5 });
+const mutationRateLimit = createRateLimit({ windowMs: 60_000, limit: 20 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES ?? 250 * 1024 * 1024), files: 1 } });
 const root = path.resolve(process.env.BUILDER_STORAGE_DIR ?? "/tmp/universal-zip-to-apk");
 const id = (value: string | string[]) => String(value);
