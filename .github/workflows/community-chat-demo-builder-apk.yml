@@ -157,3 +157,10 @@ jobs:
             apk-path.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish workflow result annotation
+        if: always()
+        uses: ./.github/actions/workflow-annotation
+        with:
+          job-status: ${{ job.status }}
+          evidence-scope: "Community Chat ZIP-to-APK build, APK structure, package ID, and SHA-256 evidence; no runtime acceptance."
