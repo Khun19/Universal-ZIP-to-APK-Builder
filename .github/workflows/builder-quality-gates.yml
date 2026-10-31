@@ -82,7 +82,9 @@ jobs:
         run: |
           test -s pnpm-lock.yaml
           wc -c pnpm-lock.yaml
+          grep -nE '^(lockfileVersion|settings|catalogs|importers|packages|snapshots):' pnpm-lock.yaml || true
           sed -n '1,24p' pnpm-lock.yaml
+          sed -n '90,110p' pnpm-lock.yaml
 
       - name: Validate active workspace frozen install
         run: pnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-scripts
