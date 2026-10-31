@@ -76,7 +76,8 @@ async function fetchOpenAlerts(path, token) {
       description: alert.rule?.description || alert.rule?.name || "",
       path: alert.most_recent_instance?.location?.path || "path unavailable",
       line: alert.most_recent_instance?.location?.start_line || "",
-      tool: alert.tool?.name || "Code scanning"
+      tool: alert.tool?.name || "Code scanning",
+      message: alert.most_recent_instance?.message?.text || alert.most_recent_instance?.message?.markdown || ""
     }));
     return { status: data.length ? "FAIL" : "PASS", count: data.length, items, reason: data.length ? "Open alerts remain" : "No open alerts returned" };
   } catch (error) {
@@ -174,10 +175,10 @@ function renderReport({ checkedAt, mainSha, mainCi, prs, codeScanning, dependabo
     "",
     "#### Open CodeQL/code-scanning alerts",
     "",
-    "| Alert | Rule | Severity | Location | Description |",
-    "|---|---|---|---|---|",
+    "| Alert | Rule | Severity | Location | Alert message | Description |",
+    "|---|---|---|---|---|---|",
     ...(codeScanning.items || []).slice(0, 20).map(alert =>
-      `| [#${alert.number}](${alert.url}) | ${escapeCell(alert.rule)} | ${escapeCell(alert.severity)} | ${escapeCell(alert.path)}:${escapeCell(alert.line)} | ${escapeCell(alert.description)} |`
+      `| [#${alert.number}](${alert.url}) | ${escapeCell(alert.rule)} | ${escapeCell(alert.severity)} | ${escapeCell(alert.path)}:${escapeCell(alert.line)} | ${escapeCell(alert.message)} | ${escapeCell(alert.description)} |`
     ),
     ...(codeScanning.status === "BLOCKED" ? [`| — | — | BLOCKED | — | ${escapeCell(codeScanning.reason)} |`] : []),
     "",
