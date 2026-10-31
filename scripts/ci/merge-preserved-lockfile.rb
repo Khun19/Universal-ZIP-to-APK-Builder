@@ -30,9 +30,13 @@ end
 def snapshot_for(snapshots, name, version)
   exact = "#{name}@#{version}"
   return exact if snapshots.key?(exact)
+  if version.to_s.start_with?("@")
+    alias_exact = "#{name}@npm:#{version}"
+    return alias_exact if snapshots.key?(alias_exact)
+  end
   normalized = version.to_s.split("(").first
   prefix = "#{name}@#{normalized}"
-  snapshots.keys.find { |key| key == prefix || key.start_with?("#{prefix}(") }
+  snapshots.keys.find { |key| key == prefix || key.start_with?("#{prefix}(") || key.start_with?("#{name}@npm:#{normalized}") }
 end
 
 pending = []
