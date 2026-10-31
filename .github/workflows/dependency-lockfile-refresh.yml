@@ -42,7 +42,7 @@ jobs:
         run: pnpm install --lockfile-only --config.node-linker=hoisted
 
       - name: Restore protected M6 importer and validate patched dependency
-        run: node scripts/ci/merge-preserved-lockfile.mjs
+        run: ruby scripts/ci/merge-preserved-lockfile.rb
 
       - name: Validate frozen lockfile install
         run: pnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-scripts
