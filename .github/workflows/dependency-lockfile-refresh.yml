@@ -35,8 +35,17 @@ jobs:
         with:
           version: 11.23.0
 
+      - name: Preserve baseline lockfile
+        run: cp pnpm-lock.yaml pnpm-lock.before.yaml
+
       - name: Regenerate lockfile from current PR workspace
         run: pnpm install --lockfile-only --config.node-linker=hoisted
+
+      - name: Restore protected M6 importer and validate patched dependency
+        run: node scripts/ci/merge-preserved-lockfile.mjs
+
+      - name: Validate frozen lockfile install
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-scripts
 
       - name: Check patched esbuild and protected M6 importer
         shell: bash
@@ -44,6 +53,8 @@ jobs:
           set -euo pipefail
           grep -Fq '  esbuild: 0.28.1' pnpm-lock.yaml
           grep -Fq '  .workspace/m6-react-native-direct-integration:' pnpm-lock.yaml
+          ! grep -Fq 'esbuild@0.27.3' pnpm-lock.yaml
+          ! grep -Fq 'esbuild: 0.27.3' pnpm-lock.yaml
 
       - name: Upload regenerated lockfile for review
         if: always()
