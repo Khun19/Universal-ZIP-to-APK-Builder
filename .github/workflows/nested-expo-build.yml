@@ -203,7 +203,7 @@ jobs:
         env:
           EXPECTED_PACKAGE: com.rzbuilder.fixture.focusmode
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_EVENT_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           APK="tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk"
@@ -216,22 +216,48 @@ jobs:
           grep -F "package: name='$EXPECTED_PACKAGE'" apk-badging.txt
           APK_SHA256="$(sha256sum "$APK" | cut -d ' ' -f1)"
           APK_SIZE_BYTES="$(stat --printf='%s' "$APK")"
+          PR_BASE_SHA="$(git rev-parse HEAD^1)"
+          FIXTURE_LOCKFILE="tests/fixtures/nested-expo-monorepo/pnpm-lock.yaml"
+          if [[ -s "$FIXTURE_LOCKFILE" ]]; then
+            FIXTURE_LOCKFILE_SHA256="$(sha256sum "$FIXTURE_LOCKFILE" | cut -d ' ' -f1)"
+          else
+            FIXTURE_LOCKFILE_SHA256="NOT_FOUND"
+          fi
+          NODE_VERSION="$(node --version)"
+          PNPM_VERSION="$(pnpm --version)"
+          JAVA_VERSION="$(java -version 2>&1 | head -n 1)"
+          GRADLE_VERSION="$(cd tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android && ./gradlew --version | awk '/^Gradle / {print $2; exit}')"
+          export PR_BASE_SHA FIXTURE_LOCKFILE_SHA256 NODE_VERSION PNPM_VERSION JAVA_VERSION GRADLE_VERSION
           echo "APK_SHA256=$APK_SHA256" | tee -a apk-evidence.txt
           echo "APK_SIZE_BYTES=$APK_SIZE_BYTES" | tee -a apk-evidence.txt
           echo "SOURCE_SHA=$GITHUB_SHA" | tee -a apk-evidence.txt
           echo "BUILD_STATUS=APK_ZIP_MANIFEST_PACKAGE_AND_HASH_VALID" | tee -a apk-evidence.txt
-          export APK APK_SHA256 APK_SIZE_BYTES EXPECTED_PACKAGE PR_HEAD_SHA PR_BASE_SHA
+          export APK APK_SHA256 APK_SIZE_BYTES EXPECTED_PACKAGE PR_HEAD_SHA PR_BASE_EVENT_SHA
           python3 - <<'PY'
           import json, os
           from pathlib import Path
           fixture = Path("tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/package.json")
           package = json.loads(fixture.read_text(encoding="utf-8"))
+          import hashlib
           record = {
               "schema_version": 1,
               "evidence_type": "nested-expo-apk-build-and-emulator-pilot",
               "source_commit_sha": os.environ["GITHUB_SHA"],
               "pull_request_head_sha": os.environ["PR_HEAD_SHA"],
               "pull_request_base_sha": os.environ["PR_BASE_SHA"],
+              "pull_request_event_base_sha": os.environ["PR_BASE_EVENT_SHA"],
+              "project_source_commit_sha": os.environ["PR_BASE_SHA"],
+              "workflow_head_sha": os.environ["PR_HEAD_SHA"],
+              "fixture_package_json_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+              "fixture_lockfile_path": "tests/fixtures/nested-expo-monorepo/pnpm-lock.yaml",
+              "fixture_lockfile_sha256": os.environ["FIXTURE_LOCKFILE_SHA256"],
+              "dependency_lock_policy": "pnpm install --no-frozen-lockfile",
+              "toolchain": {
+                  "node": os.environ["NODE_VERSION"],
+                  "pnpm": os.environ["PNPM_VERSION"],
+                  "java": os.environ["JAVA_VERSION"],
+                  "gradle": os.environ["GRADLE_VERSION"]
+              },
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "workflow_run_id": os.environ["GITHUB_RUN_ID"],
               "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
