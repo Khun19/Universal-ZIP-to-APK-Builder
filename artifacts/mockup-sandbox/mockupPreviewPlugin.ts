@@ -40,7 +40,7 @@ export function resolveMockupImportPath(relative: string): string | null {
       "  { eager: false },",
       ");",
       "",
-    ].join("\\n");
+    ].join("\n");
   }
 
   function shouldAutoRescan(pathname: string): boolean {
