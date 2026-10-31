@@ -16,15 +16,33 @@ export function resolveMockupImportPath(relative: string): string | null {
     relative === ".." ||
     relative.startsWith("../") ||
     !relative.endsWith(".tsx") ||
-    relative.split("/").some((segment) => !segment || segment === "." || segment === ".." || segment.startsWith("_"))
+    relative.split("/").some((segment) =>
+      !segment || segment === "." || segment === ".." || segment.startsWith("_")
+    )
   ) {
     return null;
   }
   return path.posix.join("..", "components", "mockups", relative);
 }
 
+export function mockupPreviewPlugin(): Plugin {
+  let root = "";
+  let currentSource = "";
+  let watcher: FSWatcher | null = null;
+
+  function getMockupsAbsDir(): string {
+    return path.join(root, MOCKUPS_DIR);
+  }
+
+  function getGeneratedModuleAbsPath(): string {
+    return path.join(root, GENERATED_MODULE);
+  }
+
   function isMockupFile(absolutePath: string): boolean {
-    const relative = path.relative(getMockupsAbsDir(), absolutePath).split(path.sep).join("/");
+    const relative = path
+      .relative(getMockupsAbsDir(), path.resolve(absolutePath))
+      .split(path.sep)
+      .join("/");
     return resolveMockupImportPath(relative) !== null;
   }
 
