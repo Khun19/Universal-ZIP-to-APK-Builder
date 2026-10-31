@@ -1,16 +1,16 @@
 name: API Server Rate Limit Lockfile Refresh (temporary)
 
 on:
-  push:
-    branches:
-      - security/api-server-rate-limit-20261101
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
     paths:
       - "artifacts/api-server/package.json"
       - "scripts/ci/preserve-workspace-lock-importer.rb"
       - ".github/workflows/api-server-rate-limit-lockfile-refresh.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: api-server-rate-limit-lockfile-refresh
@@ -18,11 +18,18 @@ concurrency:
 
 jobs:
   refresh:
+    if: github.event.pull_request.head.ref == 'security/api-server-rate-limit-20261101' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - name: Checkout branch
+      - name: Checkout exact PR head branch
         uses: actions/checkout@v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
