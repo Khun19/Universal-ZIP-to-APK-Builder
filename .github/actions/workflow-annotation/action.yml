@@ -50,7 +50,7 @@ runs:
           echo "- Workflow: $WORKFLOW_NAME"
           echo "- Run: [$RUN_ID / attempt $RUN_ATTEMPT]($SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID)"
           echo "- Event: $EVENT_NAME"
-          echo "- Commit: `$COMMIT_SHA`"
+          printf '- Commit: `%s`\n' "$COMMIT_SHA"
           echo "- Evidence scope: $EVIDENCE_SCOPE"
           echo
           echo "This annotation reports the job outcome only. It does not upgrade an unrun validation, emulator test, or physical-device acceptance to PASS."
