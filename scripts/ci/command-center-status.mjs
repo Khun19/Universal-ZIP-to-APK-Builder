@@ -67,8 +67,18 @@ async function github(path, token, method = "GET", body) {
 async function fetchOpenAlerts(path, token) {
   try {
     const data = await github(path, token);
-    if (!Array.isArray(data)) return { status: "BLOCKED", count: null, reason: "API returned an unexpected response" };
-    return { status: data.length ? "FAIL" : "PASS", count: data.length, reason: data.length ? "Open alerts remain" : "No open alerts returned" };
+    if (!Array.isArray(data)) return { status: "BLOCKED", count: null, items: [], reason: "API returned an unexpected response" };
+    const items = data.map(alert => ({
+      number: alert.number,
+      url: alert.html_url,
+      rule: alert.rule?.id || alert.rule?.name || "unknown-rule",
+      severity: alert.rule?.security_severity_level || alert.rule?.severity || "unknown",
+      description: alert.rule?.description || alert.rule?.name || "",
+      path: alert.most_recent_instance?.location?.path || "path unavailable",
+      line: alert.most_recent_instance?.location?.start_line || "",
+      tool: alert.tool?.name || "Code scanning"
+    }));
+    return { status: data.length ? "FAIL" : "PASS", count: data.length, items, reason: data.length ? "Open alerts remain" : "No open alerts returned" };
   } catch (error) {
     return { status: "BLOCKED", count: null, reason: error.message.slice(0, 180) };
   }
@@ -161,6 +171,15 @@ function renderReport({ checkedAt, mainSha, mainCi, prs, codeScanning, dependabo
     "",
     `- Code scanning alerts: **${codeScanning.status}` + (codeScanning.count === null ? "" : ` (${codeScanning.count} open)`) + `** — ${escapeCell(codeScanning.reason)}`,
     `- Dependabot alerts: **${dependabot.status}` + (dependabot.count === null ? "" : ` (${dependabot.count} open)`) + `** — ${escapeCell(dependabot.reason)}`,
+    "",
+    "#### Open CodeQL/code-scanning alerts",
+    "",
+    "| Alert | Rule | Severity | Location | Description |",
+    "|---|---|---|---|---|",
+    ...(codeScanning.items || []).slice(0, 20).map(alert =>
+      `| [#${alert.number}](${alert.url}) | ${escapeCell(alert.rule)} | ${escapeCell(alert.severity)} | ${escapeCell(alert.path)}:${escapeCell(alert.line)} | ${escapeCell(alert.description)} |`
+    ),
+    ...(codeScanning.status === "BLOCKED" ? [`| — | — | BLOCKED | — | ${escapeCell(codeScanning.reason)} |`] : []),
     "",
     "### Physical-device registry",
     "",
