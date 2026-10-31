@@ -174,7 +174,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       const workspaceDir = path.join(process.cwd(), '.workspace', buildId);
       try {
         console.log(`\n📦 [${buildId}] Extracting...`);
-        const filePaths = await (await import('./security/src/index.ts')).safeExtract(uploadedFile.filepath, workspaceDir);
+        const uploadTempRoot = fs.realpathSync(uploadTempDir);
+        const candidateArchivePath = path.resolve(uploadTempRoot, path.basename(uploadedFile.filepath));
+        if (path.dirname(candidateArchivePath) !== uploadTempRoot) {
+          throw new Error('Upload archive path escaped the server-owned temporary directory');
+        }
+        const archivePath = fs.realpathSync(candidateArchivePath);
+        if (path.dirname(archivePath) !== uploadTempRoot || !fs.statSync(archivePath).isFile()) {
+          throw new Error('Upload archive is not a regular file inside the server-owned temporary directory');
+        }
+        const filePaths = await (await import('./security/src/index.ts')).safeExtract(archivePath, workspaceDir);
         // Read only the root manifest through a fixed, workspace-owned path.
         // Archive entry names are untrusted input and must not be used in filesystem joins.
         const parsedPackageJson: unknown = filePaths.includes('package.json')
