@@ -256,7 +256,9 @@ test("failed streamed CRC validation removes staging output and does not publish
 
 test("HTTP ZIP upload checks the archive path before AdmZip allocation", async () => {
   const serverSource = await readFile(new URL("../lib/server-http.ts", import.meta.url), "utf8");
-  assert.match(serverSource, /safeExtract\(uploadedFile\.filepath, workspaceDir\)/);
+  assert.match(serverSource, /path\.resolve\(uploadTempRoot, path\.basename\(uploadedFile\.filepath\)\)/);
+  assert.match(serverSource, /fs\.realpathSync\(candidateArchivePath\)/);
+  assert.match(serverSource, /safeExtract\(archivePath, workspaceDir\)/);
   assert.doesNotMatch(serverSource, /new AdmZip\(uploadedFile\.filepath\)/);
 });
 
