@@ -12,7 +12,10 @@ nextLock.packages ??= {};
 nextLock.snapshots ??= {};
 nextLock.importers[m6Key] = m6Importer;
 
-const referencesPatchedEsbuild = value => JSON.stringify(value).includes("esbuild@0.27.3") || JSON.stringify(value).includes("esbuild: 0.27.3");
+const referencesPatchedEsbuild = value => {
+  const serialized = JSON.stringify(value);
+  return serialized.includes("esbuild@0.27.3") || /"esbuild"\\s*:\\s*"0\\.27\\.3"/.test(serialized);
+};
 for (const [key, value] of Object.entries(oldLock.packages || {})) {
   if (key.startsWith("esbuild@0.27.3") || referencesPatchedEsbuild(value)) continue;
   if (!(key in nextLock.packages)) nextLock.packages[key] = value;
@@ -24,8 +27,10 @@ for (const [key, value] of Object.entries(oldLock.snapshots || {})) {
 
 function snapshotFor(name, version) {
   const normalized = String(version).split("(")[0];
-  const exact = `${name}@${normalized}`;
-  return Object.keys(nextLock.snapshots).find(key => key === exact || key.startsWith(exact + "("));
+  const exact = `${name}@${version}`;
+  if (nextLock.snapshots[exact]) return exact;
+  const prefix = `${name}@${normalized}`;
+  return Object.keys(nextLock.snapshots).find(key => key === prefix || key.startsWith(prefix + "("));
 }
 const pending = [];
 for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
@@ -48,7 +53,7 @@ while (pending.length) {
   }
 }
 const output = YAML.stringify(nextLock, { lineWidth: 0 });
-if (output.includes("esbuild@0.27.3") || output.includes("esbuild: 0.27.3")) {
+if (output.includes("esbuild@0.27.3") || /esbuild:\\s*0\\.27\\.3/.test(output) || /"esbuild"\\s*:\\s*"0\\.27\\.3"/.test(output)) {
   throw new Error("Vulnerable esbuild 0.27.3 reference remains in regenerated lockfile.");
 }
 if (!output.includes("esbuild: 0.28.1")) throw new Error("Patched esbuild override 0.28.1 missing from lockfile.");
