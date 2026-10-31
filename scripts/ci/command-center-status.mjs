@@ -1,4 +1,5 @@
 import { appendFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 
 const MARKER = "<!-- rz-builder-command-center-auto -->";
 const ISSUE_NUMBER = 24;
@@ -53,7 +54,8 @@ async function github(path, token, method = "GET", body) {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
       "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "rz-builder-command-center"
+      "User-Agent": "rz-builder-command-center",
+      ...(body ? { "Content-Type": "application/json" } : {})
     },
     ...(body ? { body: JSON.stringify(body) } : {})
   });
@@ -212,7 +214,7 @@ async function main() {
   if (summaryPath) await appendFile(summaryPath, report.replaceAll(MARKER, "") + "\n");
   const isPullRequest = process.env.GITHUB_EVENT_NAME === "pull_request";
   const isDefaultBranch = process.env.GITHUB_REF === `refs/heads/${repo.default_branch}`;
-  if (!isPullRequest && isDefaultBranch) {
+  if (process.env.COMMAND_CENTER_PUBLISH === "true" && !isPullRequest && isDefaultBranch) {
     const comments = await github(`/repos/${repoPath}/issues/${ISSUE_NUMBER}/comments?per_page=100`, token);
     const existing = comments.find(comment => comment.body?.includes(MARKER));
     if (existing) {
@@ -224,7 +226,7 @@ async function main() {
   console.log(report);
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => {
     console.error(error);
     process.exitCode = 1;
