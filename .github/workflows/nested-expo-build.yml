@@ -197,6 +197,60 @@ jobs:
           echo "SOURCE_SHA=$GITHUB_SHA" | tee -a apk-evidence.txt
           echo "BUILD_STATUS=APK_PRESENT_AND_MANIFEST_VALID" | tee -a apk-evidence.txt
 
+      - name: Validate APK identity and write provenance
+        id: apk-provenance
+        shell: bash
+        env:
+          EXPECTED_PACKAGE: com.rzbuilder.fixture.focusmode
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          APK="tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -t "$APK" > apk-zip-validation.txt
+          unzip -Z1 "$APK" | grep -Fx "AndroidManifest.xml"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort | tail -n 1)"
+          test -n "$AAPT"
+          "$AAPT" dump badging "$APK" > apk-badging.txt
+          grep -F "package: name='$EXPECTED_PACKAGE'" apk-badging.txt
+          APK_SHA256="$(sha256sum "$APK" | cut -d ' ' -f1)"
+          APK_SIZE_BYTES="$(stat --printf='%s' "$APK")"
+          echo "APK_SHA256=$APK_SHA256" | tee -a apk-evidence.txt
+          echo "APK_SIZE_BYTES=$APK_SIZE_BYTES" | tee -a apk-evidence.txt
+          echo "SOURCE_SHA=$GITHUB_SHA" | tee -a apk-evidence.txt
+          echo "BUILD_STATUS=APK_ZIP_MANIFEST_PACKAGE_AND_HASH_VALID" | tee -a apk-evidence.txt
+          export APK APK_SHA256 APK_SIZE_BYTES EXPECTED_PACKAGE PR_HEAD_SHA PR_BASE_SHA
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          fixture = Path("tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/package.json")
+          package = json.loads(fixture.read_text(encoding="utf-8"))
+          record = {
+              "schema_version": 1,
+              "evidence_type": "nested-expo-apk-build-and-emulator-pilot",
+              "source_commit_sha": os.environ["GITHUB_SHA"],
+              "pull_request_head_sha": os.environ["PR_HEAD_SHA"],
+              "pull_request_base_sha": os.environ["PR_BASE_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "workflow_run_url": f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ["GITHUB_RUN_ID"]}',
+              "framework": "Expo",
+              "framework_version": package.get("dependencies", {}).get("expo", "UNKNOWN"),
+              "application_id": os.environ["EXPECTED_PACKAGE"],
+              "apk_path": os.environ["APK"],
+              "apk_size_bytes": int(os.environ["APK_SIZE_BYTES"]),
+              "apk_sha256": os.environ["APK_SHA256"],
+              "emulator": {"api_level": 35, "abi": "x86_64", "profile": "pixel_2"},
+              "build_status": "PASS",
+              "provenance_status": "PASS",
+              "emulator_acceptance_status": "PENDING",
+              "physical_device_acceptance_status": "NOT_RUN"
+          }
+          Path("nested-expo-provenance.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
       - name: Run Emulator readiness pilot
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -204,6 +258,34 @@ jobs:
           arch: x86_64
           profile: pixel_2
           script: bash scripts/ci/test-nested-expo-emulator.sh
+
+      - name: Verify Emulator result matches exact APK provenance
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -s nested-expo-provenance.json || ! -s emulator-result.json ]]; then
+            echo "EMULATOR_ACCEPTANCE_STATUS=BLOCKED_EVIDENCE"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          provenance = json.loads(Path("nested-expo-provenance.json").read_text())
+          result = json.loads(Path("emulator-result.json").read_text())
+          assert result["source_sha"] == provenance["source_commit_sha"], "Emulator source SHA does not match APK provenance"
+          assert result["apk_sha256"] == provenance["apk_sha256"], "Emulator APK SHA-256 does not match built APK"
+          status = result["status"]
+          provenance["emulator_acceptance_status"] = status
+          provenance["emulator_result"] = result
+          Path("nested-expo-provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+          print(f"EMULATOR_ACCEPTANCE_STATUS={status}")
+          if status == "PASS":
+              assert result["install_exit_code"] == "0"
+              assert result["launch_exit_code"] == "0"
+              assert result["process_check_exit_code"] == "0"
+              assert result["screenshot_exit_code"] == "0"
+          PY
 
       - name: Upload APK and diagnostic evidence
         if: always()
@@ -213,6 +295,9 @@ jobs:
           path: |
             tests/fixtures/nested-expo-monorepo/artifacts/focus-mode/android/app/build/outputs/apk/debug/app-debug.apk
             apk-evidence.txt
+            apk-zip-validation.txt
+            apk-badging.txt
+            nested-expo-provenance.json
             network-diagnostics.txt
             sdk-install.log
             dependency-install.log
