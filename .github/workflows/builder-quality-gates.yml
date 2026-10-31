@@ -44,14 +44,68 @@ permissions:
   contents: read
 
 jobs:
+  refresh-api-server-lockfile:
+    name: Refresh API server lockfile on trusted security PR
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'security/api-server-rate-limit-20261101' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact PR head branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Preserve baseline lockfile
+        run: cp pnpm-lock.yaml pnpm-lock.before.yaml
+
+      - name: Regenerate lockfile for active workspace
+        run: pnpm install --lockfile-only --config.node-linker=hoisted
+
+      - name: Retain historical M6 importer record
+        run: ruby scripts/ci/preserve-workspace-lock-importer.rb
+
+      - name: Validate active workspace frozen install
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted --ignore-scripts
+
+      - name: Commit lockfile to this PR branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          if git diff --cached --quiet; then
+            echo "Lockfile already up to date."
+            exit 0
+          fi
+          git commit -m "build(deps): refresh API server rate-limit lockfile"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
   quality:
     name: Typecheck, unit tests, and workspace build
+    needs: [refresh-api-server-lockfile]
+    if: always() && (needs.refresh-api-server-lockfile.result == 'success' || needs.refresh-api-server-lockfile.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - name: Checkout exact commit
+      - name: Checkout exact commit or refreshed PR branch
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'security/api-server-rate-limit-20261101' && github.event.pull_request.head.ref || github.sha }}
           persist-credentials: false
 
       - name: Setup pnpm
