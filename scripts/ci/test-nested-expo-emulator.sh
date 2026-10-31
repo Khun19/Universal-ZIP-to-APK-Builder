@@ -53,6 +53,16 @@ PY
   } | tee -a apk-evidence.txt
 }
 
+# Bind the result to the exact APK even when the Emulator itself is blocked.
+if [[ ! -s "$APK" ]]; then
+  STATUS="BLOCKED_EVIDENCE"
+  REASON="Expected APK file is missing or empty: $APK"
+  printf '%s\n' "$REASON" > emulator-install.txt
+  write_result
+  exit 21
+fi
+APK_SHA256="$(sha256sum "$APK" | cut -d ' ' -f1)"
+
 collect_logcat() {
   timeout 30 adb logcat -d -v threadtime > emulator-logcat.txt 2>&1 || true
 }
@@ -149,16 +159,6 @@ HEALTH_RC=0
   echo "PACKAGE_MANAGER_PROBE=cmd package list packages"
 } | tee emulator-health.txt
 collect_diagnostics
-
-if [[ ! -s "$APK" ]]; then
-  STATUS="BLOCKED_EVIDENCE"
-  REASON="Expected APK file is missing or empty: $APK"
-  printf '%s\n' "$REASON" > emulator-install.txt
-  collect_logcat
-  write_result
-  exit 21
-fi
-APK_SHA256="$(sha256sum "$APK" | cut -d ' ' -f1)"
 
 adb install -r "$APK" > emulator-install.txt 2>&1
 INSTALL_RC=$?
