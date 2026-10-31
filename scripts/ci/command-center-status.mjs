@@ -132,7 +132,7 @@ function renderReport({ checkedAt, mainSha, mainCi, prs, codeScanning, dependabo
     "## RZ Builder — Automated Command Center",
     "",
     `Checked at: ${checkedAt} (UTC)`,
-    `Current `main` SHA: \`${mainSha}\``,
+    "Current main SHA: `" + mainSha + "`",
     `Main CI checks: **${mainCi}**`,
     "",
     "### Open priority PRs",
