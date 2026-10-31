@@ -83,6 +83,8 @@ jobs:
 
       - name: Commit lockfile to this PR branch only
         shell: bash
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -93,7 +95,7 @@ jobs:
             exit 0
           fi
           git commit -m "build(deps): refresh API server rate-limit lockfile"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:${PR_BRANCH}"
 
   quality:
     name: Typecheck, unit tests, and workspace build
