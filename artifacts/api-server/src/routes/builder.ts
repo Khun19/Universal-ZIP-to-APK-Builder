@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import multer from "multer";
@@ -7,6 +8,8 @@ import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjec
 import { safeExtract } from "@workspace/security";
 
 const router = Router();
+const uploadRateLimit = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: "draft-8", legacyHeaders: false });
+const mutationRateLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES ?? 250 * 1024 * 1024), files: 1 } });
 const root = path.resolve(process.env.BUILDER_STORAGE_DIR ?? "/tmp/universal-zip-to-apk");
 const id = (value: string | string[]) => String(value);
@@ -20,7 +23,7 @@ router.post("/projects", async (req, res, next) => {
 router.get("/projects/:id", async (req, res, next) => { try { const item = await getProject(id(req.params.id)); return item ? res.json(item) : res.status(404).json({ error: "Project not found" }); } catch (error) { return next(error); } });
 router.get("/projects/:id/analysis", async (req, res, next) => { try { const item = await getAnalysis(id(req.params.id)); return item ? res.json(item) : res.status(404).json({ error: "Analysis not found" }); } catch (error) { return next(error); } });
 
-router.post("/projects/:id/upload", upload.single("file"), async (req, res, next) => {
+router.post("/projects/:id/upload", uploadRateLimit, upload.single("file"), async (req, res, next) => {
   const projectId = id(req.params.id);
   try {
     const item = await getProject(projectId);
@@ -36,7 +39,7 @@ router.post("/projects/:id/upload", upload.single("file"), async (req, res, next
   } catch (error) { return next(error); }
 });
 
-router.post("/projects/:id/analyze", async (req, res, next) => {
+router.post("/projects/:id/analyze", mutationRateLimit, async (req, res, next) => {
   const projectId = id(req.params.id);
   try {
     const item = await getProject(projectId);
@@ -53,7 +56,7 @@ router.post("/projects/:id/analyze", async (req, res, next) => {
   } catch (error) { await markAnalysisStatus(projectId, "FAILED").catch(() => undefined); return next(error); }
 });
 
-router.post("/projects/:id/build", async (req, res, next) => {
+router.post("/projects/:id/build", mutationRateLimit, async (req, res, next) => {
   const projectId = id(req.params.id);
   try {
     const item = await getProject(projectId);
