@@ -1,0 +1,57 @@
+name: Report workflow result as a GitHub annotation
+description: Emit a job-level notice, warning, or error without changing the job result.
+inputs:
+  job-status:
+    description: Final GitHub Actions job status.
+    required: true
+  evidence-scope:
+    description: What this workflow job actually verifies.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Publish workflow annotation and summary
+      shell: bash
+      env:
+        JOB_STATUS: ${{ inputs.job-status }}
+        EVIDENCE_SCOPE: ${{ inputs.evidence-scope }}
+        WORKFLOW_NAME: ${{ github.workflow }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        COMMIT_SHA: ${{ github.sha }}
+        EVENT_NAME: ${{ github.event_name }}
+        SERVER_URL: ${{ github.server_url }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        case "$JOB_STATUS" in
+          success)
+            echo "::notice title=Workflow job passed::$WORKFLOW_NAME completed successfully. Scope: $EVIDENCE_SCOPE"
+            RESULT="PASS"
+            ;;
+          failure)
+            echo "::error title=Workflow job failed::$WORKFLOW_NAME failed. Inspect the failed step and its uploaded evidence. Scope: $EVIDENCE_SCOPE"
+            RESULT="FAIL"
+            ;;
+          cancelled)
+            echo "::warning title=Workflow job cancelled::$WORKFLOW_NAME was cancelled; this is not a passing result. Scope: $EVIDENCE_SCOPE"
+            RESULT="CANCELLED"
+            ;;
+          *)
+            echo "::warning title=Workflow job incomplete::$WORKFLOW_NAME ended with status '$JOB_STATUS'. Treat as not verified."
+            RESULT="NOT_VERIFIED"
+            ;;
+        esac
+
+        {
+          echo "## Workflow result annotation"
+          echo
+          echo "- Result: **$RESULT**"
+          echo "- Workflow: $WORKFLOW_NAME"
+          echo "- Run: [$RUN_ID / attempt $RUN_ATTEMPT]($SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID)"
+          echo "- Event: $EVENT_NAME"
+          echo "- Commit: `$COMMIT_SHA`"
+          echo "- Evidence scope: $EVIDENCE_SCOPE"
+          echo
+          echo "This annotation reports the job outcome only. It does not upgrade an unrun validation, emulator test, or physical-device acceptance to PASS."
+        } >> "$GITHUB_STEP_SUMMARY"
