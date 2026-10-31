@@ -17,7 +17,7 @@ import { BuildStrategy } from '../lib/strategy.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 
 
 test('Uses the pnpm workspace root and hoisted linker for React Native installs', () => {
@@ -147,14 +147,20 @@ test('Validates the React Native 0.76 merged native runtime layout for Hermes', 
     'lib/arm64-v8a/libhermes.so',
   ];
 
-  // Minimal ZIP fixture; the validator only inspects the APK entry table.
-  const zipScript = `printf '%s\\n' ${entries.map((entry) => JSON.stringify(entry)).join(' ')} | zip -q -@`;
+  // Build the minimal ZIP fixture without a shell or interpolated command string.
+  for (const entry of entries) {
+    const entryPath = path.join(projectPath, entry);
+    fs.mkdirSync(path.dirname(entryPath), { recursive: true });
+    fs.writeFileSync(entryPath, "");
+  }
   await new Promise<void>((resolve, reject) => {
-    const child = exec(
-      `cd ${JSON.stringify(projectPath)} && mkdir -p lib/arm64-v8a && touch lib/arm64-v8a/libreactnative.so lib/arm64-v8a/libjsi.so lib/arm64-v8a/libhermes.so AndroidManifest.xml && zip -q app-debug.apk AndroidManifest.xml lib/arm64-v8a/libreactnative.so lib/arm64-v8a/libjsi.so lib/arm64-v8a/libhermes.so`,
+    const child = execFile(
+      "zip",
+      ["-q", "app-debug.apk", ...entries],
+      { cwd: projectPath },
       (error: Error | null) => error ? reject(error) : resolve(),
     );
-    child.on('error', reject);
+    child.on("error", reject);
   });
 
   const libraries = await validateReactNativeApkNativeRuntime(apkPath, true);
