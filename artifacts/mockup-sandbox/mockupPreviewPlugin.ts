@@ -114,10 +114,7 @@ export function resolveMockupImportPath(relative: string): string | null {
       });
 
       watcher.on("add", (file) => {
-        if (
-          isMockupFile(file) &&
-          isPreviewTarget(path.relative(mockupsAbsDir, file))
-        ) {
+        if (isMockupFile(file)) {
           void onFileAddedOrRemoved();
         }
       });
