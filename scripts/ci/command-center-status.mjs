@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 
 const MARKER = "<!-- rz-builder-command-center-auto -->";
 const ISSUE_NUMBER = 24;
-const TRACKED_PRS = [105, 107, 109, 103, 106, 95, 82, 110, 111];
+const TRACKED_PRS = [105, 107, 109, 110, 111, 112, 113, 114, 103, 106, 95, 82];
 const FRAMEWORK_WORKFLOWS = [
   ["M4 Vite PWA APK", "Ubuntu M4 Vite PWA APK Build Test"],
   ["M5 Flutter APK", "M5 Flutter Build Test"],
