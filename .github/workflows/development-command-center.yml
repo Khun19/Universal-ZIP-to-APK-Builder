@@ -1,0 +1,88 @@
+name: Development Command Center
+
+on:
+  schedule:
+    # 08:00 Myanmar time (UTC+06:30).
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/development-command-center.yml"
+      - "scripts/ci/command-center-status.mjs"
+      - "tests/command-center-status.test.mjs"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/development-command-center.yml"
+      - "scripts/ci/command-center-status.mjs"
+      - "tests/command-center-status.test.mjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-command-center-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit GitHub evidence and status rules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      checks: read
+      security-events: read
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Test status classification
+        run: node --test tests/command-center-status.test.mjs
+
+      - name: Build read-only Command Center report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMAND_CENTER_PUBLISH: "false"
+        run: node scripts/ci/command-center-status.mjs
+
+  publish:
+    name: Publish status snapshot to Issue #24
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      checks: read
+      security-events: read
+      issues: write
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Update the automated Issue #24 status comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMAND_CENTER_PUBLISH: "true"
+        run: node scripts/ci/command-center-status.mjs
