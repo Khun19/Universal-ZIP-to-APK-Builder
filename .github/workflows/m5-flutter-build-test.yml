@@ -175,3 +175,10 @@ jobs:
             m5-apk.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish workflow result annotation
+        if: always()
+        uses: ./.github/actions/workflow-annotation
+        with:
+          job-status: ${{ job.status }}
+          evidence-scope: "M5 Flutter Android integration build, APK discovery, provenance, and checksum validation."

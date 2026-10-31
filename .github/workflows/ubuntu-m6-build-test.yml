@@ -280,3 +280,10 @@ jobs:
             bare-scaffold-apk-identity-gate-report.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish workflow result annotation
+        if: always()
+        uses: ./.github/actions/workflow-annotation
+        with:
+          job-status: ${{ job.status }}
+          evidence-scope: "M6 React Native build, APK identity and provenance gates; real-device acceptance remains NOT_RUN."
