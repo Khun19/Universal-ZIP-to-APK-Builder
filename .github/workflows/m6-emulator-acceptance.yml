@@ -407,3 +407,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Publish workflow result annotation
+        if: always()
+        uses: ./.github/actions/workflow-annotation
+        with:
+          job-status: ${{ job.status }}
+          evidence-scope: "Identity-verified M6 build artifact installation and emulator runtime acceptance; physical-device acceptance is not included."
