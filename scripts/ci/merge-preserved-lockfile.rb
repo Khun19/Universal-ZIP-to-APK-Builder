@@ -14,7 +14,7 @@ next_lock["importers"][m6_key] = m6_importer
 
 def references_old_esbuild(value)
   serialized = JSON.generate(value)
-  serialized.include?("esbuild@0.27.3") || serialized.match?(/"esbuild"\\s*:\\s*"0\\.27\\.3"/)
+  serialized.include?("esbuild@0.27.3") || serialized.match?(/"esbuild"\s*:\s*"0\.27\.3"/)
 end
 
 (old_lock["packages"] || {}).each do |key, value|
@@ -39,7 +39,7 @@ pending = []
 %w[dependencies devDependencies optionalDependencies].each do |section|
   (m6_importer[section] || {}).each do |name, spec|
     version = spec["version"]
-    pending << [name, version] if version && !version.match?(/\\A(link:|workspace:|file:)/)
+    pending << [name, version] if version && !version.match?(/\A(link:|workspace:|file:)/)
   end
 end
 
@@ -53,16 +53,16 @@ until pending.empty?
   snapshot = next_lock["snapshots"][key]
   %w[dependencies optionalDependencies].each do |section|
     (snapshot[section] || {}).each do |child_name, child_version|
-      next if child_version.to_s.match?(/\\A(link:|workspace:|file:)/)
+      next if child_version.to_s.match?(/\A(link:|workspace:|file:)/)
       pending << [child_name, child_version]
     end
   end
 end
 
 output = YAML.dump(next_lock)
-if output.include?("esbuild@0.27.3") || output.match?(/esbuild:\\s*0\\.27\\.3/) || output.match?(/"esbuild"\\s*:\\s*"0\\.27\\.3"/)
+if output.include?("esbuild@0.27.3") || output.match?(/esbuild:\s*0\.27\.3/) || output.match?(/"esbuild"\s*:\s*"0\.27\.3"/)
   abort("Vulnerable esbuild 0.27.3 reference remains in lockfile")
 end
-abort("Patched esbuild override 0.28.1 missing from lockfile") unless output.match?(/esbuild:\\s*0\\.28\\.1/)
+abort("Patched esbuild override 0.28.1 missing from lockfile") unless output.match?(/esbuild:\s*0\.28\.1/)
 File.write("pnpm-lock.yaml", output)
 puts("Preserved #{m6_key}; validated #{visited.length} reachable M6 dependency snapshots; removed all esbuild 0.27.3 references.")
