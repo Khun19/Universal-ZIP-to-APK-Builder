@@ -180,7 +180,7 @@ function renderReport({ checkedAt, mainSha, mainCi, prs, codeScanning, dependabo
     ...(codeScanning.items || []).slice(0, 20).map(alert =>
       `| [#${alert.number}](${alert.url}) | ${escapeCell(alert.rule)} | ${escapeCell(alert.severity)} | ${escapeCell(alert.path)}:${escapeCell(alert.line)} | ${escapeCell(alert.message)} | ${escapeCell(alert.description)} |`
     ),
-    ...(codeScanning.status === "BLOCKED" ? [`| — | — | BLOCKED | — | ${escapeCell(codeScanning.reason)} |`] : []),
+    ...(codeScanning.status === "BLOCKED" ? [`| — | — | BLOCKED | — | — | ${escapeCell(codeScanning.reason)} |`] : []),
     "",
     "### Physical-device registry",
     "",
