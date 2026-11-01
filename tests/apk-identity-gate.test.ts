@@ -53,3 +53,21 @@ test("blocks an unexpected application ID", () => {
   const result = evaluateCandidate({ ...base, provenance: { ...base.provenance, application_id: "com.unexpected.app" } });
   assert.ok(result.blockers.includes("APPLICATION_ID_MISMATCH"));
 });
+
+import { classifyBehaviorDiff } from "../scripts/m6-behavior-diff-gate.mjs";
+
+test("M6 behavior diff: both app fixture and regression test must change", () => {
+  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 1, testDiffExitCode: 1 }).behaviorChanged, true);
+  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 0, testDiffExitCode: 0 }).behaviorChanged, false);
+  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 1, testDiffExitCode: 0 }).behaviorChanged, false);
+  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 0, testDiffExitCode: 1 }).behaviorChanged, false);
+});
+
+test("M6 behavior diff: missing merge-base fails closed", () => {
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: "", appDiffExitCode: 1, testDiffExitCode: 1 }), /M6_DIFF_MERGE_BASE_MISSING/);
+});
+
+test("M6 behavior diff: git execution errors fail closed", () => {
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 128, testDiffExitCode: 1 }), /M6_DIFF_EXECUTION_FAILED/);
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 1, testDiffExitCode: 2 }), /M6_DIFF_EXECUTION_FAILED/);
+});
