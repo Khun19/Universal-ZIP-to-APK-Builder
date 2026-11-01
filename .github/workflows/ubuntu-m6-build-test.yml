@@ -177,20 +177,62 @@ jobs:
 
       - name: Enforce APK identity and provenance gate
         shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
           PROVENANCE_PATH="$(dirname "$APK_PATH")/provenance.json"
-          # Only assert a verified behavior change when this candidate changes the
-          # M6 fixture and its regression test relative to current main.
-          git fetch origin main --depth=1
           GATE_ARGS=()
-          if git diff --quiet origin/main...HEAD -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
-            echo "No M6 app-behavior/test diff from main; device eligibility must remain blocked."
+
+          if [[ -n "${PR_NUMBER:-}" ]]; then
+            test -n "${PR_BASE_REF:-}"
+            test -n "${PR_BASE_SHA:-}"
+            test -n "${PR_HEAD_SHA:-}"
+            BASE_REF="refs/remotes/origin/$PR_BASE_REF"
+            HEAD_REF="refs/remotes/pull/$PR_NUMBER/head"
+
+            # The checkout is shallow by default. Fetch complete histories for
+            # the exact PR base and head so merge-base/diff failures cannot be
+            # mistaken for a verified behavior change.
+            git fetch --no-tags --unshallow origin \
+              "+refs/heads/$PR_BASE_REF:$BASE_REF" \
+              "+refs/pull/$PR_NUMBER/head:$HEAD_REF"
+
+            test "$(git rev-parse "$BASE_REF")" = "$PR_BASE_SHA"
+            test "$(git rev-parse "$HEAD_REF")" = "$PR_HEAD_SHA"
+            MERGE_BASE="$(git merge-base "$BASE_REF" "$HEAD_REF")"
+            test -n "$MERGE_BASE"
+
+            set +e
+            git diff --quiet "$MERGE_BASE" "$HEAD_REF" -- \
+              tests/fixtures/react-native-project/App.js \
+              tests/react-native-pipeline.test.ts
+            DIFF_STATUS=$?
+            set -e
+
+            DECISION="$(node --input-type=module -e '
+              import { classifyBehaviorDiff } from "./scripts/m6-behavior-diff-gate.mjs";
+              const result = classifyBehaviorDiff({
+                mergeBase: process.argv[1],
+                diffExitCode: Number(process.argv[2])
+              });
+              process.stdout.write(result.behaviorChanged ? "changed" : "unchanged");
+            ' "$MERGE_BASE" "$DIFF_STATUS")"
+
+            if [[ "$DECISION" == "changed" ]]; then
+              GATE_ARGS+=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
+              GATE_ARGS+=(--behavior-change-verified true)
+            else
+              echo "No M6 app-behavior/test diff from the verified PR merge-base; device eligibility remains blocked."
+            fi
           else
-            GATE_ARGS+=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
-            GATE_ARGS+=(--behavior-change-verified true)
+            echo "No pull-request base/head identity is available; device eligibility remains blocked."
           fi
+
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$PROVENANCE_PATH" \
