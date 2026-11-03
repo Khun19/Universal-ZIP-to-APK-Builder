@@ -3,7 +3,6 @@ import { pathToFileURL } from "node:url";
 
 const MARKER = "<!-- rz-builder-command-center-auto -->";
 const ISSUE_NUMBER = 24;
-const TRACKED_PRS = [105, 107, 109, 110, 111, 112, 113, 114, 103, 106, 95, 82];
 const FRAMEWORK_WORKFLOWS = [
   ["M4 Vite PWA APK", "Ubuntu M4 Vite PWA APK Build Test"],
   ["M5 Flutter APK", "M5 Flutter Build Test"],
@@ -12,6 +11,15 @@ const FRAMEWORK_WORKFLOWS = [
   ["Community Chat Demo Emulator", "Android Emulator Device Test"],
   ["M6 Exact APK Emulator", "M6 Exact APK Emulator Acceptance"]
 ];
+
+export function selectOpenPullRequests(openPrs = []) {
+  const byNumber = new Map();
+  for (const pr of openPrs) {
+    if (pr?.state !== "open" || !Number.isInteger(pr.number)) continue;
+    byNumber.set(pr.number, pr);
+  }
+  return [...byNumber.values()].sort((a, b) => b.number - a.number);
+}
 
 export function classifyRun(run) {
   if (!run) return "NOT RUN";
@@ -218,7 +226,7 @@ async function main() {
     fetchOpenAlerts(`/repos/${repoPath}/dependabot/alerts?state=open&per_page=100`, token),
     readRegistry(repoPath, token)
   ]);
-  const selected = openPrs.filter(pr => TRACKED_PRS.includes(pr.number));
+  const selected = selectOpenPullRequests(openPrs);
   const prs = await Promise.all(selected.map(pr => inspectPullRequest(repoPath, pr, mainSha, token)));
   const checkedAt = new Date().toISOString();
   const report = renderReport({
