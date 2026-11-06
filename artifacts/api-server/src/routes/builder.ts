@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import multer from "multer";
 import { analyzeProject } from "@workspace/analyzer";
-import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload, createBuild as persistBuild } from "@workspace/db/repository";
+import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload } from "@workspace/db/repository";
 import { safeExtract } from "@workspace/security";
 
 const router = Router();
@@ -38,36 +39,40 @@ router.post("/projects/:id/upload", upload.single("file"), async (req, res, next
 
 router.post("/projects/:id/analyze", async (req, res, next) => {
   const projectId = id(req.params.id);
+  const projectRoot = path.join(root, projectId);
+  const destination = path.join(projectRoot, "source");
+  const stagingDestination = path.join(projectRoot, `.source-${randomUUID()}`);
   try {
     const item = await getProject(projectId);
     const archive = await getProjectSourcePath(projectId);
     if (!item || !archive) return res.status(404).json({ error: "Uploaded project not found" });
-    const destination = path.join(root, projectId, "source");
-    const files = await safeExtract(archive, destination);
+
+    // Extract into a fresh workspace first. safeExtract deliberately rejects an
+    // existing destination, so a unique staging path also makes re-analysis safe.
+    const files = await safeExtract(archive, stagingDestination);
+    await rm(destination, { recursive: true, force: true });
+    await rename(stagingDestination, destination);
+
     let packageJson: Record<string, unknown> | undefined;
     try { packageJson = JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")); } catch {}
     const result = analyzeProject({ files, packageJson });
     await saveAnalysis(projectId, result);
     await markAnalysisStatus(projectId, "COMPLETE");
     res.json({ projectId, ...result });
-  } catch (error) { await markAnalysisStatus(projectId, "FAILED").catch(() => undefined); return next(error); }
+  } catch (error) {
+    await rm(stagingDestination, { recursive: true, force: true }).catch(() => undefined);
+    await markAnalysisStatus(projectId, "FAILED").catch(() => undefined);
+    return next(error);
+  }
 });
 
-router.post("/projects/:id/build", async (req, res, next) => {
-  const projectId = id(req.params.id);
-  try {
-    const item = await getProject(projectId);
-    const analysis = await getAnalysis(projectId);
-    const projectPath = path.join(root, projectId, "source");
-    if (!item || !analysis) return res.status(404).json({ error: "Project analysis required" });
-    if (analysis.blockers.length) return res.status(409).json({ error: "Project is not compatible", blockers: analysis.blockers });
-    const job = await persistBuild(projectId);
-    res.status(202).json({
-      ...job,
-      status: "QUEUED",
-      message: "Legacy API build queue removed. Use the local Termux build executor."
-    });
-  } catch (error) { return next(error); }
+router.post("/projects/:id/build", async (_req, res) => {
+  // The legacy API queue has no active worker. Do not create a persistent QUEUED
+  // job that can never run; callers must use the supported local build executor.
+  return res.status(410).json({
+    error: "Legacy API build queue is disabled",
+    message: "Use the supported local Termux build executor."
+  });
 });
 
 router.get("/builds/:id", async (req, res, next) => { try { const job = await getBuild(id(req.params.id)); return job ? res.json(job) : res.status(404).json({ error: "Build not found" }); } catch (error) { return next(error); } });
