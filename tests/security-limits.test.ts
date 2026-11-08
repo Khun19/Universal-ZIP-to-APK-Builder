@@ -96,6 +96,20 @@ test('ZIP entry names with unzip pattern metacharacters are rejected', () => {
   }
 });
 
+test('ZIP canonical dot-segment aliases are rejected before extraction', () => {
+  const aliases = [
+    [entry('./hello.txt', 1, 1), entry('hello.txt', 1, 1)],
+    [entry('hello.txt', 1, 1), entry('./hello.txt', 1, 1)],
+  ];
+
+  for (const entries of aliases) {
+    assert.throws(
+      () => inspectAdmZip(fakeZip(entries)),
+      /Unsafe archive path/,
+    );
+  }
+});
+
 test('ZIP entries that could match the same unzip pattern cannot be extracted ambiguously', () => {
   const entries = [
     entry('assets/a.txt', 1, 1),
