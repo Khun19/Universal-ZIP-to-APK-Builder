@@ -21,6 +21,14 @@ export function selectLatestM6Baseline(registry) {
   return candidates[0];
 }
 
+function addedDiffLines(diff) {
+  return diff
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1))
+    .join("\n");
+}
+
 export function classifyBehaviorDiff({
   mergeBase, baselineCommit, appDiffExitCode, testDiffExitCode,
   appDiff = "", testDiff = ""
@@ -36,14 +44,18 @@ export function classifyBehaviorDiff({
   }
 
   const pairedDiff = appDiffExitCode === 1 && testDiffExitCode === 1;
+  // Only added lines can prove the candidate introduces the behavior. Deleted
+  // lines and unchanged diff context must never satisfy the behavior predicate.
+  const appAdditions = addedDiffLines(appDiff);
+  const testAdditions = addedDiffLines(testDiff);
   const resetAppEvidence =
-    /accessibilityLabel=["']Reset tap count["']/.test(appDiff) &&
-    /onPress=\{\(\) => setCount\(0\)\}/.test(appDiff) &&
-    /Reset counter/.test(appDiff);
+    /accessibilityLabel=["']Reset tap count["']/.test(appAdditions) &&
+    /onPress=\{\(\) => setCount\(0\)\}/.test(appAdditions) &&
+    /Reset counter/.test(appAdditions);
   const resetTestEvidence =
-    /accessibilityLabel=["']Reset tap count["']/.test(testDiff) &&
-    /setCount(?:\\)?\(0(?:\\)?\)/.test(testDiff) &&
-    /Reset counter/.test(testDiff);
+    /accessibilityLabel=["']Reset tap count["']/.test(testAdditions) &&
+    /setCount(?:\\)?\(0(?:\\)?\)/.test(testAdditions) &&
+    /Reset counter/.test(testAdditions);
   const behaviorChanged = pairedDiff && resetAppEvidence && resetTestEvidence;
   return {
     behaviorChanged,
