@@ -25,6 +25,15 @@ test("rejects an APK whose hash was already device-tested", () => {
   assert.ok(result.blockers.includes("ALREADY_DEVICE_TESTED_IDENTICAL_APK"));
 });
 
+test("candidate registry edits cannot suppress a duplicate recorded in the trusted registry snapshot", () => {
+  const candidateRegistry = { tested_apks: [] };
+  const trustedRegistrySnapshot = { tested_apks: [{ sha256: sha, device_result: "PASS" }] };
+  assert.equal(evaluateCandidate({ ...base, registry: candidateRegistry }).eligible, true);
+  const trustedResult = evaluateCandidate({ ...base, registry: trustedRegistrySnapshot });
+  assert.equal(trustedResult.eligible, false);
+  assert.ok(trustedResult.blockers.includes("ALREADY_DEVICE_TESTED_IDENTICAL_APK"));
+});
+
 test("blocks missing provenance", () => {
   const result = evaluateCandidate({ ...base, provenance: null });
   assert.ok(result.blockers.includes("PROVENANCE_MISSING"));
@@ -56,8 +65,20 @@ test("blocks an unexpected application ID", () => {
 });
 
 const baselineSha = "c".repeat(40);
-const resetAppDiff = '+++ b/App.js\\n+accessibilityLabel="Reset tap count"\\n+onPress={() => setCount(0)}\\n+Reset counter';
-const resetTestDiff = '+++ b/test.ts\n+accessibilityLabel="Reset tap count"\n+assert.match(appSource, /setCount\\(0\\)/)\n+Reset counter';
+const resetAppDiff = `diff --git a/App.js b/App.js
+--- a/App.js
++++ b/App.js
+@@ -1,2 +1,5 @@
++accessibilityLabel="Reset tap count"
++onPress={() => setCount(0)}
++Reset counter`;
+const resetTestDiff = `diff --git a/test.ts b/test.ts
+--- a/test.ts
++++ b/test.ts
+@@ -1,2 +1,5 @@
++accessibilityLabel="Reset tap count"
++assert.match(appSource, /setCount\\(0\\)/)
++Reset counter`;
 
 test("M6 registry baseline: selects the latest valid physical-device-tested M6 APK", () => {
   const older = { application_id: "com.builder.m6reactnative", device_result: "PASS", sha256: "a".repeat(64), source_commit: "1".repeat(40), device_tested_at: "2026-10-15" };
@@ -70,10 +91,51 @@ test("M6 registry baseline: missing or invalid baseline fails closed", () => {
   assert.throws(() => selectLatestM6Baseline(null), /M6_REGISTRY_INVALID/);
 });
 
-test("M6 baseline gate: paired app and test changes with verified reset behavior are eligible", () => {
+test("M6 baseline gate: paired added app and test changes with reset behavior are eligible", () => {
   const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: resetAppDiff, testDiff: resetTestDiff });
   assert.equal(result.behaviorChanged, true);
   assert.equal(result.targetBehavior, "Reset tap count to zero using the Reset counter button");
+});
+
+test("M6 baseline gate: deleted behavior evidence cannot qualify", () => {
+  const deletedAppDiff = `diff --git a/App.js b/App.js
+--- a/App.js
++++ b/App.js
+@@ -1,5 +1,2 @@
+-accessibilityLabel="Reset tap count"
+-onPress={() => setCount(0)}
+-Reset counter`;
+  const deletedTestDiff = `diff --git a/test.ts b/test.ts
+--- a/test.ts
++++ b/test.ts
+@@ -1,5 +1,2 @@
+-accessibilityLabel="Reset tap count"
+-assert.match(appSource, /setCount\\(0\\)/)
+-Reset counter`;
+  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: deletedAppDiff, testDiff: deletedTestDiff });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.targetBehavior, null);
+});
+
+test("M6 baseline gate: context-only reset evidence cannot qualify", () => {
+  const contextAppDiff = `diff --git a/App.js b/App.js
+--- a/App.js
++++ b/App.js
+@@ -1,5 +1,6 @@
+ accessibilityLabel="Reset tap count"
+ onPress={() => setCount(0)}
+ Reset counter
++unrelated app addition`;
+  const contextTestDiff = `diff --git a/test.ts b/test.ts
+--- a/test.ts
++++ b/test.ts
+@@ -1,5 +1,6 @@
+ accessibilityLabel="Reset tap count"
+ assert.match(appSource, /setCount\\(0\\)/)
+ Reset counter
++unrelated test addition`;
+  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: contextAppDiff, testDiff: contextTestDiff });
+  assert.equal(result.behaviorChanged, false);
 });
 
 test("M6 baseline gate: unchanged and one-sided diffs remain ineligible", () => {
