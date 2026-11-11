@@ -207,7 +207,9 @@ jobs:
             test "$(git rev-parse "$HEAD_REF")" = "$PR_HEAD_SHA"
             test "$SOURCE_COMMIT" = "$PR_HEAD_SHA"
             TRUSTED_REGISTRY_COMMIT="$PR_BASE_SHA"
-          elif [[ "${GITHUB_EVENT_NAME:-}" == "push" && "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
+          elif [[ "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
+            # For main push and manual dispatch on main, trust the previous
+            # main commit so this candidate cannot supply its own baseline.
             TRUSTED_REGISTRY_COMMIT="$(git rev-parse "$SOURCE_COMMIT^")"
           else
             git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
