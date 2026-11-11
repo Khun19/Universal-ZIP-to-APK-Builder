@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { beginDirectoryReplacement, withProjectLock } from "../utils/project-analysis-workspace";
 import multer from "multer";
 import { analyzeProject } from "@workspace/analyzer";
 import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload } from "@workspace/db/repository";
@@ -24,16 +25,19 @@ router.get("/projects/:id/analysis", async (req, res, next) => { try { const ite
 router.post("/projects/:id/upload", upload.single("file"), async (req, res, next) => {
   const projectId = id(req.params.id);
   try {
-    const item = await getProject(projectId);
-    if (!item) return res.status(404).json({ error: "Project not found" });
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: "A ZIP file field named file is required" });
-    if (!file.originalname.toLowerCase().endsWith(".zip")) return res.status(415).json({ error: "Only ZIP archives are accepted" });
-    const projectRoot = path.join(root, projectId);
-    await mkdir(projectRoot, { recursive: true });
-    const target = path.join(projectRoot, "source.zip");
-    await writeFile(target, file.buffer, { flag: "w" });
-    res.json(await saveUpload(projectId, file.size, target));
+    const result = await withProjectLock(projectId, async () => {
+      const item = await getProject(projectId);
+      if (!item) return { status: 404 as const, body: { error: "Project not found" } };
+      const file = req.file;
+      if (!file) return { status: 400 as const, body: { error: "A ZIP file field named file is required" } };
+      if (!file.originalname.toLowerCase().endsWith(".zip")) return { status: 415 as const, body: { error: "Only ZIP archives are accepted" } };
+      const projectRoot = path.join(root, projectId);
+      await mkdir(projectRoot, { recursive: true });
+      const target = path.join(projectRoot, "source.zip");
+      await writeFile(target, file.buffer, { flag: "w" });
+      return { status: 200 as const, body: await saveUpload(projectId, file.size, target) };
+    });
+    return res.status(result.status).json(result.body);
   } catch (error) { return next(error); }
 });
 
@@ -43,24 +47,32 @@ router.post("/projects/:id/analyze", async (req, res, next) => {
   const destination = path.join(projectRoot, "source");
   const stagingDestination = path.join(projectRoot, `.source-${randomUUID()}`);
   try {
-    const item = await getProject(projectId);
-    const archive = await getProjectSourcePath(projectId);
-    if (!item || !archive) return res.status(404).json({ error: "Uploaded project not found" });
+    const result = await withProjectLock(projectId, async () => {
+      const item = await getProject(projectId);
+      const archive = await getProjectSourcePath(projectId);
+      if (!item || !archive) return null;
 
-    // Extract into a fresh workspace first. safeExtract deliberately rejects an
-    // existing destination, so a unique staging path also makes re-analysis safe.
-    const files = await safeExtract(archive, stagingDestination);
-    await rm(destination, { recursive: true, force: true });
-    await rename(stagingDestination, destination);
-
-    let packageJson: Record<string, unknown> | undefined;
-    try { packageJson = JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")); } catch {}
-    const result = analyzeProject({ files, packageJson });
-    await saveAnalysis(projectId, result);
-    await markAnalysisStatus(projectId, "COMPLETE");
-    res.json({ projectId, ...result });
+      // Extract completely before swapping. The previous source is retained
+      // until analysis and persistence succeed, and concurrent uploads/analysis
+      // for this project are serialized by the same lock.
+      const files = await safeExtract(archive, stagingDestination);
+      const replacement = await beginDirectoryReplacement(stagingDestination, destination);
+      try {
+        let packageJson: Record<string, unknown> | undefined;
+        try { packageJson = JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")); } catch {}
+        const analysis = analyzeProject({ files, packageJson });
+        await saveAnalysis(projectId, analysis);
+        await markAnalysisStatus(projectId, "COMPLETE");
+        await replacement.commit();
+        return analysis;
+      } catch (error) {
+        await replacement.rollback().catch(() => undefined);
+        throw error;
+      }
+    });
+    if (!result) return res.status(404).json({ error: "Uploaded project not found" });
+    return res.json({ projectId, ...result });
   } catch (error) {
-    await rm(stagingDestination, { recursive: true, force: true }).catch(() => undefined);
     await markAnalysisStatus(projectId, "FAILED").catch(() => undefined);
     return next(error);
   }
@@ -71,7 +83,7 @@ router.post("/projects/:id/build", async (_req, res) => {
   // job that can never run; callers must use the supported local build executor.
   return res.status(410).json({
     error: "Legacy API build queue is disabled",
-    message: "Use the supported local Termux build executor."
+    message: "Use the canonical GitHub Actions build workflow. Termux is optional for recovery and diagnostics only."
   });
 });
 
