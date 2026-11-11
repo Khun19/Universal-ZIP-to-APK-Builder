@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beginDirectoryReplacement, withProjectLock } from "../artifacts/api-server/src/utils/project-analysis-workspace.ts";
+import { sendLegacyBuildDisabled } from "../artifacts/api-server/src/utils/legacy-build-response.ts";
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), "project-analysis-workspace-"));
@@ -73,4 +74,19 @@ test("analysis operations for one project are serialized", async () => {
   releaseFirst();
   await Promise.all([first, second]);
   assert.deepEqual(events, ["first:start", "first:end", "second:start"]);
+});
+
+test("retired legacy build endpoint returns HTTP 410 without queueing a job", () => {
+  let statusCode = 200;
+  let body: unknown;
+  const response = {
+    status(code: number) { statusCode = code; return this; },
+    json(value: unknown) { body = value; return this; }
+  } as unknown as import("express").Response;
+  sendLegacyBuildDisabled(response);
+  assert.equal(statusCode, 410);
+  assert.deepEqual(body, {
+    error: "Legacy API build queue is disabled",
+    message: "Use the canonical GitHub Actions build workflow. Termux is optional for recovery and diagnostics only."
+  });
 });
