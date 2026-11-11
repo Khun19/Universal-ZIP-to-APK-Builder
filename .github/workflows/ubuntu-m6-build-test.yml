@@ -273,7 +273,7 @@ jobs:
             --expected-run-id "$GITHUB_RUN_ID" \
             --expected-application-id "com.builder.m6reactnative" \
             "${GATE_ARGS[@]}" \
-            --registry docs/tested-apk-registry.json \
+            --registry "$RUNNER_TEMP/trusted-tested-apk-registry.json" \
             --output apk-identity-gate-report.json
 
       - name: Generate and validate bare-scaffold APK provenance
@@ -337,7 +337,7 @@ jobs:
             --provenance "$OUT_DIR/provenance.json" \
             --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
-            --registry docs/tested-apk-registry.json \
+            --registry "$RUNNER_TEMP/trusted-tested-apk-registry.json" \
             --output bare-scaffold-apk-identity-gate-report.json
 
       - name: Upload APK checksum and provenance
