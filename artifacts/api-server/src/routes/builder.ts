@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { beginDirectoryReplacement, withProjectLock } from "../utils/project-analysis-workspace";
+import { sendLegacyBuildDisabled } from "../utils/legacy-build-response";
 import multer from "multer";
 import { analyzeProject } from "@workspace/analyzer";
 import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload } from "@workspace/db/repository";
@@ -80,12 +81,8 @@ router.post("/projects/:id/analyze", async (req, res, next) => {
 });
 
 router.post("/projects/:id/build", async (_req, res) => {
-  // The legacy API queue has no active worker. Do not create a persistent QUEUED
-  // job that can never run; callers must use the supported local build executor.
-  return res.status(410).json({
-    error: "Legacy API build queue is disabled",
-    message: "Use the canonical GitHub Actions build workflow. Termux is optional for recovery and diagnostics only."
-  });
+  // This retired endpoint returns 410 directly and never persists a build job.
+  return sendLegacyBuildDisabled(res);
 });
 
 router.get("/builds/:id", async (req, res, next) => { try { const job = await getBuild(id(req.params.id)); return job ? res.json(job) : res.status(404).json({ error: "Build not found" }); } catch (error) { return next(error); } });
