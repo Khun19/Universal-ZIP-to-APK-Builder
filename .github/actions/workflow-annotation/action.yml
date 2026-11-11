@@ -1,0 +1,25 @@
+name: Report workflow result as a GitHub annotation
+description: Emit a job-level notice, warning, or error without changing the job result.
+inputs:
+  job-status:
+    description: Final GitHub Actions job status.
+    required: true
+  evidence-scope:
+    description: What this workflow job actually verifies.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Publish workflow annotation and summary
+      shell: bash
+      env:
+        JOB_STATUS: ${{ inputs.job-status }}
+        EVIDENCE_SCOPE: ${{ inputs.evidence-scope }}
+        WORKFLOW_NAME: ${{ github.workflow }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        COMMIT_SHA: ${{ github.sha }}
+        EVENT_NAME: ${{ github.event_name }}
+        SERVER_URL: ${{ github.server_url }}
+        REPOSITORY: ${{ github.repository }}
+      run: bash "$GITHUB_ACTION_PATH/report.sh"

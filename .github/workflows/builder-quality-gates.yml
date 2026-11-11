@@ -84,3 +84,10 @@ jobs:
 
       - name: Build workspace packages
         run: pnpm run build
+
+      - name: Publish workflow result annotation
+        if: always()
+        uses: ./.github/actions/workflow-annotation
+        with:
+          job-status: ${{ job.status }}
+          evidence-scope: "Typecheck, unit/regression tests, and workspace package build."
