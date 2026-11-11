@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluateCandidate } from "../scripts/apk-identity-gate.mjs";
+import { classifyBehaviorDiff, selectLatestM6Baseline } from "../scripts/m6-behavior-diff-gate.mjs";
 
 const sha = "a".repeat(64);
 const base = {
@@ -54,20 +55,45 @@ test("blocks an unexpected application ID", () => {
   assert.ok(result.blockers.includes("APPLICATION_ID_MISMATCH"));
 });
 
-import { classifyBehaviorDiff } from "../scripts/m6-behavior-diff-gate.mjs";
+const baselineSha = "c".repeat(40);
+const resetAppDiff = '+++ b/App.js\\n+accessibilityLabel="Reset tap count"\\n+onPress={() => setCount(0)}\\n+Reset counter';
+const resetTestDiff = '+++ b/test.ts\\n+accessibilityLabel="Reset tap count"\\n+assert setCount(0)\\n+Reset counter';
 
-test("M6 behavior diff: both app fixture and regression test must change", () => {
-  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 1, testDiffExitCode: 1 }).behaviorChanged, true);
-  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 0, testDiffExitCode: 0 }).behaviorChanged, false);
-  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 1, testDiffExitCode: 0 }).behaviorChanged, false);
-  assert.equal(classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 0, testDiffExitCode: 1 }).behaviorChanged, false);
+test("M6 registry baseline: selects the latest valid physical-device-tested M6 APK", () => {
+  const older = { application_id: "com.builder.m6reactnative", device_result: "PASS", sha256: "a".repeat(64), source_commit: "1".repeat(40), device_tested_at: "2026-10-15" };
+  const latest = { ...older, sha256: "b".repeat(64), source_commit: baselineSha, device_tested_at: "2026-10-16" };
+  assert.equal(selectLatestM6Baseline({ tested_apks: [older, latest] }).source_commit, baselineSha);
 });
 
-test("M6 behavior diff: missing merge-base fails closed", () => {
-  assert.throws(() => classifyBehaviorDiff({ mergeBase: "", appDiffExitCode: 1, testDiffExitCode: 1 }), /M6_DIFF_MERGE_BASE_MISSING/);
+test("M6 registry baseline: missing or invalid baseline fails closed", () => {
+  assert.throws(() => selectLatestM6Baseline({ tested_apks: [] }), /M6_REGISTRY_BASELINE_MISSING/);
+  assert.throws(() => selectLatestM6Baseline(null), /M6_REGISTRY_INVALID/);
 });
 
-test("M6 behavior diff: git execution errors fail closed", () => {
-  assert.throws(() => classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 128, testDiffExitCode: 1 }), /M6_DIFF_EXECUTION_FAILED/);
-  assert.throws(() => classifyBehaviorDiff({ mergeBase: "base-sha", appDiffExitCode: 1, testDiffExitCode: 2 }), /M6_DIFF_EXECUTION_FAILED/);
+test("M6 baseline gate: paired app and test changes with verified reset behavior are eligible", () => {
+  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: resetAppDiff, testDiff: resetTestDiff });
+  assert.equal(result.behaviorChanged, true);
+  assert.equal(result.targetBehavior, "Reset tap count to zero using the Reset counter button");
+});
+
+test("M6 baseline gate: unchanged and one-sided diffs remain ineligible", () => {
+  for (const [appDiffExitCode, testDiffExitCode] of [[0,0],[1,0],[0,1]]) {
+    assert.equal(classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode, testDiffExitCode, appDiff: resetAppDiff, testDiff: resetTestDiff }).behaviorChanged, false);
+  }
+});
+
+test("M6 baseline gate: unrelated paired changes do not invent a behavior target", () => {
+  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: "+unrelated app edit", testDiff: "+unrelated test edit" });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.targetBehavior, null);
+});
+
+test("M6 baseline gate: missing merge-base and non-ancestor baseline fail closed", () => {
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: "", baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1 }), /M6_DIFF_MERGE_BASE_MISSING/);
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: "d".repeat(40), baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1 }), /M6_BASELINE_NOT_ANCESTOR/);
+});
+
+test("M6 baseline gate: git execution errors fail closed", () => {
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 128, testDiffExitCode: 1 }), /M6_DIFF_EXECUTION_FAILED/);
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 2 }), /M6_DIFF_EXECUTION_FAILED/);
 });
