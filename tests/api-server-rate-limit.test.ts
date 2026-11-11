@@ -47,6 +47,7 @@ test("rate limits repeated requests from the same client IP", () => {
   middleware(request, first.response, () => { nextCalls += 1; });
   assert.equal(first.statusCode, 200);
   assert.equal(first.headers.get("RateLimit-Remaining"), "0");
+  assert.ok(Number(first.headers.get("RateLimit-Reset")) >= 1 && Number(first.headers.get("RateLimit-Reset")) <= 60);
   assert.equal(nextCalls, 1);
 
   const second = responseRecorder();
@@ -54,6 +55,7 @@ test("rate limits repeated requests from the same client IP", () => {
   assert.equal(second.statusCode, 429);
   assert.equal((second.body as { error: string }).error, "Too many requests. Please retry later.");
   assert.ok(second.headers.has("Retry-After"));
+  assert.ok(Number(second.headers.get("RateLimit-Reset")) >= 1 && Number(second.headers.get("RateLimit-Reset")) <= 60);
   assert.equal(nextCalls, 1);
 });
 
