@@ -38,7 +38,7 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
       res.setHeader("Retry-After", String(retryAfterSeconds));
       res.setHeader("RateLimit-Limit", String(limit));
       res.setHeader("RateLimit-Remaining", "0");
-      res.setHeader("RateLimit-Reset", String(Math.ceil(window.resetAt / 1000)));
+      res.setHeader("RateLimit-Reset", String(Math.max(0, Math.ceil((window.resetAt - now) / 1000))));
       res.status(429).json({ error: "Too many requests. Please retry later." });
       return;
     }
@@ -46,7 +46,7 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
     window.count += 1;
     res.setHeader("RateLimit-Limit", String(limit));
     res.setHeader("RateLimit-Remaining", String(Math.max(0, limit - window.count)));
-    res.setHeader("RateLimit-Reset", String(Math.ceil(window.resetAt / 1000)));
+    res.setHeader("RateLimit-Reset", String(Math.max(0, Math.ceil((window.resetAt - now) / 1000))));
 
     if (clients.size > MAX_CLIENT_BUCKETS) {
       for (const [key, value] of clients) {
