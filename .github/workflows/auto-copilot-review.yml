@@ -32,8 +32,91 @@ jobs:
               });
               core.info(`Requested ${reviewer} for PR #${pull_number}.`);
             } catch (error) {
-              core.setFailed(
-                `Could not request GitHub Copilot review for PR #${pull_number}: ${error.message}. ` +
-                "Check that Copilot code review is enabled/available for this repository and account."
-              );
+              // A duplicate request can occur when the ruleset's native Copilot
+              // review and this workflow race. Do not silently hide other errors.
+              if (error.status === 422 && /review/i.test(error.message)) {
+                core.warning(`Copilot review request already exists or is unavailable: ${error.message}`);
+              } else {
+                core.setFailed(
+                  `Could not request GitHub Copilot review for PR #${pull_number}: ${error.message}. ` +
+                  "Check that Copilot code review is enabled/available for this repository and account."
+                );
+              }
             }
+
+  ai-technical-review-gate:
+    name: AI Technical Review Gate
+    needs: request-copilot-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for exact-head Copilot review and validate verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          API="https://api.github.com/repos/$REPOSITORY/pulls/$PR_NUMBER/reviews"
+          REVIEW_JSON=""
+          for attempt in $(seq 1 40); do
+            REVIEWS="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" "$API?per_page=100")"
+            REVIEW_JSON="$(jq -c --arg sha "$EXPECTED_HEAD_SHA" \
+              '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]" and .commit_id == $sha and .state != "PENDING")] | sort_by(.submitted_at) | last // empty' <<< "$REVIEWS")"
+            if [ -n "$REVIEW_JSON" ]; then break; fi
+            echo "Waiting for Copilot review on exact head $EXPECTED_HEAD_SHA (attempt $attempt/40)."
+            sleep 30
+          done
+
+          if [ -z "$REVIEW_JSON" ]; then
+            echo "::error::No submitted Copilot review found for exact PR head $EXPECTED_HEAD_SHA within 20 minutes."
+            exit 1
+          fi
+
+          BODY="$(jq -r '.body // ""' <<< "$REVIEW_JSON")"
+          STATE="$(jq -r '.state' <<< "$REVIEW_JSON")"
+          REVIEW_COMMIT="$(jq -r '.commit_id' <<< "$REVIEW_JSON")"
+          printf '%s\n' "$BODY" > copilot-review.md
+
+          test "$REVIEW_COMMIT" = "$EXPECTED_HEAD_SHA"
+          if grep -Eq '^AI_TECHNICAL_REVIEW:[[:space:]]*FAIL([[:space:]]|$)' copilot-review.md; then
+            echo "::error::AI_TECHNICAL_REVIEW: FAIL — inspect Copilot review findings."
+            cat copilot-review.md
+            exit 1
+          fi
+          if ! grep -Eq '^AI_TECHNICAL_REVIEW:[[:space:]]*PASS([[:space:]]|$)' copilot-review.md; then
+            echo "::error::Copilot review did not emit the required exact verdict marker. Fail closed."
+            cat copilot-review.md
+            exit 1
+          fi
+          for area in Security Regression Workflow 'APK Identity' Provenance 'Test Evidence'; do
+            if ! grep -Eiq "^[[:space:]#>*-]*${area}:[[:space:]]*(PASS|NOT_APPLICABLE)([[:space:]]|$)" copilot-review.md; then
+              echo "::error::Missing PASS/NOT_APPLICABLE result for review area: $area"
+              cat copilot-review.md
+              exit 1
+            fi
+          done
+          if ! grep -Fq "$EXPECTED_HEAD_SHA" copilot-review.md; then
+            echo "::error::Review body does not identify the exact reviewed head SHA."
+            cat copilot-review.md
+            exit 1
+          fi
+          echo "AI_TECHNICAL_REVIEW: PASS"
+          echo "review_state=$STATE"
+          echo "reviewed_head=$REVIEW_COMMIT"
+          echo "AI verdict is a technical gate only; it is not a GitHub human APPROVED review."
+      - name: Upload AI review record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-technical-review-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          path: copilot-review.md
+          if-no-files-found: ignore
+          retention-days: 30
