@@ -57,7 +57,7 @@ test("blocks an unexpected application ID", () => {
 
 const baselineSha = "c".repeat(40);
 const resetAppDiff = '+++ b/App.js\\n+accessibilityLabel="Reset tap count"\\n+onPress={() => setCount(0)}\\n+Reset counter';
-const resetTestDiff = '+++ b/test.ts\\n+accessibilityLabel="Reset tap count"\\n+assert setCount(0)\\n+Reset counter';
+const resetTestDiff = '+++ b/test.ts\n+accessibilityLabel="Reset tap count"\n+assert.match(appSource, /setCount\\(0\\)/)\n+Reset counter';
 
 test("M6 registry baseline: selects the latest valid physical-device-tested M6 APK", () => {
   const older = { application_id: "com.builder.m6reactnative", device_result: "PASS", sha256: "a".repeat(64), source_commit: "1".repeat(40), device_tested_at: "2026-10-15" };
