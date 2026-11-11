@@ -217,6 +217,7 @@ jobs:
             MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
           fi
 
+          export SOURCE_PARENT MAIN_SHA
           TRUSTED_REGISTRY_COMMIT="$(node --input-type=module -e '
             import { resolveTrustedRegistryRevision } from "./scripts/m6-trusted-registry-revision.mjs";
             const trusted = resolveTrustedRegistryRevision({
