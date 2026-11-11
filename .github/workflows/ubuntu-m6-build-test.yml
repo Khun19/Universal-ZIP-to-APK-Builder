@@ -188,14 +188,6 @@ jobs:
           PROVENANCE_PATH="$(dirname "$APK_PATH")/provenance.json"
           GATE_ARGS=()
 
-          BASELINE_SOURCE_COMMIT="$(node --input-type=module -e '
-            import { readFileSync } from "node:fs";
-            import { selectLatestM6Baseline } from "./scripts/m6-behavior-diff-gate.mjs";
-            const registry = JSON.parse(readFileSync("docs/tested-apk-registry.json", "utf8"));
-            process.stdout.write(selectLatestM6Baseline(registry).source_commit);
-          ')"
-          [[ "$BASELINE_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-
           if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
             git fetch --no-tags --unshallow origin
           else
@@ -214,8 +206,25 @@ jobs:
             test "$(git rev-parse "$BASE_REF")" = "$PR_BASE_SHA"
             test "$(git rev-parse "$HEAD_REF")" = "$PR_HEAD_SHA"
             test "$SOURCE_COMMIT" = "$PR_HEAD_SHA"
+            TRUSTED_REGISTRY_COMMIT="$PR_BASE_SHA"
+          elif [[ "${GITHUB_EVENT_NAME:-}" == "push" && "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
+            TRUSTED_REGISTRY_COMMIT="$(git rev-parse "$SOURCE_COMMIT^")"
+          else
+            git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+            TRUSTED_REGISTRY_COMMIT="$(git rev-parse refs/remotes/origin/main)"
           fi
 
+          [[ "$TRUSTED_REGISTRY_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$TRUSTED_REGISTRY_COMMIT^{commit}"
+          git show "$TRUSTED_REGISTRY_COMMIT:docs/tested-apk-registry.json" > "$RUNNER_TEMP/trusted-tested-apk-registry.json"
+
+          BASELINE_SOURCE_COMMIT="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { selectLatestM6Baseline } from "./scripts/m6-behavior-diff-gate.mjs";
+            const registry = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            process.stdout.write(selectLatestM6Baseline(registry).source_commit);
+          ' "$RUNNER_TEMP/trusted-tested-apk-registry.json")"
+          [[ "$BASELINE_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           git cat-file -e "$BASELINE_SOURCE_COMMIT^{commit}"
           git cat-file -e "$SOURCE_COMMIT^{commit}"
           MERGE_BASE="$(git merge-base "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT")"
