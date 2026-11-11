@@ -42,7 +42,7 @@ export function classifyBehaviorDiff({
     /Reset counter/.test(appDiff);
   const resetTestEvidence =
     /accessibilityLabel=["']Reset tap count["']/.test(testDiff) &&
-    /setCount\(0\)/.test(testDiff) &&
+    /setCount(?:\\)?\(0(?:\\)?\)/.test(testDiff) &&
     /Reset counter/.test(testDiff);
   const behaviorChanged = pairedDiff && resetAppEvidence && resetTestEvidence;
   return {
