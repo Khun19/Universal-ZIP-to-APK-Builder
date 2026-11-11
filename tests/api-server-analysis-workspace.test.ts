@@ -34,7 +34,7 @@ test("directory replacement rollback restores the previous source", async () => 
     const replacement = await beginDirectoryReplacement(f.staging, f.source);
     await replacement.rollback();
     assert.equal(await readFile(path.join(f.source, "value.txt"), "utf8"), "old");
-    assert.deepEqual(await readdir(f.root), ["source", "staging"].sort());
+    assert.deepEqual((await readdir(f.root)).sort(), ["source", "staging"]);
   } finally {
     await rm(f.root, { recursive: true, force: true });
   }
