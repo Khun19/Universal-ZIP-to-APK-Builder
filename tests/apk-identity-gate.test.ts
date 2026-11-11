@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluateCandidate } from "../scripts/apk-identity-gate.mjs";
 import { classifyBehaviorDiff, selectLatestM6Baseline } from "../scripts/m6-behavior-diff-gate.mjs";
+import { resolveTrustedRegistryRevision } from "../scripts/m6-trusted-registry-revision.mjs";
 
 const sha = "a".repeat(64);
 const base = {
@@ -160,7 +161,6 @@ test("M6 baseline gate: git execution errors fail closed", () => {
   assert.throws(() => classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 2 }), /M6_DIFF_EXECUTION_FAILED/);
 });
 
-import { resolveTrustedRegistryRevision } from "../scripts/m6-trusted-registry-revision.mjs";
 
 const prBaseSha = "1".repeat(40);
 const mainParentSha = "2".repeat(40);
