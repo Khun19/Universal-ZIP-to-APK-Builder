@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { beginDirectoryReplacement, withProjectLock } from "../utils/project-analysis-workspace";
@@ -73,6 +73,7 @@ router.post("/projects/:id/analyze", async (req, res, next) => {
     if (!result) return res.status(404).json({ error: "Uploaded project not found" });
     return res.json({ projectId, ...result });
   } catch (error) {
+    await rm(stagingDestination, { recursive: true, force: true }).catch(() => undefined);
     await markAnalysisStatus(projectId, "FAILED").catch(() => undefined);
     return next(error);
   }
