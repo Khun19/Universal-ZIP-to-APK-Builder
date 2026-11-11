@@ -188,50 +188,71 @@ jobs:
           PROVENANCE_PATH="$(dirname "$APK_PATH")/provenance.json"
           GATE_ARGS=()
 
+          BASELINE_SOURCE_COMMIT="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { selectLatestM6Baseline } from "./scripts/m6-behavior-diff-gate.mjs";
+            const registry = JSON.parse(readFileSync("docs/tested-apk-registry.json", "utf8"));
+            process.stdout.write(selectLatestM6Baseline(registry).source_commit);
+          ')"
+          [[ "$BASELINE_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --no-tags --unshallow origin
+          else
+            git fetch --no-tags origin
+          fi
+
           if [[ -n "${PR_NUMBER:-}" ]]; then
             test -n "${PR_BASE_REF:-}"
             test -n "${PR_BASE_SHA:-}"
             test -n "${PR_HEAD_SHA:-}"
             BASE_REF="refs/remotes/origin/$PR_BASE_REF"
             HEAD_REF="refs/remotes/pull/$PR_NUMBER/head"
-
-            # The checkout is shallow by default. Fetch complete histories for
-            # the exact PR base and head so merge-base/diff failures cannot be
-            # mistaken for a verified behavior change.
-            git fetch --no-tags --unshallow origin \
+            git fetch --no-tags origin \
               "+refs/heads/$PR_BASE_REF:$BASE_REF" \
               "+refs/pull/$PR_NUMBER/head:$HEAD_REF"
-
             test "$(git rev-parse "$BASE_REF")" = "$PR_BASE_SHA"
             test "$(git rev-parse "$HEAD_REF")" = "$PR_HEAD_SHA"
-            MERGE_BASE="$(git merge-base "$BASE_REF" "$HEAD_REF")"
-            test -n "$MERGE_BASE"
+            test "$SOURCE_COMMIT" = "$PR_HEAD_SHA"
+          fi
 
-            set +e
-            git diff --quiet "$MERGE_BASE" "$HEAD_REF" -- tests/fixtures/react-native-project/App.js
-            APP_DIFF_STATUS=$?
-            git diff --quiet "$MERGE_BASE" "$HEAD_REF" -- tests/react-native-pipeline.test.ts
-            TEST_DIFF_STATUS=$?
-            set -e
+          git cat-file -e "$BASELINE_SOURCE_COMMIT^{commit}"
+          git cat-file -e "$SOURCE_COMMIT^{commit}"
+          MERGE_BASE="$(git merge-base "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT")"
+          test "$MERGE_BASE" = "$BASELINE_SOURCE_COMMIT"
 
-            DECISION="$(node --input-type=module -e '
-              import { classifyBehaviorDiff } from "./scripts/m6-behavior-diff-gate.mjs";
-              const result = classifyBehaviorDiff({
-                mergeBase: process.argv[1],
-                appDiffExitCode: Number(process.argv[2]),
-                testDiffExitCode: Number(process.argv[3])
-              });
-              process.stdout.write(result.behaviorChanged ? "changed" : "unchanged");
-            ' "$MERGE_BASE" "$APP_DIFF_STATUS" "$TEST_DIFF_STATUS")"
+          set +e
+          git diff --quiet "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js
+          APP_DIFF_STATUS=$?
+          git diff --quiet "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts
+          TEST_DIFF_STATUS=$?
+          set -e
 
-            if [[ "$DECISION" == "changed" ]]; then
-              GATE_ARGS+=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
-              GATE_ARGS+=(--behavior-change-verified true)
-            else
-              echo "No M6 app-behavior/test diff from the verified PR merge-base; device eligibility remains blocked."
-            fi
+          git diff "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js > "$RUNNER_TEMP/m6-app.diff"
+          git diff "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts > "$RUNNER_TEMP/m6-test.diff"
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            import { classifyBehaviorDiff } from "./scripts/m6-behavior-diff-gate.mjs";
+            const result = classifyBehaviorDiff({
+              mergeBase: process.argv[1],
+              baselineCommit: process.argv[2],
+              appDiffExitCode: Number(process.argv[3]),
+              testDiffExitCode: Number(process.argv[4]),
+              appDiff: readFileSync(process.argv[5], "utf8"),
+              testDiff: readFileSync(process.argv[6], "utf8")
+            });
+            writeFileSync(process.argv[7], JSON.stringify(result));
+            console.log(JSON.stringify(result));
+          ' "$MERGE_BASE" "$BASELINE_SOURCE_COMMIT" "$APP_DIFF_STATUS" "$TEST_DIFF_STATUS" \
+            "$RUNNER_TEMP/m6-app.diff" "$RUNNER_TEMP/m6-test.diff" "$RUNNER_TEMP/m6-behavior-decision.json"
+
+          if [[ "$(node -e 'const d=require(process.argv[1]); process.stdout.write(String(d.behaviorChanged))' "$RUNNER_TEMP/m6-behavior-decision.json")" == "true" ]]; then
+            TARGET_BEHAVIOR="$(node -e 'const d=require(process.argv[1]); process.stdout.write(d.targetBehavior)' "$RUNNER_TEMP/m6-behavior-decision.json")"
+            test -n "$TARGET_BEHAVIOR"
+            GATE_ARGS+=(--target-behavior "$TARGET_BEHAVIOR")
+            GATE_ARGS+=(--behavior-change-verified true)
           else
-            echo "No pull-request base/head identity is available; device eligibility remains blocked."
+            echo "No verified paired M6 behavior and regression-test change from the physical-device registry baseline; eligibility remains blocked."
           fi
 
           node scripts/apk-identity-gate.mjs \
