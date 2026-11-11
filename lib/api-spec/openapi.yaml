@@ -127,12 +127,16 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
-        "202":
-          description: Build queued
+        "410":
+          description: Legacy API build queue is retired; use the canonical GitHub Actions build workflow
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BuildJob"
+                type: object
+                required: [error, message]
+                properties:
+                  error: { type: string }
+                  message: { type: string }
   /builds/{id}:
     get:
       operationId: getBuild
