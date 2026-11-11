@@ -194,6 +194,8 @@ jobs:
             git fetch --no-tags origin
           fi
 
+          SOURCE_PARENT=""
+          MAIN_SHA=""
           if [[ -n "${PR_NUMBER:-}" ]]; then
             test -n "${PR_BASE_REF:-}"
             test -n "${PR_BASE_SHA:-}"
@@ -206,15 +208,27 @@ jobs:
             test "$(git rev-parse "$BASE_REF")" = "$PR_BASE_SHA"
             test "$(git rev-parse "$HEAD_REF")" = "$PR_HEAD_SHA"
             test "$SOURCE_COMMIT" = "$PR_HEAD_SHA"
-            TRUSTED_REGISTRY_COMMIT="$PR_BASE_SHA"
           elif [[ "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
             # For main push and manual dispatch on main, trust the previous
             # main commit so this candidate cannot supply its own baseline.
-            TRUSTED_REGISTRY_COMMIT="$(git rev-parse "$SOURCE_COMMIT^")"
+            SOURCE_PARENT="$(git rev-parse "$SOURCE_COMMIT^")"
           else
             git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
-            TRUSTED_REGISTRY_COMMIT="$(git rev-parse refs/remotes/origin/main)"
+            MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
           fi
+
+          TRUSTED_REGISTRY_COMMIT="$(node --input-type=module -e '
+            import { resolveTrustedRegistryRevision } from "./scripts/m6-trusted-registry-revision.mjs";
+            const trusted = resolveTrustedRegistryRevision({
+              eventName: process.env.GITHUB_EVENT_NAME,
+              ref: process.env.GITHUB_REF,
+              prBaseSha: process.env.PR_BASE_SHA || "",
+              sourceParent: process.env.SOURCE_PARENT || "",
+              mainSha: process.env.MAIN_SHA || ""
+            });
+            process.stdout.write(trusted);
+          ')"
+          echo "Trusted registry revision: $TRUSTED_REGISTRY_COMMIT (event=$GITHUB_EVENT_NAME ref=$GITHUB_REF)"
 
           [[ "$TRUSTED_REGISTRY_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           git cat-file -e "$TRUSTED_REGISTRY_COMMIT^{commit}"
