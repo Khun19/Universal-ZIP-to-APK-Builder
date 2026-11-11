@@ -1,9 +1,12 @@
 import { Router } from "express";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { beginDirectoryReplacement, withProjectLock } from "../utils/project-analysis-workspace";
+import { sendLegacyBuildDisabled } from "../utils/legacy-build-response";
 import multer from "multer";
 import { analyzeProject } from "@workspace/analyzer";
-import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload, createBuild as persistBuild } from "@workspace/db/repository";
+import { getAnalysis, getArtifact, getBuild, getBuildLogs, getProject, getProjectSourcePath, listProjects, markAnalysisStatus, saveAnalysis, saveUpload } from "@workspace/db/repository";
 import { safeExtract } from "@workspace/security";
 
 const router = Router();
@@ -23,51 +26,63 @@ router.get("/projects/:id/analysis", async (req, res, next) => { try { const ite
 router.post("/projects/:id/upload", upload.single("file"), async (req, res, next) => {
   const projectId = id(req.params.id);
   try {
-    const item = await getProject(projectId);
-    if (!item) return res.status(404).json({ error: "Project not found" });
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: "A ZIP file field named file is required" });
-    if (!file.originalname.toLowerCase().endsWith(".zip")) return res.status(415).json({ error: "Only ZIP archives are accepted" });
-    const projectRoot = path.join(root, projectId);
-    await mkdir(projectRoot, { recursive: true });
-    const target = path.join(projectRoot, "source.zip");
-    await writeFile(target, file.buffer, { flag: "w" });
-    res.json(await saveUpload(projectId, file.size, target));
+    const result = await withProjectLock(projectId, async () => {
+      const item = await getProject(projectId);
+      if (!item) return { status: 404 as const, body: { error: "Project not found" } };
+      const file = req.file;
+      if (!file) return { status: 400 as const, body: { error: "A ZIP file field named file is required" } };
+      if (!file.originalname.toLowerCase().endsWith(".zip")) return { status: 415 as const, body: { error: "Only ZIP archives are accepted" } };
+      const projectRoot = path.join(root, projectId);
+      await mkdir(projectRoot, { recursive: true });
+      const target = path.join(projectRoot, "source.zip");
+      await writeFile(target, file.buffer, { flag: "w" });
+      return { status: 200 as const, body: await saveUpload(projectId, file.size, target) };
+    });
+    return res.status(result.status).json(result.body);
   } catch (error) { return next(error); }
 });
 
 router.post("/projects/:id/analyze", async (req, res, next) => {
   const projectId = id(req.params.id);
+  const projectRoot = path.join(root, projectId);
+  const destination = path.join(projectRoot, "source");
+  const stagingDestination = path.join(projectRoot, `.source-${randomUUID()}`);
   try {
-    const item = await getProject(projectId);
-    const archive = await getProjectSourcePath(projectId);
-    if (!item || !archive) return res.status(404).json({ error: "Uploaded project not found" });
-    const destination = path.join(root, projectId, "source");
-    const files = await safeExtract(archive, destination);
-    let packageJson: Record<string, unknown> | undefined;
-    try { packageJson = JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")); } catch {}
-    const result = analyzeProject({ files, packageJson });
-    await saveAnalysis(projectId, result);
-    await markAnalysisStatus(projectId, "COMPLETE");
-    res.json({ projectId, ...result });
-  } catch (error) { await markAnalysisStatus(projectId, "FAILED").catch(() => undefined); return next(error); }
+    const result = await withProjectLock(projectId, async () => {
+      const item = await getProject(projectId);
+      const archive = await getProjectSourcePath(projectId);
+      if (!item || !archive) return null;
+
+      // Extract completely before swapping. The previous source is retained
+      // until analysis and persistence succeed, and concurrent uploads/analysis
+      // for this project are serialized by the same lock.
+      const files = await safeExtract(archive, stagingDestination);
+      const replacement = await beginDirectoryReplacement(stagingDestination, destination);
+      try {
+        let packageJson: Record<string, unknown> | undefined;
+        try { packageJson = JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")); } catch {}
+        const analysis = analyzeProject({ files, packageJson });
+        await saveAnalysis(projectId, analysis);
+        await markAnalysisStatus(projectId, "COMPLETE");
+        await replacement.commit();
+        return analysis;
+      } catch (error) {
+        await replacement.rollback().catch(() => undefined);
+        throw error;
+      }
+    });
+    if (!result) return res.status(404).json({ error: "Uploaded project not found" });
+    return res.json({ projectId, ...result });
+  } catch (error) {
+    await rm(stagingDestination, { recursive: true, force: true }).catch(() => undefined);
+    await markAnalysisStatus(projectId, "FAILED").catch(() => undefined);
+    return next(error);
+  }
 });
 
-router.post("/projects/:id/build", async (req, res, next) => {
-  const projectId = id(req.params.id);
-  try {
-    const item = await getProject(projectId);
-    const analysis = await getAnalysis(projectId);
-    const projectPath = path.join(root, projectId, "source");
-    if (!item || !analysis) return res.status(404).json({ error: "Project analysis required" });
-    if (analysis.blockers.length) return res.status(409).json({ error: "Project is not compatible", blockers: analysis.blockers });
-    const job = await persistBuild(projectId);
-    res.status(202).json({
-      ...job,
-      status: "QUEUED",
-      message: "Legacy API build queue removed. Use the local Termux build executor."
-    });
-  } catch (error) { return next(error); }
+router.post("/projects/:id/build", async (_req, res) => {
+  // This retired endpoint returns 410 directly and never persists a build job.
+  return sendLegacyBuildDisabled(res);
 });
 
 router.get("/builds/:id", async (req, res, next) => { try { const job = await getBuild(id(req.params.id)); return job ? res.json(job) : res.status(404).json({ error: "Build not found" }); } catch (error) { return next(error); } });
