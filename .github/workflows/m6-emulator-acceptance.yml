@@ -139,6 +139,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.build.outputs.artifact_id }}
           github-token: ${{ github.token }}
+          run-id: ${{ steps.build.outputs.run_id }}
           path: .
 
       - name: Validate exact artifact provenance, behavior change, and checksum
