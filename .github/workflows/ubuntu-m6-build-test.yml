@@ -93,6 +93,7 @@ jobs:
       - name: Resolve source and workflow commit identities
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -194,7 +195,7 @@ jobs:
             git fetch --no-tags origin
           fi
 
-          SOURCE_PARENT=""
+          PUSH_BEFORE_SHA_VALUE="${PUSH_BEFORE_SHA:-}"
           MAIN_SHA=""
           if [[ -n "${PR_NUMBER:-}" ]]; then
             test -n "${PR_BASE_REF:-}"
@@ -208,23 +209,32 @@ jobs:
             test "$(git rev-parse "$BASE_REF")" = "$PR_BASE_SHA"
             test "$(git rev-parse "$HEAD_REF")" = "$PR_HEAD_SHA"
             test "$SOURCE_COMMIT" = "$PR_HEAD_SHA"
-          elif [[ "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
-            # For main push and manual dispatch on main, trust the previous
-            # main commit so this candidate cannot supply its own baseline.
-            SOURCE_PARENT="$(git rev-parse "$SOURCE_COMMIT^")"
+          elif [[ "${GITHUB_EVENT_NAME:-}" == "push" && "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
+            # github.event.before is the trusted main revision before this push.
+            # Do not use SOURCE_COMMIT^: a multi-commit push could make that parent
+            # part of the same untrusted candidate update.
+            [[ "$PUSH_BEFORE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$PUSH_BEFORE_SHA_VALUE" != "0000000000000000000000000000000000000000" ]]
+            git fetch --no-tags origin "$PUSH_BEFORE_SHA_VALUE"
+            git cat-file -e "$PUSH_BEFORE_SHA_VALUE^{commit}"
+          elif [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" && "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
+            # A manual dispatch on protected main trusts the exact dispatched
+            # source revision, including any registry update already on that ref.
+            MAIN_SHA="$SOURCE_COMMIT"
           else
             git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
             MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
           fi
 
-          export SOURCE_PARENT MAIN_SHA
+          export PUSH_BEFORE_SHA_VALUE MAIN_SHA SOURCE_COMMIT
           TRUSTED_REGISTRY_COMMIT="$(node --input-type=module -e '
             import { resolveTrustedRegistryRevision } from "./scripts/m6-trusted-registry-revision.mjs";
             const trusted = resolveTrustedRegistryRevision({
               eventName: process.env.GITHUB_EVENT_NAME,
               ref: process.env.GITHUB_REF,
               prBaseSha: process.env.PR_BASE_SHA || "",
-              sourceParent: process.env.SOURCE_PARENT || "",
+              pushBeforeSha: process.env.PUSH_BEFORE_SHA_VALUE || "",
+              sourceSha: process.env.SOURCE_COMMIT || "",
               mainSha: process.env.MAIN_SHA || ""
             });
             process.stdout.write(trusted);
