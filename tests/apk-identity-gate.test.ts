@@ -167,6 +167,7 @@ const pushBeforeSha = "2".repeat(40);
 const candidateParentSha = "3".repeat(40);
 const sourceSha = "4".repeat(40);
 const mainHeadSha = "5".repeat(40);
+const zeroSha = "0".repeat(40);
 
 test("trusted registry revision: pull_request uses the exact PR base SHA", () => {
   assert.equal(resolveTrustedRegistryRevision({
@@ -220,7 +221,7 @@ test("trusted registry revision: invalid PR, push-before, dispatch-source and ma
   assert.throws(() => resolveTrustedRegistryRevision({
     eventName: "push",
     ref: "refs/heads/main",
-    pushBeforeSha: ZERO_SHA
+    pushBeforeSha: zeroSha
   }), /M6_TRUSTED_MAIN_BEFORE_INVALID/);
   assert.throws(() => resolveTrustedRegistryRevision({
     eventName: "workflow_dispatch",
