@@ -163,46 +163,55 @@ test("M6 baseline gate: git execution errors fail closed", () => {
 
 
 const prBaseSha = "1".repeat(40);
-const mainParentSha = "2".repeat(40);
-const mainHeadSha = "3".repeat(40);
+const pushBeforeSha = "2".repeat(40);
+const candidateParentSha = "3".repeat(40);
+const sourceSha = "4".repeat(40);
+const mainHeadSha = "5".repeat(40);
 
 test("trusted registry revision: pull_request uses the exact PR base SHA", () => {
   assert.equal(resolveTrustedRegistryRevision({
     eventName: "pull_request",
     ref: "refs/pull/116/merge",
     prBaseSha,
-    sourceParent: mainParentSha,
+    pushBeforeSha,
+    sourceSha,
     mainSha: mainHeadSha
   }), prBaseSha);
 });
 
-test("trusted registry revision: push to main uses the candidate first parent", () => {
+test("trusted registry revision: main push uses the exact event.before SHA, not the candidate first parent", () => {
+  assert.notEqual(pushBeforeSha, candidateParentSha);
   assert.equal(resolveTrustedRegistryRevision({
     eventName: "push",
     ref: "refs/heads/main",
-    sourceParent: mainParentSha,
+    pushBeforeSha,
+    sourceSha,
     mainSha: mainHeadSha
-  }), mainParentSha);
+  }), pushBeforeSha);
 });
 
-test("trusted registry revision: workflow_dispatch on main uses the candidate first parent", () => {
+test("trusted registry revision: workflow_dispatch on main uses the exact dispatched source SHA", () => {
   assert.equal(resolveTrustedRegistryRevision({
     eventName: "workflow_dispatch",
     ref: "refs/heads/main",
-    sourceParent: mainParentSha,
+    pushBeforeSha,
+    sourceSha,
     mainSha: mainHeadSha
-  }), mainParentSha);
+  }), sourceSha);
 });
 
-test("trusted registry revision: non-main dispatch uses fetched main head", () => {
-  assert.equal(resolveTrustedRegistryRevision({
-    eventName: "workflow_dispatch",
-    ref: "refs/heads/feature",
-    mainSha: mainHeadSha
-  }), mainHeadSha);
+test("trusted registry revision: non-main push and dispatch use fetched main head", () => {
+  for (const eventName of ["push", "workflow_dispatch"]) {
+    assert.equal(resolveTrustedRegistryRevision({
+      eventName,
+      ref: "refs/heads/feature",
+      sourceSha,
+      mainSha: mainHeadSha
+    }), mainHeadSha);
+  }
 });
 
-test("trusted registry revision: invalid trusted refs and unsupported events fail closed", () => {
+test("trusted registry revision: invalid PR, push-before, dispatch-source and main refs fail closed", () => {
   assert.throws(() => resolveTrustedRegistryRevision({
     eventName: "pull_request",
     ref: "refs/pull/116/merge",
@@ -211,8 +220,13 @@ test("trusted registry revision: invalid trusted refs and unsupported events fai
   assert.throws(() => resolveTrustedRegistryRevision({
     eventName: "push",
     ref: "refs/heads/main",
-    sourceParent: ""
-  }), /M6_TRUSTED_MAIN_PARENT_MISSING/);
+    pushBeforeSha: ZERO_SHA
+  }), /M6_TRUSTED_MAIN_BEFORE_INVALID/);
+  assert.throws(() => resolveTrustedRegistryRevision({
+    eventName: "workflow_dispatch",
+    ref: "refs/heads/main",
+    sourceSha: ""
+  }), /M6_TRUSTED_DISPATCH_SOURCE_INVALID/);
   assert.throws(() => resolveTrustedRegistryRevision({
     eventName: "workflow_dispatch",
     ref: "refs/heads/feature",
