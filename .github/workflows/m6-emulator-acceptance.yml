@@ -52,16 +52,20 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
-          [[ -z "$EVENT_ARTIFACT_ID" || "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          [[ "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
           [[ "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           test "$TRIGGER_CONCLUSION" = success
           RUN_JSON="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$EVENT_RUN_ID")"
           RUN_SHA="$(jq -r .head_sha <<<"$RUN_JSON")"
           RUN_CONCLUSION="$(jq -r .conclusion <<<"$RUN_JSON")"
+          RUN_NAME="$(jq -r .name <<<"$RUN_JSON")"
+          RUN_PATH="$(jq -r .path <<<"$RUN_JSON")"
           test "$RUN_SHA" = "$EXPECTED_SOURCE_COMMIT"
           test "$RUN_CONCLUSION" = success
+          test "$RUN_NAME" = "Ubuntu M6 Build Test"
+          test "$RUN_PATH" = ".github/workflows/ubuntu-m6-build-test.yml"
           ARTIFACTS="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$EVENT_RUN_ID/artifacts")"
-          ARTIFACT="$(jq -cer --arg name "$BUILD_ARTIFACT_NAME" --arg id "$EVENT_ARTIFACT_ID" '[.artifacts[] | select(.name == $name and (.expired|not) and ($id == "" or (.id|tostring) == $id))] | if length == 1 then .[0] else error("expected one available matching build artifact") end' <<<"$ARTIFACTS")"
+          ARTIFACT="$(jq -cer --arg name "$BUILD_ARTIFACT_NAME" --arg id "$EVENT_ARTIFACT_ID" '[.artifacts[] | select(.name == $name and (.expired|not) and (.id|tostring) == $id)] | if length == 1 then .[0] else error("expected one available exact build artifact ID") end' <<<"$ARTIFACTS")"
           echo "run_id=$EVENT_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "artifact_id=$(jq -r .id <<<"$ARTIFACT")" >> "$GITHUB_OUTPUT"
           echo "source_commit=$EXPECTED_SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
