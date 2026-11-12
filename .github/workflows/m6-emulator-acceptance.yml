@@ -137,8 +137,7 @@ jobs:
         if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
         uses: actions/download-artifact@v4
         with:
-          name: m6-build-apk
-          run-id: ${{ steps.build.outputs.run_id }}
+          artifact-ids: ${{ steps.build.outputs.artifact_id }}
           github-token: ${{ github.token }}
           path: .
 
@@ -156,10 +155,31 @@ jobs:
           test -s apk-identity-gate-report.json
           sha256sum --check "$(dirname "$APK_PATH")/SHA256SUMS.txt"
 
-          # Do not accept a rebuilt APK or a source revision without an M6 behavior diff.
-          git fetch origin main "$SOURCE_COMMIT" --depth=1
-          if git diff --quiet origin/main "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
-            echo "No M6 fixture/test behavior diff from main; refusing device acceptance."
+          # Resolve the baseline from the trusted registry checked out from main.
+          # Never derive this baseline from the candidate source commit/artifact.
+          TRUSTED_REGISTRY="docs/tested-apk-registry.json"
+          test -s "$TRUSTED_REGISTRY"
+          TRUSTED_BASELINE="$(jq -er --arg app "$PACKAGE_ID" '
+            [.tested_apks[]
+             | select(.application_id == $app
+                      and .fixture == "M6 React Native current device-tested candidate"
+                      and .device_result == "PASS")
+             | .source_commit]
+            | unique
+            | if length == 1 then .[0]
+              else error("expected exactly one trusted M6 physical-device baseline") end
+          ' "$TRUSTED_REGISTRY")"
+          [[ "$TRUSTED_BASELINE" =~ ^[0-9a-f]{40}$ ]]
+          echo "trusted_registry=$TRUSTED_REGISTRY" | tee .ci-evidence/trusted-baseline.txt
+          echo "trusted_baseline_commit=$TRUSTED_BASELINE" | tee -a .ci-evidence/trusted-baseline.txt
+
+          # Fetch the immutable trusted baseline and the candidate source commit.
+          # The candidate is data only; workflow/script/registry execution remains from main.
+          git fetch --no-tags origin "$TRUSTED_BASELINE" "$SOURCE_COMMIT" --depth=1
+          git cat-file -e "$TRUSTED_BASELINE^{commit}"
+          git cat-file -e "$SOURCE_COMMIT^{commit}"
+          if git diff --quiet "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
+            echo "No M6 fixture/test behavior diff from trusted physical-device baseline; refusing device acceptance."
             exit 1
           fi
           GATE_ARGS=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
