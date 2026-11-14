@@ -93,6 +93,7 @@ jobs:
       - name: Resolve source and workflow commit identities
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -100,6 +101,9 @@ jobs:
           test -n "$SOURCE_COMMIT"
           echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
           echo "WORKFLOW_SHA=$WORKFLOW_SHA" >> "$GITHUB_ENV"
+          if [[ -n "$PUSH_BEFORE_SHA" ]]; then
+            echo "PUSH_BEFORE_SHA=$PUSH_BEFORE_SHA" >> "$GITHUB_ENV"
+          fi
           echo "Source commit: $SOURCE_COMMIT"
           echo "Workflow checkout/merge SHA: $WORKFLOW_SHA"
 
@@ -177,20 +181,119 @@ jobs:
 
       - name: Enforce APK identity and provenance gate
         shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           APK_PATH=".workspace/m6-react-native-direct-integration/android/app/build/outputs/apk/debug/app-debug.apk"
           PROVENANCE_PATH="$(dirname "$APK_PATH")/provenance.json"
-          # Only assert a verified behavior change when this candidate changes the
-          # M6 fixture and its regression test relative to current main.
-          git fetch origin main --depth=1
           GATE_ARGS=()
-          if git diff --quiet origin/main...HEAD -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
-            echo "No M6 app-behavior/test diff from main; device eligibility must remain blocked."
+
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --no-tags --unshallow origin
           else
-            GATE_ARGS+=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
-            GATE_ARGS+=(--behavior-change-verified true)
+            git fetch --no-tags origin
           fi
+
+          PUSH_BEFORE_SHA_VALUE="${PUSH_BEFORE_SHA:-}"
+          MAIN_SHA=""
+          if [[ -n "${PR_NUMBER:-}" ]]; then
+            test -n "${PR_BASE_REF:-}"
+            test -n "${PR_BASE_SHA:-}"
+            test -n "${PR_HEAD_SHA:-}"
+            BASE_REF="refs/remotes/origin/$PR_BASE_REF"
+            HEAD_REF="refs/remotes/pull/$PR_NUMBER/head"
+            git fetch --no-tags origin \
+              "+refs/heads/$PR_BASE_REF:$BASE_REF" \
+              "+refs/pull/$PR_NUMBER/head:$HEAD_REF"
+            test "$(git rev-parse "$BASE_REF")" = "$PR_BASE_SHA"
+            test "$(git rev-parse "$HEAD_REF")" = "$PR_HEAD_SHA"
+            test "$SOURCE_COMMIT" = "$PR_HEAD_SHA"
+          elif [[ "${GITHUB_EVENT_NAME:-}" == "push" && "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
+            # github.event.before is the trusted main revision before this push.
+            # Do not use SOURCE_COMMIT^: a multi-commit push could make that parent
+            # part of the same untrusted candidate update.
+            [[ "$PUSH_BEFORE_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$PUSH_BEFORE_SHA_VALUE" != "0000000000000000000000000000000000000000" ]]
+            git fetch --no-tags origin "$PUSH_BEFORE_SHA_VALUE"
+            git cat-file -e "$PUSH_BEFORE_SHA_VALUE^{commit}"
+          elif [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" && "${GITHUB_REF:-}" == "refs/heads/main" ]]; then
+            # A manual dispatch on protected main trusts the exact dispatched
+            # source revision, including any registry update already on that ref.
+            MAIN_SHA="$SOURCE_COMMIT"
+          else
+            git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+            MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
+          fi
+
+          export PUSH_BEFORE_SHA_VALUE MAIN_SHA SOURCE_COMMIT
+          TRUSTED_REGISTRY_COMMIT="$(node --input-type=module -e '
+            import { resolveTrustedRegistryRevision } from "./scripts/m6-trusted-registry-revision.mjs";
+            const trusted = resolveTrustedRegistryRevision({
+              eventName: process.env.GITHUB_EVENT_NAME,
+              ref: process.env.GITHUB_REF,
+              prBaseSha: process.env.PR_BASE_SHA || "",
+              pushBeforeSha: process.env.PUSH_BEFORE_SHA_VALUE || "",
+              sourceSha: process.env.SOURCE_COMMIT || "",
+              mainSha: process.env.MAIN_SHA || ""
+            });
+            process.stdout.write(trusted);
+          ')"
+          echo "Trusted registry revision: $TRUSTED_REGISTRY_COMMIT (event=$GITHUB_EVENT_NAME ref=$GITHUB_REF)"
+
+          [[ "$TRUSTED_REGISTRY_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$TRUSTED_REGISTRY_COMMIT^{commit}"
+          git show "$TRUSTED_REGISTRY_COMMIT:docs/tested-apk-registry.json" > "$RUNNER_TEMP/trusted-tested-apk-registry.json"
+
+          BASELINE_SOURCE_COMMIT="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { selectLatestM6Baseline } from "./scripts/m6-behavior-diff-gate.mjs";
+            const registry = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            process.stdout.write(selectLatestM6Baseline(registry).source_commit);
+          ' "$RUNNER_TEMP/trusted-tested-apk-registry.json")"
+          [[ "$BASELINE_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$BASELINE_SOURCE_COMMIT^{commit}"
+          git cat-file -e "$SOURCE_COMMIT^{commit}"
+          MERGE_BASE="$(git merge-base "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT")"
+          test "$MERGE_BASE" = "$BASELINE_SOURCE_COMMIT"
+
+          set +e
+          git diff --quiet "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js
+          APP_DIFF_STATUS=$?
+          git diff --quiet "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts
+          TEST_DIFF_STATUS=$?
+          set -e
+
+          git diff "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js > "$RUNNER_TEMP/m6-app.diff"
+          git diff "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts > "$RUNNER_TEMP/m6-test.diff"
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            import { classifyBehaviorDiff } from "./scripts/m6-behavior-diff-gate.mjs";
+            const result = classifyBehaviorDiff({
+              mergeBase: process.argv[1],
+              baselineCommit: process.argv[2],
+              appDiffExitCode: Number(process.argv[3]),
+              testDiffExitCode: Number(process.argv[4]),
+              appDiff: readFileSync(process.argv[5], "utf8"),
+              testDiff: readFileSync(process.argv[6], "utf8")
+            });
+            writeFileSync(process.argv[7], JSON.stringify(result));
+            console.log(JSON.stringify(result));
+          ' "$MERGE_BASE" "$BASELINE_SOURCE_COMMIT" "$APP_DIFF_STATUS" "$TEST_DIFF_STATUS" \
+            "$RUNNER_TEMP/m6-app.diff" "$RUNNER_TEMP/m6-test.diff" "$RUNNER_TEMP/m6-behavior-decision.json"
+
+          if [[ "$(node -e 'const d=require(process.argv[1]); process.stdout.write(String(d.behaviorChanged))' "$RUNNER_TEMP/m6-behavior-decision.json")" == "true" ]]; then
+            TARGET_BEHAVIOR="$(node -e 'const d=require(process.argv[1]); process.stdout.write(d.targetBehavior)' "$RUNNER_TEMP/m6-behavior-decision.json")"
+            test -n "$TARGET_BEHAVIOR"
+            GATE_ARGS+=(--target-behavior "$TARGET_BEHAVIOR")
+            GATE_ARGS+=(--behavior-change-verified true)
+          else
+            echo "No verified paired M6 behavior and regression-test change from the physical-device registry baseline; eligibility remains blocked."
+          fi
+
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$PROVENANCE_PATH" \
@@ -198,7 +301,7 @@ jobs:
             --expected-run-id "$GITHUB_RUN_ID" \
             --expected-application-id "com.builder.m6reactnative" \
             "${GATE_ARGS[@]}" \
-            --registry docs/tested-apk-registry.json \
+            --registry "$RUNNER_TEMP/trusted-tested-apk-registry.json" \
             --output apk-identity-gate-report.json
 
       - name: Generate and validate bare-scaffold APK provenance
@@ -262,7 +365,7 @@ jobs:
             --provenance "$OUT_DIR/provenance.json" \
             --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$GITHUB_RUN_ID" \
-            --registry docs/tested-apk-registry.json \
+            --registry "$RUNNER_TEMP/trusted-tested-apk-registry.json" \
             --output bare-scaffold-apk-identity-gate-report.json
 
       - name: Upload APK checksum and provenance
