@@ -52,16 +52,20 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
-          [[ -z "$EVENT_ARTIFACT_ID" || "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          [[ "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
           [[ "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           test "$TRIGGER_CONCLUSION" = success
           RUN_JSON="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$EVENT_RUN_ID")"
           RUN_SHA="$(jq -r .head_sha <<<"$RUN_JSON")"
           RUN_CONCLUSION="$(jq -r .conclusion <<<"$RUN_JSON")"
+          RUN_NAME="$(jq -r .name <<<"$RUN_JSON")"
+          RUN_PATH="$(jq -r .path <<<"$RUN_JSON")"
           test "$RUN_SHA" = "$EXPECTED_SOURCE_COMMIT"
           test "$RUN_CONCLUSION" = success
+          test "$RUN_NAME" = "Ubuntu M6 Build Test"
+          test "$RUN_PATH" = ".github/workflows/ubuntu-m6-build-test.yml"
           ARTIFACTS="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$EVENT_RUN_ID/artifacts")"
-          ARTIFACT="$(jq -cer --arg name "$BUILD_ARTIFACT_NAME" --arg id "$EVENT_ARTIFACT_ID" '[.artifacts[] | select(.name == $name and (.expired|not) and ($id == "" or (.id|tostring) == $id))] | if length == 1 then .[0] else error("expected one available matching build artifact") end' <<<"$ARTIFACTS")"
+          ARTIFACT="$(jq -cer --arg name "$BUILD_ARTIFACT_NAME" --arg id "$EVENT_ARTIFACT_ID" '[.artifacts[] | select(.name == $name and (.expired|not) and (.id|tostring) == $id)] | if length == 1 then .[0] else error("expected one available exact build artifact ID") end' <<<"$ARTIFACTS")"
           echo "run_id=$EVENT_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "artifact_id=$(jq -r .id <<<"$ARTIFACT")" >> "$GITHUB_OUTPUT"
           echo "source_commit=$EXPECTED_SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
@@ -137,9 +141,9 @@ jobs:
         if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
         uses: actions/download-artifact@v4
         with:
-          name: m6-build-apk
-          run-id: ${{ steps.build.outputs.run_id }}
+          artifact-ids: ${{ steps.build.outputs.artifact_id }}
           github-token: ${{ github.token }}
+          run-id: ${{ steps.build.outputs.run_id }}
           path: .
 
       - name: Validate exact artifact provenance, behavior change, and checksum
@@ -156,14 +160,59 @@ jobs:
           test -s apk-identity-gate-report.json
           sha256sum --check "$(dirname "$APK_PATH")/SHA256SUMS.txt"
 
-          # Do not accept a rebuilt APK or a source revision without an M6 behavior diff.
-          git fetch origin main "$SOURCE_COMMIT" --depth=1
-          if git diff --quiet origin/main "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
-            echo "No M6 fixture/test behavior diff from main; refusing device acceptance."
-            exit 1
+          # Resolve the baseline only from the trusted main checkout.
+          # Candidate source and artifact are data; never trust their registry copy.
+          TRUSTED_REGISTRY="docs/tested-apk-registry.json"
+          test -s "$TRUSTED_REGISTRY"
+          TRUSTED_BASELINE="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { selectLatestM6Baseline } from "./scripts/m6-behavior-diff-gate.mjs";
+            const registry = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            process.stdout.write(selectLatestM6Baseline(registry).source_commit);
+          ' "$TRUSTED_REGISTRY")"
+          [[ "$TRUSTED_BASELINE" =~ ^[0-9a-f]{40}$ ]]
+          echo "trusted_registry=$TRUSTED_REGISTRY" | tee .ci-evidence/trusted-baseline.txt
+          echo "trusted_baseline_commit=$TRUSTED_BASELINE" | tee -a .ci-evidence/trusted-baseline.txt
+
+          # Ensure enough history exists to prove ancestry; shallow/missing history is fatal.
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --no-tags --unshallow origin
+          else
+            git fetch --no-tags origin
           fi
-          GATE_ARGS=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
-          GATE_ARGS+=(--behavior-change-verified true)
+          git fetch --no-tags origin "$TRUSTED_BASELINE" "$SOURCE_COMMIT"
+          git cat-file -e "$TRUSTED_BASELINE^{commit}"
+          git cat-file -e "$SOURCE_COMMIT^{commit}"
+          MERGE_BASE="$(git merge-base "$TRUSTED_BASELINE" "$SOURCE_COMMIT")"
+          test "$MERGE_BASE" = "$TRUSTED_BASELINE"
+
+          set +e
+          git diff --quiet "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js
+          APP_DIFF_STATUS=$?
+          git diff --quiet "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts
+          TEST_DIFF_STATUS=$?
+          set -e
+          git diff "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js > "$RUNNER_TEMP/m6-app.diff"
+          git diff "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts > "$RUNNER_TEMP/m6-test.diff"
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            import { classifyBehaviorDiff } from "./scripts/m6-behavior-diff-gate.mjs";
+            const result = classifyBehaviorDiff({
+              mergeBase: process.argv[1],
+              baselineCommit: process.argv[2],
+              appDiffExitCode: Number(process.argv[3]),
+              testDiffExitCode: Number(process.argv[4]),
+              appDiff: readFileSync(process.argv[5], "utf8"),
+              testDiff: readFileSync(process.argv[6], "utf8")
+            });
+            writeFileSync(".ci-evidence/m6-behavior-decision.json", JSON.stringify(result, null, 2) + "\n");
+            console.log(JSON.stringify(result));
+          ' "$MERGE_BASE" "$TRUSTED_BASELINE" "$APP_DIFF_STATUS" "$TEST_DIFF_STATUS" "$RUNNER_TEMP/m6-app.diff" "$RUNNER_TEMP/m6-test.diff"
+          BEHAVIOR_CHANGED="$(node -e 'const d=require("./.ci-evidence/m6-behavior-decision.json"); process.stdout.write(String(d.behaviorChanged))')"
+          test "$BEHAVIOR_CHANGED" = "true"
+          TARGET_BEHAVIOR="$(node -e 'const d=require("./.ci-evidence/m6-behavior-decision.json"); process.stdout.write(d.targetBehavior || "")')"
+          test -n "$TARGET_BEHAVIOR"
+          GATE_ARGS=(--target-behavior "$TARGET_BEHAVIOR" --behavior-change-verified true)
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$(dirname "$APK_PATH")/provenance.json" \
@@ -171,7 +220,7 @@ jobs:
             --expected-run-id "$BUILD_RUN_ID" \
             --expected-application-id "$PACKAGE_ID" \
             "${GATE_ARGS[@]}" \
-            --registry docs/tested-apk-registry.json \
+            --registry "$TRUSTED_REGISTRY" \
             --output .ci-evidence/apk-identity-gate-report.json
           APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
           echo "$APK_SHA256  $APK_PATH" | tee .ci-evidence/apk.sha256
