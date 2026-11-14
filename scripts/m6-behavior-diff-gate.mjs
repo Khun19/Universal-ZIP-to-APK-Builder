@@ -44,18 +44,18 @@ export function classifyBehaviorDiff({
   }
 
   const pairedDiff = appDiffExitCode === 1 && testDiffExitCode === 1;
-  // Only added lines can prove the candidate introduces the behavior. Deleted
-  // lines and unchanged diff context must never satisfy the behavior predicate.
+  // Match complete added source/test lines. Substrings inside comments, strings,
+  // deleted lines, and unchanged diff context are not accepted as evidence.
   const appAdditions = addedDiffLines(appDiff);
   const testAdditions = addedDiffLines(testDiff);
   const resetAppEvidence =
-    /accessibilityLabel=["']Reset tap count["']/.test(appAdditions) &&
-    /onPress=\{\(\) => setCount\(0\)\}/.test(appAdditions) &&
-    /Reset counter/.test(appAdditions);
+    /^\s*accessibilityLabel="Reset tap count"\s*$/m.test(appAdditions) &&
+    /^\s*onPress=\{\(\) => setCount\(0\)\}\s*$/m.test(appAdditions) &&
+    /^\s*<Text style=\{styles\.buttonText\}>Reset counter<\/Text>\s*$/m.test(appAdditions);
   const resetTestEvidence =
-    /accessibilityLabel=["']Reset tap count["']/.test(testAdditions) &&
-    /setCount(?:\\)?\(0(?:\\)?\)/.test(testAdditions) &&
-    /Reset counter/.test(testAdditions);
+    /^\s*assert\.match\(appSource, \/accessibilityLabel="Reset tap count"\/\);\s*$/m.test(testAdditions) &&
+    /^\s*assert\.match\(appSource, \/onPress=.*setCount.*0.*\/\);\s*$/m.test(testAdditions) &&
+    /^\s*assert\.match\(appSource, \/Reset counter\/\);\s*$/m.test(testAdditions);
   const behaviorChanged = pairedDiff && resetAppEvidence && resetTestEvidence;
   return {
     behaviorChanged,
