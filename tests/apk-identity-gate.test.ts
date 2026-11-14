@@ -139,6 +139,33 @@ test("M6 baseline gate: context-only reset evidence cannot qualify", () => {
   assert.equal(result.behaviorChanged, false);
 });
 
+test("M6 baseline gate: comment-only evidence cannot qualify", () => {
+  const commentAppDiff = `diff --git a/App.js b/App.js
+--- a/App.js
++++ b/App.js
+@@ -1,0 +1,3 @@
++// accessibilityLabel="Reset tap count"
++// onPress={() => setCount(0)}
++// <Text style={styles.buttonText}>Reset counter</Text>`;
+  const commentTestDiff = `diff --git a/test.ts b/test.ts
+--- a/test.ts
++++ b/test.ts
+@@ -1,0 +1,3 @@
++// assert.match(appSource, /accessibilityLabel="Reset tap count"/);
++// assert.match(appSource, /onPress=\\{\\(\\) => setCount\\(0\\)\\}/);
++// assert.match(appSource, /Reset counter/);`;
+  const result = classifyBehaviorDiff({
+    mergeBase: baselineSha,
+    baselineCommit: baselineSha,
+    appDiffExitCode: 1,
+    testDiffExitCode: 1,
+    appDiff: commentAppDiff,
+    testDiff: commentTestDiff
+  });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.targetBehavior, null);
+});
+
 test("M6 baseline gate: unchanged and one-sided diffs remain ineligible", () => {
   for (const [appDiffExitCode, testDiffExitCode] of [[0,0],[1,0],[0,1]]) {
     assert.equal(classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode, testDiffExitCode, appDiff: resetAppDiff, testDiff: resetTestDiff }).behaviorChanged, false);
