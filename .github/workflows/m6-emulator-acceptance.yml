@@ -167,12 +167,15 @@ jobs:
           TRUSTED_BASELINE="$(jq -er --arg app "$PACKAGE_ID" '
             [.tested_apks[]
              | select(.application_id == $app
-                      and .fixture == "M6 React Native current device-tested candidate"
-                      and .device_result == "PASS")
-             | .source_commit]
-            | unique
-            | if length == 1 then .[0]
-              else error("expected exactly one trusted M6 physical-device baseline") end
+                      and .device_result == "PASS"
+                      and (.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+                      and (.source_commit | type == "string" and test("^[0-9a-f]{40}$"))
+                      and (.device_tested_at | type == "string" and length > 0))
+             | {source_commit, device_tested_at}]
+            | sort_by(.device_tested_at)
+            | reverse
+            | if length > 0 then .[0].source_commit
+              else error("expected at least one valid trusted M6 physical-device baseline") end
           ' "$TRUSTED_REGISTRY")"
           [[ "$TRUSTED_BASELINE" =~ ^[0-9a-f]{40}$ ]]
           echo "trusted_registry=$TRUSTED_REGISTRY" | tee .ci-evidence/trusted-baseline.txt
