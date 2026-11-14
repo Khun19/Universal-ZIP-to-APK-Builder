@@ -160,38 +160,59 @@ jobs:
           test -s apk-identity-gate-report.json
           sha256sum --check "$(dirname "$APK_PATH")/SHA256SUMS.txt"
 
-          # Resolve the baseline from the trusted registry checked out from main.
-          # Never derive this baseline from the candidate source commit/artifact.
+          # Resolve the baseline only from the trusted main checkout.
+          # Candidate source and artifact are data; never trust their registry copy.
           TRUSTED_REGISTRY="docs/tested-apk-registry.json"
           test -s "$TRUSTED_REGISTRY"
-          TRUSTED_BASELINE="$(jq -er --arg app "$PACKAGE_ID" '
-            [.tested_apks[]
-             | select(.application_id == $app
-                      and .device_result == "PASS"
-                      and (.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
-                      and (.source_commit | type == "string" and test("^[0-9a-f]{40}$"))
-                      and (.device_tested_at | type == "string" and length > 0))
-             | {source_commit, device_tested_at}]
-            | sort_by(.device_tested_at)
-            | reverse
-            | if length > 0 then .[0].source_commit
-              else error("expected at least one valid trusted M6 physical-device baseline") end
+          TRUSTED_BASELINE="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { selectLatestM6Baseline } from "./scripts/m6-behavior-diff-gate.mjs";
+            const registry = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            process.stdout.write(selectLatestM6Baseline(registry).source_commit);
           ' "$TRUSTED_REGISTRY")"
           [[ "$TRUSTED_BASELINE" =~ ^[0-9a-f]{40}$ ]]
           echo "trusted_registry=$TRUSTED_REGISTRY" | tee .ci-evidence/trusted-baseline.txt
           echo "trusted_baseline_commit=$TRUSTED_BASELINE" | tee -a .ci-evidence/trusted-baseline.txt
 
-          # Fetch the immutable trusted baseline and the candidate source commit.
-          # The candidate is data only; workflow/script/registry execution remains from main.
-          git fetch --no-tags origin "$TRUSTED_BASELINE" "$SOURCE_COMMIT" --depth=1
+          # Ensure enough history exists to prove ancestry; shallow/missing history is fatal.
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --no-tags --unshallow origin
+          else
+            git fetch --no-tags origin
+          fi
+          git fetch --no-tags origin "$TRUSTED_BASELINE" "$SOURCE_COMMIT"
           git cat-file -e "$TRUSTED_BASELINE^{commit}"
           git cat-file -e "$SOURCE_COMMIT^{commit}"
-          if git diff --quiet "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
-            echo "No M6 fixture/test behavior diff from trusted physical-device baseline; refusing device acceptance."
-            exit 1
-          fi
-          GATE_ARGS=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
-          GATE_ARGS+=(--behavior-change-verified true)
+          MERGE_BASE="$(git merge-base "$TRUSTED_BASELINE" "$SOURCE_COMMIT")"
+          test "$MERGE_BASE" = "$TRUSTED_BASELINE"
+
+          set +e
+          git diff --quiet "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js
+          APP_DIFF_STATUS=$?
+          git diff --quiet "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts
+          TEST_DIFF_STATUS=$?
+          set -e
+          git diff "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js > "$RUNNER_TEMP/m6-app.diff"
+          git diff "$TRUSTED_BASELINE" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts > "$RUNNER_TEMP/m6-test.diff"
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            import { classifyBehaviorDiff } from "./scripts/m6-behavior-diff-gate.mjs";
+            const result = classifyBehaviorDiff({
+              mergeBase: process.argv[1],
+              baselineCommit: process.argv[2],
+              appDiffExitCode: Number(process.argv[3]),
+              testDiffExitCode: Number(process.argv[4]),
+              appDiff: readFileSync(process.argv[5], "utf8"),
+              testDiff: readFileSync(process.argv[6], "utf8")
+            });
+            writeFileSync(".ci-evidence/m6-behavior-decision.json", JSON.stringify(result, null, 2) + "\n");
+            console.log(JSON.stringify(result));
+          ' "$MERGE_BASE" "$TRUSTED_BASELINE" "$APP_DIFF_STATUS" "$TEST_DIFF_STATUS" "$RUNNER_TEMP/m6-app.diff" "$RUNNER_TEMP/m6-test.diff"
+          BEHAVIOR_CHANGED="$(node -e 'const d=require("./.ci-evidence/m6-behavior-decision.json"); process.stdout.write(String(d.behaviorChanged))')"
+          test "$BEHAVIOR_CHANGED" = "true"
+          TARGET_BEHAVIOR="$(node -e 'const d=require("./.ci-evidence/m6-behavior-decision.json"); process.stdout.write(d.targetBehavior || "")')"
+          test -n "$TARGET_BEHAVIOR"
+          GATE_ARGS=(--target-behavior "$TARGET_BEHAVIOR" --behavior-change-verified true)
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$(dirname "$APK_PATH")/provenance.json" \
@@ -199,7 +220,7 @@ jobs:
             --expected-run-id "$BUILD_RUN_ID" \
             --expected-application-id "$PACKAGE_ID" \
             "${GATE_ARGS[@]}" \
-            --registry docs/tested-apk-registry.json \
+            --registry "$TRUSTED_REGISTRY" \
             --output .ci-evidence/apk-identity-gate-report.json
           APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
           echo "$APK_SHA256  $APK_PATH" | tee .ci-evidence/apk.sha256
