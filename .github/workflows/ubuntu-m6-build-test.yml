@@ -101,6 +101,9 @@ jobs:
           test -n "$SOURCE_COMMIT"
           echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
           echo "WORKFLOW_SHA=$WORKFLOW_SHA" >> "$GITHUB_ENV"
+          if [[ -n "$PUSH_BEFORE_SHA" ]]; then
+            echo "PUSH_BEFORE_SHA=$PUSH_BEFORE_SHA" >> "$GITHUB_ENV"
+          fi
           echo "Source commit: $SOURCE_COMMIT"
           echo "Workflow checkout/merge SHA: $WORKFLOW_SHA"
 
