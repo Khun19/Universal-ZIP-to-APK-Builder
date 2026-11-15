@@ -442,3 +442,34 @@ test('Flutter scaffold arguments are shell-quoted as distinct arguments', () => 
     "proot-distro login 'ubuntu' -- sh -lc 'exec flutter \"$@\"' -- 'create' '/tmp/scaffold with spaces; touch /tmp/builder-pwned'",
   );
 });
+
+test('Blocks a project-controlled Gradle daemon registry before dependency installation', async () => {
+  const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'rz-gradle-preflight-worker-'));
+  fs.writeFileSync(
+    path.join(projectPath, 'package.json'),
+    JSON.stringify({
+      name: 'unsafe-gradle-project',
+      private: true,
+      dependencies: { 'react-native': '0.76.9' },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(projectPath, 'gradle.properties'),
+    'org.gradle.daemon.registry.base=/tmp/attacker/registry\\n',
+  );
+
+  try {
+    const strategy: BuildStrategy = {
+      strategyName: 'react-native',
+      buildSteps: [],
+      outputArtifact: 'app-debug.apk',
+    };
+    const result = await executeBuildJob(projectPath, strategy);
+    assert.equal(result.success, false);
+    assert.match(result.error ?? '', /Gradle security preflight/);
+    assert.match(result.error ?? '', /gradle\.properties/);
+    assert.equal(fs.existsSync(path.join(projectPath, 'node_modules')), false);
+  } finally {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  }
+});
