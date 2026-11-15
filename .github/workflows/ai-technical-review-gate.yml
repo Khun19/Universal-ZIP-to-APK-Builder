@@ -39,7 +39,7 @@ permissions:
 
 concurrency:
   group: ai-technical-review-gate-${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish-independent-evidence:
@@ -96,19 +96,6 @@ jobs:
               core.notice("Stale event or PR outside main; refusing to publish a status for a non-current head.");
               return;
             }
-
-            const created = await github.rest.checks.create({
-              owner,
-              repo,
-              name: "AI Technical Review Gate",
-              head_sha: expectedHead,
-              status: "in_progress",
-              external_id: "pr-" + prNumber + "-" + expectedHead,
-              output: {
-                title: "Verifying exact-head independent evidence",
-                summary: "PR #" + prNumber + "; head " + expectedHead + ". Candidate PR code is not executed by this workflow."
-              }
-            });
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner, repo, pull_number: prNumber, per_page: 100
@@ -251,12 +238,14 @@ jobs:
               ? "Blockers:\n- " + blockers.join("\n- ")
               : "All applicable exact-head checks succeeded and the repository has zero open code-scanning alerts.";
 
-            await github.rest.checks.update({
+            await github.rest.checks.create({
               owner,
               repo,
-              check_run_id: created.data.id,
+              name: "AI Technical Review Gate",
+              head_sha: expectedHead,
               status: "completed",
               conclusion,
+              external_id: "pr-" + prNumber + "-" + expectedHead,
               output: { title, summary, text: outputText }
             });
 
