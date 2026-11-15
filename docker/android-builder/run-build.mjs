@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { join } from "node:path";
+import { assertGradleProjectSafe } from "./gradle-security-preflight.mjs";
 
 const cwd = "/workspace";
 const mode = process.env.BUILD_MODE ?? (existsSync(join(cwd, "gradlew")) ? "native" : "web");
@@ -11,6 +12,7 @@ const run = (command, args, options = {}) => {
 const fail = (code) => { if (code !== 0) process.exit(code); };
 
 if (mode === "native") {
+  assertGradleProjectSafe(cwd);
   if (!existsSync(join(cwd, "gradlew"))) throw new Error("Native Android project does not include a Gradle wrapper");
   const tasks = spawnSync("./gradlew", ["tasks", "--all", "--no-daemon"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const output = `${tasks.stdout}\n${tasks.stderr}`;
@@ -31,6 +33,7 @@ if (mode === "native") {
   }
   if (!existsSync(join(cwd, "android"))) fail(await run("npx", ["cap", "add", "android"]));
   fail(await run("npx", ["cap", "sync", "android"]));
+  assertGradleProjectSafe(cwd);
   fail(await run("./android/gradlew", ["assembleDebug", "--no-daemon", "--stacktrace"]));
 }
 
