@@ -6,6 +6,8 @@ on:
     types: [opened, reopened, synchronize, ready_for_review, review_requested, edited]
   pull_request_review:
     types: [submitted, dismissed]
+  issue_comment:
+    types: [created, edited]
   workflow_run:
     workflows:
       - Builder Quality Gates
@@ -57,6 +59,12 @@ jobs:
             if (event === "pull_request_target" || event === "pull_request_review") {
               prNumber = context.payload.pull_request?.number ?? null;
               expectedHead = context.payload.pull_request?.head?.sha ?? null;
+            } else if (event === "issue_comment" && context.payload.issue?.pull_request) {
+              prNumber = context.payload.issue.number;
+              const pullResponse = await github.rest.pulls.get({
+                owner, repo, pull_number: prNumber
+              });
+              expectedHead = pullResponse.data.head.sha;
             } else if (event === "workflow_run") {
               const run = context.payload.workflow_run;
               expectedHead = run?.head_sha ?? null;
