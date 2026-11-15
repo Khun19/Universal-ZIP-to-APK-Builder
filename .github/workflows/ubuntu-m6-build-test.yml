@@ -269,6 +269,10 @@ jobs:
 
           git diff "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js > "$RUNNER_TEMP/m6-app.diff"
           git diff "$BASELINE_SOURCE_COMMIT" "$SOURCE_COMMIT" -- tests/react-native-pipeline.test.ts > "$RUNNER_TEMP/m6-test.diff"
+          git show "$BASELINE_SOURCE_COMMIT:tests/fixtures/react-native-project/App.js" > "$RUNNER_TEMP/m6-app-baseline.js"
+          git show "$SOURCE_COMMIT:tests/fixtures/react-native-project/App.js" > "$RUNNER_TEMP/m6-app-candidate.js"
+          git show "$BASELINE_SOURCE_COMMIT:tests/react-native-pipeline.test.ts" > "$RUNNER_TEMP/m6-test-baseline.ts"
+          git show "$SOURCE_COMMIT:tests/react-native-pipeline.test.ts" > "$RUNNER_TEMP/m6-test-candidate.ts"
           node --input-type=module -e '
             import { readFileSync, writeFileSync } from "node:fs";
             import { classifyBehaviorDiff } from "./scripts/m6-behavior-diff-gate.mjs";
@@ -277,14 +281,17 @@ jobs:
               baselineCommit: process.argv[2],
               appDiffExitCode: Number(process.argv[3]),
               testDiffExitCode: Number(process.argv[4]),
-              appDiff: readFileSync(process.argv[5], "utf8"),
-              testDiff: readFileSync(process.argv[6], "utf8")
+              baselineAppSource: readFileSync(process.argv[5], "utf8"),
+              candidateAppSource: readFileSync(process.argv[6], "utf8"),
+              baselineTestSource: readFileSync(process.argv[7], "utf8"),
+              candidateTestSource: readFileSync(process.argv[8], "utf8")
             });
-            writeFileSync(process.argv[7], JSON.stringify(result));
+            writeFileSync(process.argv[9], JSON.stringify(result));
             console.log(JSON.stringify(result));
           ' "$MERGE_BASE" "$BASELINE_SOURCE_COMMIT" "$APP_DIFF_STATUS" "$TEST_DIFF_STATUS" \
-            "$RUNNER_TEMP/m6-app.diff" "$RUNNER_TEMP/m6-test.diff" "$RUNNER_TEMP/m6-behavior-decision.json"
-
+            "$RUNNER_TEMP/m6-app-baseline.js" "$RUNNER_TEMP/m6-app-candidate.js" \
+            "$RUNNER_TEMP/m6-test-baseline.ts" "$RUNNER_TEMP/m6-test-candidate.ts" \
+            "$RUNNER_TEMP/m6-behavior-decision.json"
           if [[ "$(node -e 'const d=require(process.argv[1]); process.stdout.write(String(d.behaviorChanged))' "$RUNNER_TEMP/m6-behavior-decision.json")" == "true" ]]; then
             TARGET_BEHAVIOR="$(node -e 'const d=require(process.argv[1]); process.stdout.write(d.targetBehavior)' "$RUNNER_TEMP/m6-behavior-decision.json")"
             test -n "$TARGET_BEHAVIOR"
