@@ -178,7 +178,7 @@ function resetAssertionKind(statement, assertName, sourceFile) {
       !ts.isRegularExpressionLiteral(call.arguments[1])) return null;
   const pattern = call.arguments[1].getText(sourceFile);
   if (pattern.includes("accessibilityLabel") && pattern.includes("Reset tap count")) return "label";
-  if (pattern.includes("onPress") && pattern.includes("setCount") && pattern.includes("0")) return "handler";
+  if (pattern.includes("onPress") && pattern.includes("setCount\\(0\\)")) return "handler";
   if (pattern.includes("Reset counter")) return "text";
   return null;
 }
