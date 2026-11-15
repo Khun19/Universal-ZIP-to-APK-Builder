@@ -119,14 +119,49 @@ function hasResetText(element, sourceFile) {
       ts.isJsxText(text) && text.getText(sourceFile).trim() === "Reset counter"));
 }
 
+function hasCountStateBinding(appFunction, sourceFile) {
+  if (!hasNamedImport(sourceFile, "react", "useState")) return false;
+  let found = false;
+  const visit = (node) => {
+    if (node !== appFunction.body && ts.isFunctionLike(node)) return;
+    if (ts.isVariableDeclaration(node) &&
+        ts.isArrayBindingPattern(node.name) &&
+        node.initializer) {
+      const call = unwrapExpression(node.initializer);
+      const callee = call && ts.isCallExpression(call)
+        ? unwrapExpression(call.expression)
+        : null;
+      const [countElement, setterElement] = node.name.elements;
+      if (callee && ts.isIdentifier(callee) && callee.text === "useState" &&
+          countElement && setterElement &&
+          ts.isBindingElement(countElement) && ts.isBindingElement(setterElement) &&
+          ts.isIdentifier(countElement.name) && countElement.name.text === "count" &&
+          ts.isIdentifier(setterElement.name) && setterElement.name.text === "setCount" &&
+          call.arguments.length >= 1 &&
+          ts.isNumericLiteral(call.arguments[0]) &&
+          Number(call.arguments[0].text) === 0) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(appFunction.body);
+  return found;
+}
+
 function hasResetPressable(sourceFile) {
   if (!hasNamedImport(sourceFile, "react-native", "Pressable") ||
       !hasNamedImport(sourceFile, "react-native", "Text")) return false;
+  const appFunction = sourceFile.statements.find(isDefaultAppFunction);
+  if (!appFunction?.body || !hasCountStateBinding(appFunction, sourceFile)) return false;
+
   let found = false;
-  const visit = (node) => {
-    if (found) return;
+  const visitReturnedJsx = (node) => {
+    // Only inspect JSX in an App return expression. Ignore JSX inside nested
+    // functions, callbacks, strings, comments, or unused local components.
+    if (ts.isFunctionLike(node)) return;
     if (ts.isJsxElement(node) &&
-        isInsideDefaultApp(node) &&
         ts.isIdentifier(node.openingElement.tagName) &&
         node.openingElement.tagName.text === "Pressable") {
       const label = jsxAttribute(node.openingElement, "accessibilityLabel");
@@ -139,14 +174,23 @@ function hasResetPressable(sourceFile) {
         return;
       }
     }
-    ts.forEachChild(node, visit);
+    ts.forEachChild(node, visitReturnedJsx);
   };
-  visit(sourceFile);
+
+  const visitAppBody = (node) => {
+    if (node !== appFunction.body && ts.isFunctionLike(node)) return;
+    if (ts.isReturnStatement(node) && node.expression) {
+      visitReturnedJsx(node.expression);
+      return;
+    }
+    ts.forEachChild(node, visitAppBody);
+  };
+  visitAppBody(appFunction.body);
   return found;
 }
 
-function readAppSourceDeclaration(statement) {
-  if (!ts.isVariableStatement(statement)) return false;
+function readAppSourceDeclaration(statement, readFileLocalName) {
+  if (!readFileLocalName || !ts.isVariableStatement(statement)) return false;
   return statement.declarationList.declarations.some((declaration) => {
     if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "appSource" ||
         !declaration.initializer || !ts.isCallExpression(declaration.initializer)) return false;
@@ -154,7 +198,7 @@ function readAppSourceDeclaration(statement) {
     const methodName = ts.isIdentifier(expression)
       ? expression.text
       : ts.isPropertyAccessExpression(expression) ? expression.name.text : "";
-    if (methodName !== "readFileSync") return false;
+    if (methodName !== readFileLocalName) return false;
     let readsAppFile = false;
     const visit = (node) => {
       if (ts.isStringLiteral(node) && node.text.endsWith("App.js")) readsAppFile = true;
@@ -186,36 +230,34 @@ function resetAssertionKind(statement, assertName, sourceFile) {
 function hasResetAssertions(sourceFile) {
   const testName = getNamedImportLocalName(sourceFile, "node:test", "test");
   const assertName = getDefaultImportLocalName(sourceFile, ["node:assert", "node:assert/strict"]);
-  if (!testName || !assertName) return false;
+  const readFileLocalName =
+    getNamedImportLocalName(sourceFile, "node:fs", "readFileSync") ??
+    getNamedImportLocalName(sourceFile, "fs", "readFileSync");
+  if (!testName || !assertName || !readFileLocalName) return false;
 
-  let found = false;
-  const visit = (node) => {
-    if (found) return;
-    if (ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === testName) {
-      const callback = [...node.arguments].reverse().find((argument) =>
-        ts.isArrowFunction(argument) || ts.isFunctionExpression(argument));
-      if (callback && ts.isBlock(callback.body)) {
-        const statements = callback.body.statements;
-        const appSourceIndex = statements.findIndex((statement) => readAppSourceDeclaration(statement));
-        if (appSourceIndex >= 0) {
-          const kinds = new Set();
-          for (let index = appSourceIndex + 1; index < statements.length; index += 1) {
-            const kind = resetAssertionKind(statements[index], assertName, sourceFile);
-            if (kind) kinds.add(kind);
-          }
-          if (kinds.has("label") && kinds.has("handler") && kinds.has("text")) {
-            found = true;
-            return;
-          }
-        }
-      }
+  // Only a top-level node:test registration is executed by the test runner.
+  // A test() call hidden inside an uncalled function must not qualify.
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) continue;
+    const call = statement.expression;
+    if (!ts.isIdentifier(call.expression) || call.expression.text !== testName) continue;
+    const callback = [...call.arguments].reverse().find((argument) =>
+      ts.isArrowFunction(argument) || ts.isFunctionExpression(argument));
+    if (!callback || !ts.isBlock(callback.body)) continue;
+
+    const statements = callback.body.statements;
+    const appSourceIndex = statements.findIndex((item) =>
+      readAppSourceDeclaration(item, readFileLocalName));
+    if (appSourceIndex < 0) continue;
+
+    const kinds = new Set();
+    for (let index = appSourceIndex + 1; index < statements.length; index += 1) {
+      const kind = resetAssertionKind(statements[index], assertName, sourceFile);
+      if (kind) kinds.add(kind);
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return found;
+    if (kinds.has("label") && kinds.has("handler") && kinds.has("text")) return true;
+  }
+  return false;
 }
 
 export function classifyBehaviorDiff({
