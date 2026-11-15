@@ -16,6 +16,7 @@ on:
       - M5 Flutter Build Test
       - Ubuntu M6 Build Test
       - Android Emulator Device Test
+      - M6 Exact APK Emulator Acceptance
       - Automatic Copilot Pull Request Review
     types: [completed]
   workflow_dispatch:
@@ -133,6 +134,13 @@ jobs:
               path === "docs/TEST-MATRIX.md" ||
               path === "docs/VALIDATION-WORKFLOW.md"
             );
+            const m6ExactApplies = changedPaths.some((path) =>
+              path === "scripts/m6-behavior-diff-gate.mjs" ||
+              path === "tests/apk-identity-gate.test.ts" ||
+              anyPath(path, ["tests/fixtures/react-native-project/"]) ||
+              path === ".github/workflows/m6-emulator-acceptance.yml" ||
+              path === ".github/workflows/ubuntu-m6-build-test.yml"
+            );
 
             const checkRuns = await github.paginate(github.rest.checks.listForRef, {
               owner, repo, ref: expectedHead, per_page: 100
@@ -151,7 +159,8 @@ jobs:
               { name: "Build and validate real M4 APK", required: m4Applies, app: "github-actions", appId: 15368 },
               { name: "m5-flutter-build", required: true, app: "github-actions", appId: 15368 },
               { name: "m6-build-test", required: true, app: "github-actions", appId: 15368 },
-              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies, app: "github-actions", appId: 15368 }
+              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies, app: "github-actions", appId: 15368 },
+              { name: "exact-apk-emulator-acceptance", required: m6ExactApplies, app: "github-actions", appId: 15368 }
             ];
 
             const results = [];
