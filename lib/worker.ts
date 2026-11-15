@@ -891,6 +891,13 @@ export async function executeBuildJob(
 
     logs.push(`Starting build execution for strategy: ${strategy.strategyName}`);
 
+    // Inspect the extracted archive before dependency scripts or any build
+    // tool can invoke Gradle with project-controlled daemon registry settings.
+    const initialGradleSecurityError = preflightGradleProject(projectPath, logs);
+    if (initialGradleSecurityError) {
+      return { success: false, logs, error: initialGradleSecurityError };
+    }
+
     // If Web Wrapper strategy, build web app first then inject Android template
     if (strategy.strategyName === 'web-wrapper') {
       logs.push('Building web application before Android wrapper...');
