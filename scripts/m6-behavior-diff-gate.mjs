@@ -1,13 +1,12 @@
-/**
- * Fail-closed classification for M6 behavior changes against the latest
- * physical-device-tested registry baseline. Both the app fixture and its
- * regression test must prove the supported reset-counter behavior.
- */
+import ts from "typescript";
+
 const SHA40 = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 
 export function selectLatestM6Baseline(registry) {
-  if (!registry || !Array.isArray(registry.tested_apks)) throw new Error("M6_REGISTRY_INVALID");
+  if (!registry || !Array.isArray(registry.tested_apks)) {
+    throw new Error("M6_REGISTRY_INVALID");
+  }
   const candidates = registry.tested_apks
     .filter((record) => record &&
       record.application_id === "com.builder.m6reactnative" &&
@@ -21,47 +20,244 @@ export function selectLatestM6Baseline(registry) {
   return candidates[0];
 }
 
-function addedDiffLines(diff) {
-  return diff
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-    .map((line) => line.slice(1))
-    .join("\n");
+function parseSource(source, fileName, scriptKind) {
+  if (typeof source !== "string") throw new Error("M6_SOURCE_MISSING");
+  const parsed = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, scriptKind);
+  if (parsed.parseDiagnostics.length > 0) throw new Error("M6_SOURCE_PARSE_FAILED");
+  return parsed;
+}
+
+function hasNamedImport(sourceFile, moduleName, importedName) {
+  return sourceFile.statements.some((statement) => {
+    if (!ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier) ||
+        statement.moduleSpecifier.text !== moduleName) return false;
+    const bindings = statement.importClause?.namedBindings;
+    return Boolean(bindings && ts.isNamedImports(bindings) &&
+      bindings.elements.some((element) =>
+        (element.propertyName ?? element.name).text === importedName));
+  });
+}
+
+function getNamedImportLocalName(sourceFile, moduleName, importedName) {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier) ||
+        statement.moduleSpecifier.text !== moduleName) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    const match = bindings.elements.find((element) =>
+      (element.propertyName ?? element.name).text === importedName);
+    if (match) return match.name.text;
+  }
+  return null;
+}
+
+function getDefaultImportLocalName(sourceFile, moduleNames) {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier) ||
+        !moduleNames.includes(statement.moduleSpecifier.text)) continue;
+    const localName = statement.importClause?.name?.text;
+    if (localName) return localName;
+  }
+  return null;
+}
+
+function isDefaultAppFunction(node) {
+  if (!ts.isFunctionDeclaration(node) || node.name?.text !== "App") return false;
+  const modifiers = node.modifiers ?? [];
+  return modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
+    modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+}
+
+function isInsideDefaultApp(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (isDefaultAppFunction(current)) return true;
+  }
+  return false;
+}
+
+function jsxAttribute(openingElement, name) {
+  return openingElement.attributes.properties.find((property) =>
+    ts.isJsxAttribute(property) &&
+    ts.isIdentifier(property.name) &&
+    property.name.text === name);
+}
+
+function unwrapExpression(node) {
+  let current = node;
+  while (current && (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current)
+  )) current = current.expression;
+  return current;
+}
+
+function hasResetHandler(attribute) {
+  if (!attribute || !attribute.initializer || !ts.isJsxExpression(attribute.initializer)) return false;
+  const handler = unwrapExpression(attribute.initializer.expression);
+  if (!handler || !ts.isArrowFunction(handler)) return false;
+  const body = unwrapExpression(handler.body);
+  if (!body || !ts.isCallExpression(body)) return false;
+  const callee = unwrapExpression(body.expression);
+  return Boolean(
+    callee && ts.isIdentifier(callee) && callee.text === "setCount" &&
+    body.arguments.length === 1 &&
+    ts.isNumericLiteral(body.arguments[0]) &&
+    Number(body.arguments[0].text) === 0
+  );
+}
+
+function hasResetText(element, sourceFile) {
+  return element.children.some((child) =>
+    ts.isJsxElement(child) &&
+    ts.isIdentifier(child.openingElement.tagName) &&
+    child.openingElement.tagName.text === "Text" &&
+    child.children.some((text) =>
+      ts.isJsxText(text) && text.getText(sourceFile).trim() === "Reset counter"));
+}
+
+function hasResetPressable(sourceFile) {
+  if (!hasNamedImport(sourceFile, "react-native", "Pressable") ||
+      !hasNamedImport(sourceFile, "react-native", "Text")) return false;
+  let found = false;
+  const visit = (node) => {
+    if (found) return;
+    if (ts.isJsxElement(node) &&
+        isInsideDefaultApp(node) &&
+        ts.isIdentifier(node.openingElement.tagName) &&
+        node.openingElement.tagName.text === "Pressable") {
+      const label = jsxAttribute(node.openingElement, "accessibilityLabel");
+      const handler = jsxAttribute(node.openingElement, "onPress");
+      const hasLabel = Boolean(label?.initializer &&
+        ts.isStringLiteral(label.initializer) &&
+        label.initializer.text === "Reset tap count");
+      if (hasLabel && hasResetHandler(handler) && hasResetText(node, sourceFile)) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+
+function readAppSourceDeclaration(statement) {
+  if (!ts.isVariableStatement(statement)) return false;
+  return statement.declarationList.declarations.some((declaration) => {
+    if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "appSource" ||
+        !declaration.initializer || !ts.isCallExpression(declaration.initializer)) return false;
+    const expression = declaration.initializer.expression;
+    const methodName = ts.isIdentifier(expression)
+      ? expression.text
+      : ts.isPropertyAccessExpression(expression) ? expression.name.text : "";
+    if (methodName !== "readFileSync") return false;
+    let readsAppFile = false;
+    const visit = (node) => {
+      if (ts.isStringLiteral(node) && node.text.endsWith("App.js")) readsAppFile = true;
+      ts.forEachChild(node, visit);
+    };
+    visit(declaration.initializer);
+    return readsAppFile;
+  });
+}
+
+function resetAssertionKind(statement, assertName, sourceFile) {
+  if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) return null;
+  const call = statement.expression;
+  if (!ts.isPropertyAccessExpression(call.expression) ||
+      call.expression.name.text !== "match" ||
+      !ts.isIdentifier(call.expression.expression) ||
+      call.expression.expression.text !== assertName ||
+      call.arguments.length < 2 ||
+      !ts.isIdentifier(call.arguments[0]) ||
+      call.arguments[0].text !== "appSource" ||
+      !ts.isRegularExpressionLiteral(call.arguments[1])) return null;
+  const pattern = call.arguments[1].getText(sourceFile);
+  if (pattern.includes("accessibilityLabel") && pattern.includes("Reset tap count")) return "label";
+  if (pattern.includes("onPress") && pattern.includes("setCount") && pattern.includes("0")) return "handler";
+  if (pattern.includes("Reset counter")) return "text";
+  return null;
+}
+
+function hasResetAssertions(sourceFile) {
+  const testName = getNamedImportLocalName(sourceFile, "node:test", "test");
+  const assertName = getDefaultImportLocalName(sourceFile, ["node:assert", "node:assert/strict"]);
+  if (!testName || !assertName) return false;
+
+  let found = false;
+  const visit = (node) => {
+    if (found) return;
+    if (ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === testName) {
+      const callback = [...node.arguments].reverse().find((argument) =>
+        ts.isArrowFunction(argument) || ts.isFunctionExpression(argument));
+      if (callback && ts.isBlock(callback.body)) {
+        const statements = callback.body.statements;
+        const appSourceIndex = statements.findIndex((statement) => readAppSourceDeclaration(statement));
+        if (appSourceIndex >= 0) {
+          const kinds = new Set();
+          for (let index = appSourceIndex + 1; index < statements.length; index += 1) {
+            const kind = resetAssertionKind(statements[index], assertName, sourceFile);
+            if (kind) kinds.add(kind);
+          }
+          if (kinds.has("label") && kinds.has("handler") && kinds.has("text")) {
+            found = true;
+            return;
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
 }
 
 export function classifyBehaviorDiff({
-  mergeBase, baselineCommit, appDiffExitCode, testDiffExitCode,
-  appDiff = "", testDiff = ""
+  mergeBase,
+  baselineCommit,
+  appDiffExitCode,
+  testDiffExitCode,
+  baselineAppSource = "",
+  candidateAppSource = "",
+  baselineTestSource = "",
+  candidateTestSource = ""
 }) {
   if (typeof mergeBase !== "string" || !SHA40.test(mergeBase)) {
     throw new Error("M6_DIFF_MERGE_BASE_MISSING");
   }
-  if (typeof baselineCommit !== "string" || !SHA40.test(baselineCommit) || mergeBase !== baselineCommit) {
+  if (typeof baselineCommit !== "string" ||
+      !SHA40.test(baselineCommit) ||
+      mergeBase !== baselineCommit) {
     throw new Error("M6_BASELINE_NOT_ANCESTOR");
   }
   for (const exitCode of [appDiffExitCode, testDiffExitCode]) {
     if (exitCode !== 0 && exitCode !== 1) throw new Error("M6_DIFF_EXECUTION_FAILED");
   }
 
+  const baselineApp = parseSource(baselineAppSource, "baseline-App.jsx", ts.ScriptKind.JSX);
+  const candidateApp = parseSource(candidateAppSource, "candidate-App.jsx", ts.ScriptKind.JSX);
+  const baselineTest = parseSource(baselineTestSource, "baseline-react-native-pipeline.test.ts", ts.ScriptKind.TS);
+  const candidateTest = parseSource(candidateTestSource, "candidate-react-native-pipeline.test.ts", ts.ScriptKind.TS);
+
   const pairedDiff = appDiffExitCode === 1 && testDiffExitCode === 1;
-  // Match complete added source/test lines. Substrings inside comments, strings,
-  // deleted lines, and unchanged diff context are not accepted as evidence.
-  const appAdditions = addedDiffLines(appDiff);
-  const testAdditions = addedDiffLines(testDiff);
-  const resetAppEvidence =
-    /^\s*accessibilityLabel="Reset tap count"\s*$/m.test(appAdditions) &&
-    /^\s*onPress=\{\(\) => setCount\(0\)\}\s*$/m.test(appAdditions) &&
-    /^\s*<Text style=\{styles\.buttonText\}>Reset counter<\/Text>\s*$/m.test(appAdditions);
-  const resetTestEvidence =
-    /^\s*assert\.match\(appSource, \/accessibilityLabel="Reset tap count"\/\);\s*$/m.test(testAdditions) &&
-    /^\s*assert\.match\(appSource, \/onPress=.*setCount.*0.*\/\);\s*$/m.test(testAdditions) &&
-    /^\s*assert\.match\(appSource, \/Reset counter\/\);\s*$/m.test(testAdditions);
-  const behaviorChanged = pairedDiff && resetAppEvidence && resetTestEvidence;
+  const appBehaviorAdded = !hasResetPressable(baselineApp) && hasResetPressable(candidateApp);
+  const testCoverageAdded = !hasResetAssertions(baselineTest) && hasResetAssertions(candidateTest);
+  const behaviorChanged = pairedDiff && appBehaviorAdded && testCoverageAdded;
   return {
     behaviorChanged,
-    targetBehavior: behaviorChanged ? "Reset tap count to zero using the Reset counter button" : null,
+    appBehaviorAdded,
+    testCoverageAdded,
+    targetBehavior: behaviorChanged
+      ? "Reset tap count to zero using the Reset counter button"
+      : null,
     reason: behaviorChanged
-      ? "M6_RESET_BEHAVIOR_AND_REGRESSION_TEST_VERIFIED_FROM_REGISTRY_BASELINE"
-      : "M6_PAIRED_BEHAVIOR_DIFF_AND_SUPPORTED_TARGET_REQUIRED"
+      ? "M6_RESET_BEHAVIOR_AND_EXECUTED_REGRESSION_ASSERTIONS_ADDED_FROM_TRUSTED_BASELINE"
+      : "M6_PAIRED_SEMANTIC_APP_AND_EXECUTED_TEST_ADDITIONS_REQUIRED"
   };
 }
