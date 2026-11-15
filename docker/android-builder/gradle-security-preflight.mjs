@@ -6,7 +6,7 @@ const FORBIDDEN_PROPERTIES = new Set([
   "systemprop.org.gradle.daemon.registry.base",
   "systemprop.gradle.user.home",
 ]);
-const SKIP_DIRECTORIES = new Set([".git", "node_modules", "build", "dist", "out"]);
+const SKIP_DIRECTORIES = new Set([".git", "node_modules", "build"]);
 const MAX_ENTRIES = 100_000;
 const MAX_DEPTH = 64;
 const MAX_PROPERTIES_BYTES = 1024 * 1024;
