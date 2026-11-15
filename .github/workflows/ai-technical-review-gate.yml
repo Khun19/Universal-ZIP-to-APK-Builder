@@ -180,15 +180,18 @@ jobs:
               }
             }
 
-            const workflowFilesChanged = changedPaths.some((path) =>
-              path.startsWith(".github/workflows/")
+            const trustFilesChanged = changedPaths.some((path) =>
+              path.startsWith(".github/workflows/") ||
+              path.startsWith(".github/actions/") ||
+              path === ".github/CODEOWNERS" ||
+              path === "CODEOWNERS"
             );
-            if (workflowFilesChanged) {
+            if (trustFilesChanged) {
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner, repo, issue_number: prNumber, per_page: 100
               });
               const ownerLogin = pull.base.repo.owner.login;
-              const auditText = "Workflow Change Audit: PASS";
+              const auditText = "Trust Configuration Audit: PASS";
               const headText = "Head SHA: " + expectedHead;
               const baseText = "Base SHA: " + pull.base.sha;
               const founderAudit = comments.some((comment) =>
@@ -198,10 +201,10 @@ jobs:
                 comment.body?.includes(baseText)
               );
               if (!founderAudit) {
-                blockers.push("Workflow files changed without an exact-head Founder workflow audit record");
-                results.push("- BLOCKED — workflow change audit comment missing for exact head/base");
+                blockers.push("Trusted workflow/ownership files changed without an exact-head Founder audit record");
+                results.push("- BLOCKED — trust configuration audit comment missing for exact head/base");
               } else {
-                results.push("- PASS — exact-head Founder workflow change audit recorded");
+                results.push("- PASS — exact-head Founder trust configuration audit recorded");
               }
             }
 
