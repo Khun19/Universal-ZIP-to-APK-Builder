@@ -289,7 +289,25 @@ function hasResetPressable(sourceFile) {
   return found;
 }
 
-function readAppSourceDeclaration(statement, readFileBinding) {
+function hasTrustedFixtureDirectory(callback, pathName) {
+  return callback.body.statements.some((statement) => {
+    if (!ts.isVariableStatement(statement) ||
+        (statement.declarationList.flags & ts.NodeFlags.Const) === 0 ||
+        statement.declarationList.declarations.length !== 1) return false;
+    const declaration = statement.declarationList.declarations[0];
+    if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "fixtureDir" ||
+        !declaration.initializer || !ts.isCallExpression(declaration.initializer)) return false;
+    const callee = declaration.initializer.expression;
+    return ts.isPropertyAccessExpression(callee) &&
+      callee.name.text === "resolve" &&
+      ts.isIdentifier(callee.expression) && callee.expression.text === pathName &&
+      declaration.initializer.arguments.length === 1 &&
+      ts.isStringLiteral(declaration.initializer.arguments[0]) &&
+      declaration.initializer.arguments[0].text === "./tests/fixtures/react-native-project";
+  });
+}
+
+function readAppSourceDeclaration(statement, readFileBinding, pathName) {
   if (!readFileBinding || !ts.isVariableStatement(statement)) return false;
   return statement.declarationList.declarations.some((declaration) => {
     if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "appSource" ||
@@ -303,14 +321,19 @@ function readAppSourceDeclaration(statement, readFileBinding) {
         expression.name.text === "readFileSync" &&
         ts.isIdentifier(expression.expression) &&
         expression.expression.text === readFileBinding.localName;
-    if (!readsFile) return false;
-    let readsAppFile = false;
-    const visit = (node) => {
-      if (ts.isStringLiteral(node) && node.text.endsWith("App.js")) readsAppFile = true;
-      ts.forEachChild(node, visit);
-    };
-    visit(declaration.initializer);
-    return readsAppFile;
+    if (!readsFile || declaration.initializer.arguments.length < 1) return false;
+    const filePath = declaration.initializer.arguments[0];
+    if (!ts.isCallExpression(filePath) ||
+        !ts.isPropertyAccessExpression(filePath.expression) ||
+        filePath.expression.name.text !== "join" ||
+        !ts.isIdentifier(filePath.expression.expression) ||
+        filePath.expression.expression.text !== pathName ||
+        filePath.arguments.length !== 2 ||
+        !ts.isIdentifier(filePath.arguments[0]) ||
+        filePath.arguments[0].text !== "fixtureDir" ||
+        !ts.isStringLiteral(filePath.arguments[1]) ||
+        filePath.arguments[1].text !== "App.js") return false;
+    return true;
   });
 }
 
@@ -341,14 +364,17 @@ function hasResetAssertions(sourceFile) {
   const namespaceReadFile =
     getNamespaceImportLocalName(sourceFile, "node:fs") ??
     getNamespaceImportLocalName(sourceFile, "fs");
+  const pathName =
+    getNamespaceImportLocalName(sourceFile, "node:path") ??
+    getNamespaceImportLocalName(sourceFile, "path");
   const readFileBinding = namedReadFile
     ? { kind: "named", localName: namedReadFile }
     : namespaceReadFile
       ? { kind: "namespace", localName: namespaceReadFile }
       : null;
-  if (!testName || !assertName || !readFileBinding) return false;
+  if (!testName || !assertName || !readFileBinding || !pathName) return false;
   const readerName = readFileBinding.localName;
-  const protectedNames = new Set([testName, assertName, readerName]);
+  const protectedNames = new Set([testName, assertName, readerName, pathName]);
   if (hasShadowingDeclaration(sourceFile, protectedNames) ||
       hasUnsafeMutation(sourceFile, protectedNames)) return false;
 
@@ -363,15 +389,25 @@ function hasResetAssertions(sourceFile) {
     if (!callback || !ts.isBlock(callback.body)) continue;
 
     const statements = callback.body.statements;
+    if (!hasTrustedFixtureDirectory(callback, pathName)) continue;
+    const fixtureDirStatement = statements.find((statement) =>
+      ts.isVariableStatement(statement) &&
+      statement.declarationList.declarations.some((declaration) =>
+        ts.isIdentifier(declaration.name) && declaration.name.text === "fixtureDir"));
+    const fixtureDirDeclaration = fixtureDirStatement?.declarationList.declarations.find(
+      (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "fixtureDir"
+    );
+    if (!fixtureDirDeclaration) continue;
     const appSourceIndex = statements.findIndex((item) =>
-      readAppSourceDeclaration(item, readFileBinding));
+      readAppSourceDeclaration(item, readFileBinding, pathName));
     if (appSourceIndex < 0) continue;
     const appSourceDeclaration = statements[appSourceIndex].declarationList.declarations.find(
       (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "appSource"
     );
-    const callbackNames = new Set(["appSource"]);
-    if (hasShadowingDeclaration(callback.body, callbackNames, new Set([appSourceDeclaration])) ||
-        hasUnsafeMutation(callback.body, callbackNames)) continue;
+    const callbackNames = new Set(["appSource", "fixtureDir"]);
+    const allowedDeclarations = new Set([appSourceDeclaration, fixtureDirDeclaration]);
+    if (hasShadowingDeclaration(callback.body, callbackNames, allowedDeclarations) ||
+        hasUnsafeMutation(callback.body, new Set([...protectedNames, "appSource", "fixtureDir"]))) continue;
 
     const kinds = new Set();
     for (let index = appSourceIndex + 1; index < statements.length; index += 1) {
