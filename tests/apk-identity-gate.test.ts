@@ -96,9 +96,9 @@ const candidateAppSource = [
 const baselineTestSource = [
   'import { test } from "node:test";',
   'import assert from "node:assert";',
-  'import { readFileSync } from "node:fs";',
+  'import * as fs from "fs";',
   'test("baseline fixture", () => {',
-  '  const appSource = readFileSync("App.js", "utf8");',
+  '  const appSource = fs.readFileSync("App.js", "utf8");',
   "  assert.match(appSource, /Increment/);",
   "});"
 ].join("\n");
@@ -106,9 +106,9 @@ const baselineTestSource = [
 const candidateTestSource = [
   'import { test } from "node:test";',
   'import assert from "node:assert";',
-  'import { readFileSync } from "node:fs";',
+  'import * as fs from "fs";',
   'test("reset counter behavior", () => {',
-  '  const appSource = readFileSync("App.js", "utf8");',
+  '  const appSource = fs.readFileSync("App.js", "utf8");',
   '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
   "  assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
   "  assert.match(appSource, /Reset counter/);",
@@ -175,9 +175,9 @@ test("M6 baseline gate: template-literal text cannot spoof app or test AST evide
   const templateTestSource = [
     'import { test } from "node:test";',
     'import assert from "node:assert";',
-    'import { readFileSync } from "node:fs";',
+    'import * as fs from "fs";',
     'test("string decoy", () => {',
-    '  const appSource = readFileSync("App.js", "utf8");',
+    '  const appSource = fs.readFileSync("App.js", "utf8");',
     "  const example = " + tick,
     '    assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
     "    assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
@@ -225,8 +225,8 @@ test("M6 baseline gate: comments and assertions outside node:test callbacks cann
   const outsideCallbackTestSource = [
     'import { test } from "node:test";',
     'import assert from "node:assert";',
-    'import { readFileSync } from "node:fs";',
-    'const appSource = readFileSync("App.js", "utf8");',
+    'import * as fs from "fs";',
+    'const appSource = fs.readFileSync("App.js", "utf8");',
     'assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
     "assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
     "assert.match(appSource, /Reset counter/);",
