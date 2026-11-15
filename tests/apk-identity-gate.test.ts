@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluateCandidate } from "../scripts/apk-identity-gate.mjs";
 import { classifyBehaviorDiff, selectLatestM6Baseline } from "../scripts/m6-behavior-diff-gate.mjs";
-import { resolveTrustedRegistryRevision } from "../scripts/m6-trusted-registry-revision.mjs";
 
 const sha = "a".repeat(64);
 const base = {
@@ -267,4 +266,94 @@ test("M6 baseline gate: git execution errors fail closed", () => {
 test("M6 baseline gate: source parse failures fail closed", () => {
   assert.throws(() => classify({ candidateAppSource: "export default function App() { return <Pressable>" }), /M6_SOURCE_PARSE_FAILED/);
   assert.throws(() => classify({ candidateTestSource: "import { test } from 'node:test'; test('broken', () => {" }), /M6_SOURCE_PARSE_FAILED/);
+});
+
+
+test("M6 binding integrity: callback-local assert shadow cannot spoof executed assertions", () => {
+  const shadowedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'test("shadowed assert", () => {',
+    '  const appSource = fs.readFileSync("App.js", "utf8");',
+    '  const assert = { match() {} };',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\\n");
+  assert.equal(classify({ candidateTestSource: shadowedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: callback parameter shadow cannot spoof executed assertions", () => {
+  const shadowedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'test("shadowed assert parameter", (assert) => {',
+    '  const appSource = fs.readFileSync("App.js", "utf8");',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\\n");
+  assert.equal(classify({ candidateTestSource: shadowedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: reassigned assert.match cannot spoof executed assertions", () => {
+  const mutatedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'test("mutated assert", () => {',
+    '  const appSource = fs.readFileSync("App.js", "utf8");',
+    '  assert.match = () => {};',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\\n");
+  assert.equal(classify({ candidateTestSource: mutatedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: callback-local fake fs reader cannot qualify as source evidence", () => {
+  const fakeReaderTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'test("fake fs reader", () => {',
+    '  const fs = { readFileSync: () => "fake App.js source" };',
+    '  const appSource = fs.readFileSync("App.js", "utf8");',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\\n");
+  assert.equal(classify({ candidateTestSource: fakeReaderTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: locally shadowed useState and no-op setter cannot qualify", () => {
+  const fakeStateApp = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  const useState = () => [0, () => {}];",
+    "  const [count, setCount] = useState(0);",
+    '  return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
+    "}"
+  ].join("\\n");
+  assert.equal(classify({ candidateAppSource: fakeStateApp }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: reassigned useState setter cannot qualify", () => {
+  const reassignedSetterApp = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  let [count, setCount] = useState(0);",
+    "  setCount = () => {};",
+    '  return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
+    "}"
+  ].join("\\n");
+  assert.equal(classify({ candidateAppSource: reassignedSetterApp }).behaviorChanged, false);
 });
