@@ -25,7 +25,7 @@ It verifies:
 - Required CodeQL checks and language analyses completed successfully on that exact SHA.
 - M5 and M6 build checks completed successfully on that exact SHA.
 - Builder Quality Gates and M4 checks are required when their configured path filters apply.
-- Android Emulator Device Test is required when its configured path filters apply.
+- Android Emulator Device Test is required when its configured path filters apply. M6 classifier, fixture, or exact-acceptance workflow changes additionally require the `M6 Exact APK Emulator Acceptance` result for the exact artifact built from the PR head.
 - The repository has zero open code-scanning alerts. If the alerts API cannot be read, the gate fails closed.
 - Check runs must come from the exact Ruleset integration IDs: CodeQL from `github-advanced-security` app ID `57789`; the other required jobs from `github-actions` app ID `15368`. Candidate PRs cannot satisfy a check by creating a same-named check from an unrelated app.
 - Any change under `.github/workflows/`, `.github/actions/`, or either CODEOWNERS file requires a repository-owner comment containing `Trust Configuration Audit: PASS`, the exact `Head SHA`, and exact `Base SHA`. This makes changes to trusted CI and ownership definitions an explicit Founder audit rather than silently trusting candidate PR code.
