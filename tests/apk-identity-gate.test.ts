@@ -68,8 +68,10 @@ test("blocks an unexpected application ID", () => {
 const baselineSha = "c".repeat(40);
 
 const baselineAppSource = [
+  'import { useState } from "react";',
   'import { Pressable, Text } from "react-native";',
   "export default function App() {",
+  "  const [count, setCount] = useState(0);",
   "  return (",
   '    <Pressable accessibilityLabel="Increment tap count" onPress={() => setCount(1)}>',
   "      <Text>Increment</Text>",
@@ -79,8 +81,10 @@ const baselineAppSource = [
 ].join("\n");
 
 const candidateAppSource = [
+  'import { useState } from "react";',
   'import { Pressable, Text } from "react-native";',
   "export default function App() {",
+  "  const [count, setCount] = useState(0);",
   "  return (",
   '    <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
   "      <Text>Reset counter</Text>",
@@ -92,6 +96,7 @@ const candidateAppSource = [
 const baselineTestSource = [
   'import { test } from "node:test";',
   'import assert from "node:assert";',
+  'import { readFileSync } from "node:fs";',
   'test("baseline fixture", () => {',
   '  const appSource = readFileSync("App.js", "utf8");',
   "  assert.match(appSource, /Increment/);",
@@ -101,6 +106,7 @@ const baselineTestSource = [
 const candidateTestSource = [
   'import { test } from "node:test";',
   'import assert from "node:assert";',
+  'import { readFileSync } from "node:fs";',
   'test("reset counter behavior", () => {',
   '  const appSource = readFileSync("App.js", "utf8");',
   '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
@@ -154,7 +160,10 @@ test("M6 baseline gate: a reset behavior already present in the trusted baseline
 test("M6 baseline gate: template-literal text cannot spoof app or test AST evidence", () => {
   const tick = String.fromCharCode(96);
   const templateAppSource = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
     "export default function App() {",
+    "  const [count, setCount] = useState(0);",
     "  const example = " + tick,
     '    <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
     "      <Text>Reset counter</Text>",
@@ -166,6 +175,7 @@ test("M6 baseline gate: template-literal text cannot spoof app or test AST evide
   const templateTestSource = [
     'import { test } from "node:test";',
     'import assert from "node:assert";',
+    'import { readFileSync } from "node:fs";',
     'test("string decoy", () => {',
     '  const appSource = readFileSync("App.js", "utf8");',
     "  const example = " + tick,
@@ -184,9 +194,29 @@ test("M6 baseline gate: template-literal text cannot spoof app or test AST evide
   assert.equal(result.testCoverageAdded, false);
 });
 
+test("M6 baseline gate: reset JSX inside an unused nested function cannot qualify", () => {
+  const nestedFunctionAppSource = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  const [count, setCount] = useState(0);",
+    "  function Unused() {",
+    '    return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
+    "  }",
+    "  return null;",
+    "}"
+  ].join("\n");
+  const result = classify({ candidateAppSource: nestedFunctionAppSource });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.appBehaviorAdded, false);
+});
+
 test("M6 baseline gate: comments and assertions outside node:test callbacks cannot qualify", () => {
   const commentAppSource = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
     "export default function App() {",
+    "  const [count, setCount] = useState(0);",
     '  // <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
     "  // <Text>Reset counter</Text>",
     "  return null;",
@@ -195,6 +225,7 @@ test("M6 baseline gate: comments and assertions outside node:test callbacks cann
   const outsideCallbackTestSource = [
     'import { test } from "node:test";',
     'import assert from "node:assert";',
+    'import { readFileSync } from "node:fs";',
     'const appSource = readFileSync("App.js", "utf8");',
     'assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
     "assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
