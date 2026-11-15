@@ -372,3 +372,40 @@ test("M6 binding integrity: reassigned useState setter cannot qualify", () => {
   ].join("\n");
   assert.equal(classify({ candidateAppSource: reassignedSetterApp }).behaviorChanged, false);
 });
+
+
+test("M6 binding integrity: reflective assert mutation cannot spoof executed assertions", () => {
+  const mutatedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("reflectively mutated assert", () => {',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+    '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  Reflect.set(assert, "match", () => {});',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: mutatedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: fake path resolver cannot redirect the source reader", () => {
+  const redirectedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("redirected fixture path", () => {',
+    '  path.resolve = () => "/tmp/fake-fixtures";',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+    '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: redirectedTest }).behaviorChanged, false);
+});
