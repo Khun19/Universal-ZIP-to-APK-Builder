@@ -1,12 +1,12 @@
 name: M6 Exact APK Emulator Acceptance
 
 on:
-  # workflow_run only executes workflow definitions present on the default branch.
-  # Dispatch this workflow explicitly on the PR ref after its exact M6 build succeeds.
+  # Run this workflow only from trusted main after a successful main-branch M6 build.
+  # Supply the exact build run, artifact ID, and source commit; never dispatch from a PR ref.
   workflow_dispatch:
     inputs:
       artifact_run_id:
-        description: Successful Ubuntu M6 build run containing m6-build-apk
+        description: Successful main-branch Ubuntu M6 build run containing m6-build-apk
         required: true
         type: string
       artifact_id:
@@ -23,8 +23,7 @@ permissions:
   actions: read
 
 concurrency:
-  # Keep build-triggered and manually dispatched acceptance runs isolated.
-  # Never cancel an in-progress acceptance run merely because another trigger arrives.
+  # Keep manual acceptance runs isolated and never cancel an in-progress run.
   group: m6-emulator-acceptance-${{ inputs.artifact_run_id || github.run_id }}
   cancel-in-progress: false
 
@@ -46,22 +45,31 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_RUN_ID: ${{ inputs.artifact_run_id }}
           EVENT_ARTIFACT_ID: ${{ inputs.artifact_id }}
-          EXPECTED_SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.source_commit }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.source_commit }}
           TRIGGER_CONCLUSION: success
         shell: bash
         run: |
           set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
           [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
-          [[ -z "$EVENT_ARTIFACT_ID" || "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          [[ "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
           [[ "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           test "$TRIGGER_CONCLUSION" = success
           RUN_JSON="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$EVENT_RUN_ID")"
           RUN_SHA="$(jq -r .head_sha <<<"$RUN_JSON")"
           RUN_CONCLUSION="$(jq -r .conclusion <<<"$RUN_JSON")"
+          RUN_NAME="$(jq -r .name <<<"$RUN_JSON")"
+          RUN_PATH="$(jq -r .path <<<"$RUN_JSON")"
+          RUN_EVENT="$(jq -r .event <<<"$RUN_JSON")"
+          RUN_BRANCH="$(jq -r .head_branch <<<"$RUN_JSON")"
           test "$RUN_SHA" = "$EXPECTED_SOURCE_COMMIT"
           test "$RUN_CONCLUSION" = success
+          test "$RUN_NAME" = "Ubuntu M6 Build Test"
+          test "$RUN_PATH" = ".github/workflows/ubuntu-m6-build-test.yml"
+          test "$RUN_BRANCH" = "main"
+          case "$RUN_EVENT" in push|workflow_dispatch) ;; *) echo "Untrusted M6 build event: $RUN_EVENT" >&2; exit 1 ;; esac
           ARTIFACTS="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$EVENT_RUN_ID/artifacts")"
-          ARTIFACT="$(jq -cer --arg name "$BUILD_ARTIFACT_NAME" --arg id "$EVENT_ARTIFACT_ID" '[.artifacts[] | select(.name == $name and (.expired|not) and ($id == "" or (.id|tostring) == $id))] | if length == 1 then .[0] else error("expected one available matching build artifact") end' <<<"$ARTIFACTS")"
+          ARTIFACT="$(jq -cer --arg name "$BUILD_ARTIFACT_NAME" --arg id "$EVENT_ARTIFACT_ID" '[.artifacts[] | select(.name == $name and (.expired|not) and (.id|tostring) == $id)] | if length == 1 then .[0] else error("expected one available exact build artifact ID") end' <<<"$ARTIFACTS")"
           echo "run_id=$EVENT_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "artifact_id=$(jq -r .id <<<"$ARTIFACT")" >> "$GITHUB_OUTPUT"
           echo "source_commit=$EXPECTED_SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
@@ -85,8 +93,12 @@ jobs:
           # Execute trusted workflow code from main; treat the build source SHA as data
           # and verify it against workflow-run metadata and artifact provenance.
           SOURCE_COMMIT="$EXPECTED_COMMIT"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin "$SOURCE_COMMIT"
+          git cat-file -e "$SOURCE_COMMIT^{commit}"
+          git merge-base --is-ancestor "$SOURCE_COMMIT" refs/remotes/origin/main
           echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
-          printf 'source_commit=%s\nworkflow_checkout_commit=%s\nworkflow_sha=%s\nworkflow_run_id=%s\nworkflow_run_attempt=%s\n' "$SOURCE_COMMIT" "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > source-identity.txt
+          printf 'source_commit=%s\ncurrent_main_sha=%s\nworkflow_checkout_commit=%s\nworkflow_sha=%s\nworkflow_run_id=%s\nworkflow_run_attempt=%s\n' "$SOURCE_COMMIT" "$(git rev-parse refs/remotes/origin/main)" "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > source-identity.txt
 
       - name: Setup Temurin JDK 17
         uses: actions/setup-java@v6
@@ -137,12 +149,12 @@ jobs:
         if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
         uses: actions/download-artifact@v4
         with:
-          name: m6-build-apk
-          run-id: ${{ steps.build.outputs.run_id }}
+          artifact-ids: ${{ steps.build.outputs.artifact_id }}
           github-token: ${{ github.token }}
+          run-id: ${{ steps.build.outputs.run_id }}
           path: .
 
-      - name: Validate exact artifact provenance, behavior change, and checksum
+      - name: Validate exact artifact provenance, identity, and checksum
         shell: bash
         env:
           BUILD_RUN_ID: ${{ steps.build.outputs.run_id }}
@@ -156,22 +168,17 @@ jobs:
           test -s apk-identity-gate-report.json
           sha256sum --check "$(dirname "$APK_PATH")/SHA256SUMS.txt"
 
-          # Do not accept a rebuilt APK or a source revision without an M6 behavior diff.
-          git fetch origin main "$SOURCE_COMMIT" --depth=1
-          if git diff --quiet origin/main "$SOURCE_COMMIT" -- tests/fixtures/react-native-project/App.js tests/react-native-pipeline.test.ts; then
-            echo "No M6 fixture/test behavior diff from main; refusing device acceptance."
-            exit 1
-          fi
-          GATE_ARGS=(--target-behavior "Tap count increments by one; Reset tap count returns it to zero")
-          GATE_ARGS+=(--behavior-change-verified true)
+          # Emulator acceptance validates the exact APK independently of physical-device eligibility.
+          # A missing new behavior does not block emulator runtime checks.
+          TRUSTED_REGISTRY="docs/tested-apk-registry.json"
+          test -s "$TRUSTED_REGISTRY"
           node scripts/apk-identity-gate.mjs \
             --apk "$APK_PATH" \
             --provenance "$(dirname "$APK_PATH")/provenance.json" \
             --expected-commit "$SOURCE_COMMIT" \
             --expected-run-id "$BUILD_RUN_ID" \
             --expected-application-id "$PACKAGE_ID" \
-            "${GATE_ARGS[@]}" \
-            --registry docs/tested-apk-registry.json \
+            --registry "$TRUSTED_REGISTRY" \
             --output .ci-evidence/apk-identity-gate-report.json
           APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
           echo "$APK_SHA256  $APK_PATH" | tee .ci-evidence/apk.sha256
@@ -197,11 +204,12 @@ jobs:
           assert provenance["artifact"]["sha256"] == expected["sha256"], "provenance APK SHA-256 mismatch"
           assert int(provenance["artifact"]["size_bytes"]) == expected["size_bytes"], "provenance APK size mismatch"
           assert build_gate["valid"] is True, "build identity gate did not pass"
-          assert build_gate["device_test_eligible"] is True, "build artifact was not marked eligible"
+          assert isinstance(build_gate["device_test_eligible"], bool), "build eligibility flag is missing or invalid"
           assert build_gate["source_commit"] == expected["source_commit"], "build gate source commit mismatch"
           assert str(build_gate["run_id"]) == expected["run_id"], "build gate run ID mismatch"
           assert build_gate["apk"]["sha256"] == expected["sha256"], "build gate APK SHA-256 mismatch"
-          assert gate["valid"] is True and gate["device_test_eligible"] is True, "acceptance identity gate did not pass"
+          assert gate["valid"] is True, "acceptance identity gate did not pass"
+          assert gate["device_test_eligible"] is False, "emulator identity gate must not promote physical-device eligibility"
           assert gate["apk"]["sha256"] == expected["sha256"], "acceptance gate APK SHA-256 mismatch"
           props = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True, check=True)
           values = {}
@@ -215,6 +223,8 @@ jobs:
               "build_run_id": expected["run_id"], "build_artifact_id": os.environ["BUILD_ARTIFACT_ID"],
               "application_id": expected["application_id"], "apk_path": str(apk),
               "apk_size_bytes": expected["size_bytes"], "apk_sha256": expected["sha256"],
+              "build_device_test_eligible": build_gate["device_test_eligible"],
+              "emulator_gate_device_test_eligible": gate["device_test_eligible"],
               "jdk": {"configured_distribution": "temurin", "vendor": values.get("java.vendor", "UNKNOWN"),
                       "version": values.get("java.version", "UNKNOWN"), "runtime_version": values.get("java.runtime.version", "UNKNOWN")},
               "emulator": {"api_level": int(os.environ["ANDROID_API"]), "image": os.environ["ANDROID_IMAGE"], "abi": "x86_64"},
