@@ -218,11 +218,20 @@ jobs:
             }
 
             let openAlerts = null;
+            let openAlertDetails = [];
             try {
               const alerts = await github.paginate(github.rest.codeScanning.listAlertsForRepo, {
                 owner, repo, state: "open", per_page: 100
               });
               openAlerts = alerts.length;
+              openAlertDetails = alerts.map((alert) => ({
+                number: alert.number,
+                rule: alert.rule?.id || "unknown",
+                severity: alert.rule?.security_severity_level || alert.rule?.severity || "unknown",
+                tool: alert.tool?.name || "unknown",
+                path: alert.most_recent_instance?.location?.path || "unknown",
+                url: alert.html_url || "unavailable"
+              }));
               if (openAlerts !== 0) {
                 blockers.push("Repository has " + openAlerts + " open code-scanning alert(s)");
               }
@@ -240,6 +249,10 @@ jobs:
               "Base SHA: " + pull.base.sha,
               "Result: " + conclusion.toUpperCase(),
               "Open code-scanning alerts: " + (openAlerts === null ? "NOT_VERIFIED" : openAlerts),
+              ...openAlertDetails.map((alert) =>
+                "- ALERT #" + alert.number + " [" + alert.severity + "] " + alert.tool +
+                " " + alert.rule + " at " + alert.path + " — " + alert.url
+              ),
               "",
               ...results,
               "",
