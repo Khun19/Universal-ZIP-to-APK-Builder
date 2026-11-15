@@ -11,8 +11,9 @@ const run = (command, args, options = {}) => {
 };
 const fail = (code) => { if (code !== 0) process.exit(code); };
 
+assertGradleProjectSafe(cwd);
+
 if (mode === "native") {
-  assertGradleProjectSafe(cwd);
   if (!existsSync(join(cwd, "gradlew"))) throw new Error("Native Android project does not include a Gradle wrapper");
   const tasks = spawnSync("./gradlew", ["tasks", "--all", "--no-daemon"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const output = `${tasks.stdout}\n${tasks.stderr}`;
