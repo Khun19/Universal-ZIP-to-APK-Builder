@@ -53,6 +53,17 @@ function getNamedImportLocalName(sourceFile, moduleName, importedName) {
   return null;
 }
 
+function getNamespaceImportLocalName(sourceFile, moduleName) {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier) ||
+        statement.moduleSpecifier.text !== moduleName) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) return bindings.name.text;
+  }
+  return null;
+}
+
 function getDefaultImportLocalName(sourceFile, moduleNames) {
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement) ||
@@ -189,16 +200,19 @@ function hasResetPressable(sourceFile) {
   return found;
 }
 
-function readAppSourceDeclaration(statement, readFileLocalName) {
-  if (!readFileLocalName || !ts.isVariableStatement(statement)) return false;
+function readAppSourceDeclaration(statement, readFileBinding) {
+  if (!readFileBinding || !ts.isVariableStatement(statement)) return false;
   return statement.declarationList.declarations.some((declaration) => {
     if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "appSource" ||
         !declaration.initializer || !ts.isCallExpression(declaration.initializer)) return false;
     const expression = declaration.initializer.expression;
-    const methodName = ts.isIdentifier(expression)
-      ? expression.text
-      : ts.isPropertyAccessExpression(expression) ? expression.name.text : "";
-    if (methodName !== readFileLocalName) return false;
+    const readsFile = readFileBinding.kind === "named"
+      ? ts.isIdentifier(expression) && expression.text === readFileBinding.localName
+      : ts.isPropertyAccessExpression(expression) &&
+        expression.name.text === "readFileSync" &&
+        ts.isIdentifier(expression.expression) &&
+        expression.expression.text === readFileBinding.localName;
+    if (!readsFile) return false;
     let readsAppFile = false;
     const visit = (node) => {
       if (ts.isStringLiteral(node) && node.text.endsWith("App.js")) readsAppFile = true;
@@ -230,10 +244,18 @@ function resetAssertionKind(statement, assertName, sourceFile) {
 function hasResetAssertions(sourceFile) {
   const testName = getNamedImportLocalName(sourceFile, "node:test", "test");
   const assertName = getDefaultImportLocalName(sourceFile, ["node:assert", "node:assert/strict"]);
-  const readFileLocalName =
+  const namedReadFile =
     getNamedImportLocalName(sourceFile, "node:fs", "readFileSync") ??
     getNamedImportLocalName(sourceFile, "fs", "readFileSync");
-  if (!testName || !assertName || !readFileLocalName) return false;
+  const namespaceReadFile =
+    getNamespaceImportLocalName(sourceFile, "node:fs") ??
+    getNamespaceImportLocalName(sourceFile, "fs");
+  const readFileBinding = namedReadFile
+    ? { kind: "named", localName: namedReadFile }
+    : namespaceReadFile
+      ? { kind: "namespace", localName: namespaceReadFile }
+      : null;
+  if (!testName || !assertName || !readFileBinding) return false;
 
   // Only a top-level node:test registration is executed by the test runner.
   // A test() call hidden inside an uncalled function must not qualify.
@@ -247,7 +269,7 @@ function hasResetAssertions(sourceFile) {
 
     const statements = callback.body.statements;
     const appSourceIndex = statements.findIndex((item) =>
-      readAppSourceDeclaration(item, readFileLocalName));
+      readAppSourceDeclaration(item, readFileBinding));
     if (appSourceIndex < 0) continue;
 
     const kinds = new Set();
