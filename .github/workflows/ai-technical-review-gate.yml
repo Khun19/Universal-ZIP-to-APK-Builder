@@ -32,6 +32,7 @@ permissions:
   checks: write
   contents: read
   pull-requests: read
+  issues: read
   security-events: read
 
 concurrency:
@@ -148,14 +149,14 @@ jobs:
               )[0];
 
             const requirements = [
-              { name: "CodeQL", required: true },
-              { name: "Analyze (javascript-typescript)", required: true },
-              { name: "Analyze (actions)", required: true },
-              { name: "Typecheck, unit tests, and workspace build", required: qualityApplies },
-              { name: "Build and validate real M4 APK", required: m4Applies },
-              { name: "m5-flutter-build", required: true },
-              { name: "m6-build-test", required: true },
-              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies }
+              { name: "CodeQL", required: true, app: "github-advanced-security" },
+              { name: "Analyze (javascript-typescript)", required: true, app: "github-actions" },
+              { name: "Analyze (actions)", required: true, app: "github-actions" },
+              { name: "Typecheck, unit tests, and workspace build", required: qualityApplies, app: "github-actions" },
+              { name: "Build and validate real M4 APK", required: m4Applies, app: "github-actions" },
+              { name: "m5-flutter-build", required: true, app: "github-actions" },
+              { name: "m6-build-test", required: true, app: "github-actions" },
+              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies, app: "github-actions" }
             ];
 
             const results = [];
@@ -170,12 +171,42 @@ jobs:
               if (!check) {
                 blockers.push("Missing exact-head check: " + requirement.name);
                 results.push("- BLOCKED — " + requirement.name + ": missing on " + expectedHead);
+              } else if (check.app?.slug !== requirement.app) {
+                blockers.push("Unexpected check producer for " + requirement.name +
+                  ": " + (check.app?.slug || "unknown"));
+                results.push("- BLOCKED — " + requirement.name + ": unexpected producer");
               } else if (check.status !== "completed" || check.conclusion !== "success") {
                 const state = check.status + "/" + (check.conclusion || "pending");
                 blockers.push("Check not successful: " + requirement.name + " (" + state + ")");
                 results.push("- BLOCKED — " + requirement.name + ": " + state);
               } else {
-                results.push("- PASS — " + requirement.name + " (check " + check.id + ")");
+                results.push("- PASS — " + requirement.name + " (trusted app " +
+                  requirement.app + "; check " + check.id + ")");
+              }
+            }
+
+            const workflowFilesChanged = changedPaths.some((path) =>
+              path.startsWith(".github/workflows/")
+            );
+            if (workflowFilesChanged) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: prNumber, per_page: 100
+              });
+              const ownerLogin = pull.base.repo.owner.login;
+              const auditText = "Workflow Change Audit: PASS";
+              const headText = "Head SHA: " + expectedHead;
+              const baseText = "Base SHA: " + pull.base.sha;
+              const founderAudit = comments.some((comment) =>
+                comment.user?.login === ownerLogin &&
+                comment.body?.includes(auditText) &&
+                comment.body?.includes(headText) &&
+                comment.body?.includes(baseText)
+              );
+              if (!founderAudit) {
+                blockers.push("Workflow files changed without an exact-head Founder workflow audit record");
+                results.push("- BLOCKED — workflow change audit comment missing for exact head/base");
+              } else {
+                results.push("- PASS — exact-head Founder workflow change audit recorded");
               }
             }
 
