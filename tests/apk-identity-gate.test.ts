@@ -66,20 +66,62 @@ test("blocks an unexpected application ID", () => {
 });
 
 const baselineSha = "c".repeat(40);
-const resetAppDiff = `diff --git a/App.js b/App.js
---- a/App.js
-+++ b/App.js
-@@ -1,2 +1,5 @@
-+accessibilityLabel="Reset tap count"
-+onPress={() => setCount(0)}
-+Reset counter`;
-const resetTestDiff = `diff --git a/test.ts b/test.ts
---- a/test.ts
-+++ b/test.ts
-@@ -1,2 +1,5 @@
-+accessibilityLabel="Reset tap count"
-+assert.match(appSource, /setCount\\(0\\)/)
-+Reset counter`;
+
+const baselineAppSource = [
+  'import { Pressable, Text } from "react-native";',
+  "export default function App() {",
+  "  return (",
+  '    <Pressable accessibilityLabel="Increment tap count" onPress={() => setCount(1)}>',
+  "      <Text>Increment</Text>",
+  "    </Pressable>",
+  "  );",
+  "}"
+].join("\n");
+
+const candidateAppSource = [
+  'import { Pressable, Text } from "react-native";',
+  "export default function App() {",
+  "  return (",
+  '    <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
+  "      <Text>Reset counter</Text>",
+  "    </Pressable>",
+  "  );",
+  "}"
+].join("\n");
+
+const baselineTestSource = [
+  'import { test } from "node:test";',
+  'import assert from "node:assert";',
+  'test("baseline fixture", () => {',
+  '  const appSource = readFileSync("App.js", "utf8");',
+  "  assert.match(appSource, /Increment/);",
+  "});"
+].join("\n");
+
+const candidateTestSource = [
+  'import { test } from "node:test";',
+  'import assert from "node:assert";',
+  'test("reset counter behavior", () => {',
+  '  const appSource = readFileSync("App.js", "utf8");',
+  '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+  "  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);",
+  "  assert.match(appSource, /Reset counter/);",
+  "});"
+].join("\n");
+
+function classify(overrides = {}) {
+  return classifyBehaviorDiff({
+    mergeBase: baselineSha,
+    baselineCommit: baselineSha,
+    appDiffExitCode: 1,
+    testDiffExitCode: 1,
+    baselineAppSource,
+    candidateAppSource,
+    baselineTestSource,
+    candidateTestSource,
+    ...overrides
+  });
+}
 
 test("M6 registry baseline: selects the latest valid physical-device-tested M6 APK", () => {
   const older = { application_id: "com.builder.m6reactnative", device_result: "PASS", sha256: "a".repeat(64), source_commit: "1".repeat(40), device_tested_at: "2026-10-15" };
@@ -92,88 +134,91 @@ test("M6 registry baseline: missing or invalid baseline fails closed", () => {
   assert.throws(() => selectLatestM6Baseline(null), /M6_REGISTRY_INVALID/);
 });
 
-test("M6 baseline gate: paired added app and test changes with reset behavior are eligible", () => {
-  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: resetAppDiff, testDiff: resetTestDiff });
+test("M6 baseline gate: paired semantic app and executed test additions qualify", () => {
+  const result = classify();
   assert.equal(result.behaviorChanged, true);
+  assert.equal(result.appBehaviorAdded, true);
+  assert.equal(result.testCoverageAdded, true);
   assert.equal(result.targetBehavior, "Reset tap count to zero using the Reset counter button");
 });
 
-test("M6 baseline gate: deleted behavior evidence cannot qualify", () => {
-  const deletedAppDiff = `diff --git a/App.js b/App.js
---- a/App.js
-+++ b/App.js
-@@ -1,5 +1,2 @@
--accessibilityLabel="Reset tap count"
--onPress={() => setCount(0)}
--Reset counter`;
-  const deletedTestDiff = `diff --git a/test.ts b/test.ts
---- a/test.ts
-+++ b/test.ts
-@@ -1,5 +1,2 @@
--accessibilityLabel="Reset tap count"
--assert.match(appSource, /setCount\\(0\\)/)
--Reset counter`;
-  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: deletedAppDiff, testDiff: deletedTestDiff });
-  assert.equal(result.behaviorChanged, false);
-  assert.equal(result.targetBehavior, null);
-});
-
-test("M6 baseline gate: context-only reset evidence cannot qualify", () => {
-  const contextAppDiff = `diff --git a/App.js b/App.js
---- a/App.js
-+++ b/App.js
-@@ -1,5 +1,6 @@
- accessibilityLabel="Reset tap count"
- onPress={() => setCount(0)}
- Reset counter
-+unrelated app addition`;
-  const contextTestDiff = `diff --git a/test.ts b/test.ts
---- a/test.ts
-+++ b/test.ts
-@@ -1,5 +1,6 @@
- accessibilityLabel="Reset tap count"
- assert.match(appSource, /setCount\\(0\\)/)
- Reset counter
-+unrelated test addition`;
-  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: contextAppDiff, testDiff: contextTestDiff });
-  assert.equal(result.behaviorChanged, false);
-});
-
-test("M6 baseline gate: comment-only evidence cannot qualify", () => {
-  const commentAppDiff = `diff --git a/App.js b/App.js
---- a/App.js
-+++ b/App.js
-@@ -1,0 +1,3 @@
-+// accessibilityLabel="Reset tap count"
-+// onPress={() => setCount(0)}
-+// <Text style={styles.buttonText}>Reset counter</Text>`;
-  const commentTestDiff = `diff --git a/test.ts b/test.ts
---- a/test.ts
-+++ b/test.ts
-@@ -1,0 +1,3 @@
-+// assert.match(appSource, /accessibilityLabel="Reset tap count"/);
-+// assert.match(appSource, /onPress=\\{\\(\\) => setCount\\(0\\)\\}/);
-+// assert.match(appSource, /Reset counter/);`;
-  const result = classifyBehaviorDiff({
-    mergeBase: baselineSha,
-    baselineCommit: baselineSha,
-    appDiffExitCode: 1,
-    testDiffExitCode: 1,
-    appDiff: commentAppDiff,
-    testDiff: commentTestDiff
+test("M6 baseline gate: a reset behavior already present in the trusted baseline is not new", () => {
+  const result = classify({
+    baselineAppSource: candidateAppSource,
+    baselineTestSource: candidateTestSource
   });
   assert.equal(result.behaviorChanged, false);
   assert.equal(result.targetBehavior, null);
 });
 
+test("M6 baseline gate: template-literal text cannot spoof app or test AST evidence", () => {
+  const tick = String.fromCharCode(96);
+  const templateAppSource = [
+    "export default function App() {",
+    "  const example = " + tick,
+    '    <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
+    "      <Text>Reset counter</Text>",
+    "    </Pressable>",
+    "  " + tick + ";",
+    "  return null;",
+    "}"
+  ].join("\n");
+  const templateTestSource = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert";',
+    'test("string decoy", () => {',
+    '  const appSource = readFileSync("App.js", "utf8");',
+    "  const example = " + tick,
+    '    assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    "    assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);",
+    "    assert.match(appSource, /Reset counter/);",
+    "  " + tick + ";",
+    "});"
+  ].join("\n");
+  const result = classify({
+    candidateAppSource: templateAppSource,
+    candidateTestSource: templateTestSource
+  });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.appBehaviorAdded, false);
+  assert.equal(result.testCoverageAdded, false);
+});
+
+test("M6 baseline gate: comments and assertions outside node:test callbacks cannot qualify", () => {
+  const commentAppSource = [
+    "export default function App() {",
+    '  // <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
+    "  // <Text>Reset counter</Text>",
+    "  return null;",
+    "}"
+  ].join("\n");
+  const outsideCallbackTestSource = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert";',
+    'const appSource = readFileSync("App.js", "utf8");',
+    'assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    "assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);",
+    "assert.match(appSource, /Reset counter/);",
+    'test("empty callback", () => {});'
+  ].join("\n");
+  const result = classify({
+    candidateAppSource: commentAppSource,
+    candidateTestSource: outsideCallbackTestSource
+  });
+  assert.equal(result.behaviorChanged, false);
+});
+
 test("M6 baseline gate: unchanged and one-sided diffs remain ineligible", () => {
-  for (const [appDiffExitCode, testDiffExitCode] of [[0,0],[1,0],[0,1]]) {
-    assert.equal(classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode, testDiffExitCode, appDiff: resetAppDiff, testDiff: resetTestDiff }).behaviorChanged, false);
+  for (const [appDiffExitCode, testDiffExitCode] of [[0, 0], [1, 0], [0, 1]]) {
+    assert.equal(classify({ appDiffExitCode, testDiffExitCode }).behaviorChanged, false);
   }
 });
 
 test("M6 baseline gate: unrelated paired changes do not invent a behavior target", () => {
-  const result = classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1, appDiff: "+unrelated app edit", testDiff: "+unrelated test edit" });
+  const result = classify({
+    candidateAppSource: baselineAppSource,
+    candidateTestSource: baselineTestSource
+  });
   assert.equal(result.behaviorChanged, false);
   assert.equal(result.targetBehavior, null);
 });
@@ -184,10 +229,14 @@ test("M6 baseline gate: missing merge-base and non-ancestor baseline fail closed
 });
 
 test("M6 baseline gate: git execution errors fail closed", () => {
-  assert.throws(() => classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 128, testDiffExitCode: 1 }), /M6_DIFF_EXECUTION_FAILED/);
-  assert.throws(() => classifyBehaviorDiff({ mergeBase: baselineSha, baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 2 }), /M6_DIFF_EXECUTION_FAILED/);
+  assert.throws(() => classify({ appDiffExitCode: 128 }), /M6_DIFF_EXECUTION_FAILED/);
+  assert.throws(() => classify({ testDiffExitCode: 2 }), /M6_DIFF_EXECUTION_FAILED/);
 });
 
+test("M6 baseline gate: source parse failures fail closed", () => {
+  assert.throws(() => classify({ candidateAppSource: "export default function App() { return <Pressable>" }), /M6_SOURCE_PARSE_FAILED/);
+  assert.throws(() => classify({ candidateTestSource: "import { test } from 'node:test'; test('broken', () => {" }), /M6_SOURCE_PARSE_FAILED/);
+});
 
 const prBaseSha = "1".repeat(40);
 const pushBeforeSha = "2".repeat(40);
