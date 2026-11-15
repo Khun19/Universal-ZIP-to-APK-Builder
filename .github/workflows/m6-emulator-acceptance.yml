@@ -1,12 +1,12 @@
 name: M6 Exact APK Emulator Acceptance
 
 on:
-  # workflow_run only executes workflow definitions present on the default branch.
-  # Dispatch this workflow explicitly on the PR ref after its exact M6 build succeeds.
+  # Run this workflow only from trusted main after a successful main-branch M6 build.
+  # Supply the exact build run, artifact ID, and source commit; never dispatch from a PR ref.
   workflow_dispatch:
     inputs:
       artifact_run_id:
-        description: Successful Ubuntu M6 build run containing m6-build-apk
+        description: Successful main-branch Ubuntu M6 build run containing m6-build-apk
         required: true
         type: string
       artifact_id:
@@ -23,8 +23,7 @@ permissions:
   actions: read
 
 concurrency:
-  # Keep build-triggered and manually dispatched acceptance runs isolated.
-  # Never cancel an in-progress acceptance run merely because another trigger arrives.
+  # Keep manual acceptance runs isolated and never cancel an in-progress run.
   group: m6-emulator-acceptance-${{ inputs.artifact_run_id || github.run_id }}
   cancel-in-progress: false
 
@@ -46,11 +45,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_RUN_ID: ${{ inputs.artifact_run_id }}
           EVENT_ARTIFACT_ID: ${{ inputs.artifact_id }}
-          EXPECTED_SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.source_commit }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.source_commit }}
           TRIGGER_CONCLUSION: success
         shell: bash
         run: |
           set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
           [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
           [[ "$EVENT_ARTIFACT_ID" =~ ^[0-9]+$ ]]
           [[ "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
@@ -154,7 +154,7 @@ jobs:
           run-id: ${{ steps.build.outputs.run_id }}
           path: .
 
-      - name: Validate exact artifact provenance, behavior change, and checksum
+      - name: Validate exact artifact provenance, identity, and checksum
         shell: bash
         env:
           BUILD_RUN_ID: ${{ steps.build.outputs.run_id }}
