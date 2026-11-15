@@ -28,7 +28,7 @@ It verifies:
 - Android Emulator Device Test is required when its configured path filters apply.
 - The repository has zero open code-scanning alerts. If the alerts API cannot be read, the gate fails closed.
 - Check runs must come from the expected GitHub producer: CodeQL from `github-advanced-security`; the other required jobs from `github-actions`. Candidate PRs cannot satisfy a check by creating a same-named check from an unrelated app.
-- Any change under `.github/workflows/` requires a repository-owner comment containing `Workflow Change Audit: PASS`, the exact `Head SHA`, and exact `Base SHA`. This makes changes to trusted CI definitions an explicit Founder audit rather than silently trusting candidate workflow code.
+- Any change under `.github/workflows/`, `.github/actions/`, or either CODEOWNERS file requires a repository-owner comment containing `Trust Configuration Audit: PASS`, the exact `Head SHA`, and exact `Base SHA`. This makes changes to trusted CI and ownership definitions an explicit Founder audit rather than silently trusting candidate PR code.
 - Missing, pending, failed, skipped-when-applicable, stale, producer-mismatched, or SHA-mismatched evidence is a failure. A path-filtered workflow may be marked `NOT_APPLICABLE` only when the PR does not touch its declared trigger paths.
 
 The workflow re-evaluates after PR updates, review submissions, and completion of relevant CI workflows. A later exact-head evaluation can supersede an earlier pending/failure result.
