@@ -144,6 +144,16 @@ function hasUnsafeMutation(root, names) {
       mutated = true;
       return;
     }
+    if (ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        ["Object", "Reflect"].includes(node.expression.expression.text) &&
+        new Set(["assign", "defineProperty", "defineProperties", "setPrototypeOf", "set", "defineProperty", "deleteProperty"])
+          .has(node.expression.name.text) &&
+        node.arguments.some((argument) => assignmentTargetTouches(argument, names))) {
+      mutated = true;
+      return;
+    }
     if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
         (node.operator === ts.SyntaxKind.PlusPlusToken ||
          node.operator === ts.SyntaxKind.MinusMinusToken ||
