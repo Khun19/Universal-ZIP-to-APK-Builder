@@ -27,7 +27,7 @@ It verifies:
 - Builder Quality Gates and M4 checks are required when their configured path filters apply.
 - Android Emulator Device Test is required when its configured path filters apply.
 - The repository has zero open code-scanning alerts. If the alerts API cannot be read, the gate fails closed.
-- Check runs must come from the expected GitHub producer: CodeQL from `github-advanced-security`; the other required jobs from `github-actions`. Candidate PRs cannot satisfy a check by creating a same-named check from an unrelated app.
+- Check runs must come from the exact Ruleset integration IDs: CodeQL from `github-advanced-security` app ID `57789`; the other required jobs from `github-actions` app ID `15368`. Candidate PRs cannot satisfy a check by creating a same-named check from an unrelated app.
 - Any change under `.github/workflows/`, `.github/actions/`, or either CODEOWNERS file requires a repository-owner comment containing `Trust Configuration Audit: PASS`, the exact `Head SHA`, and exact `Base SHA`. This makes changes to trusted CI and ownership definitions an explicit Founder audit rather than silently trusting candidate PR code.
 - Missing, pending, failed, skipped-when-applicable, stale, producer-mismatched, or SHA-mismatched evidence is a failure. A path-filtered workflow may be marked `NOT_APPLICABLE` only when the PR does not touch its declared trigger paths.
 
