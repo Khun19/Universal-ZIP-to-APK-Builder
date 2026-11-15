@@ -25,6 +25,13 @@ function logicalPropertyLines(contents) {
 
   for (const physicalLine of physicalLines) {
     const line = continuing ? physicalLine.replace(/^[ \t\f]+/, "") : physicalLine;
+    if (!continuing) {
+      const first = line.replace(/^[ \t\f]+/, "");
+      if (!first || first.startsWith("#") || first.startsWith("!")) {
+        logicalLines.push(line);
+        continue;
+      }
+    }
     if (trailingBackslashes(line) % 2 === 1) {
       current += line.slice(0, -1);
       continuing = true;
