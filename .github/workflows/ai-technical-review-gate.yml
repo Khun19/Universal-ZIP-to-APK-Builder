@@ -1,0 +1,225 @@
+name: AI Technical Review Gate
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
+  workflow_run:
+    workflows:
+      - Builder Quality Gates
+      - CodeQL Advanced
+      - Ubuntu M4 Vite PWA APK Build Test
+      - M5 Flutter Build Test
+      - Ubuntu M6 Build Test
+      - Android Emulator Device Test
+      - Automatic Copilot Pull Request Review
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open PR number targeting main
+        required: true
+        type: number
+      expected_head_sha:
+        description: Exact 40-character PR head SHA to verify
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  checks: write
+  contents: read
+  pull-requests: read
+  security-events: read
+
+concurrency:
+  group: ai-technical-review-gate-${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  publish-independent-evidence:
+    name: Publish exact-head evidence result
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Evaluate trusted exact-head evidence
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const event = context.eventName;
+            let prNumber = null;
+            let expectedHead = null;
+
+            if (event === "pull_request_target" || event === "pull_request_review") {
+              prNumber = context.payload.pull_request?.number ?? null;
+              expectedHead = context.payload.pull_request?.head?.sha ?? null;
+            } else if (event === "workflow_run") {
+              const run = context.payload.workflow_run;
+              expectedHead = run?.head_sha ?? null;
+              prNumber = run?.pull_requests?.find((item) => item.number)?.number ?? null;
+              if (!prNumber && expectedHead) {
+                const openPulls = await github.paginate(github.rest.pulls.list, {
+                  owner, repo, state: "open", base: "main", per_page: 100
+                });
+                const matchingPull = openPulls.find((item) => item.head.sha === expectedHead);
+                prNumber = matchingPull?.number ?? null;
+              }
+            } else if (event === "workflow_dispatch") {
+              prNumber = Number(context.payload.inputs?.pr_number);
+              expectedHead = context.payload.inputs?.expected_head_sha ?? null;
+            }
+
+            if (!Number.isInteger(prNumber) || prNumber < 1 ||
+                typeof expectedHead !== "string" ||
+                !/^[0-9a-f]{40}$/.test(expectedHead)) {
+              core.notice("No valid PR/head SHA is associated with this event; no PR check was published.");
+              return;
+            }
+
+            const pullResponse = await github.rest.pulls.get({
+              owner, repo, pull_number: prNumber
+            });
+            const pull = pullResponse.data;
+            if (pull.state !== "open" || pull.base.ref !== "main" || pull.head.sha !== expectedHead) {
+              core.notice("Stale event or PR outside main; refusing to publish a status for a non-current head.");
+              return;
+            }
+
+            const created = await github.rest.checks.create({
+              owner,
+              repo,
+              name: "AI Technical Review Gate",
+              head_sha: expectedHead,
+              status: "in_progress",
+              external_id: "pr-" + prNumber + "-" + expectedHead,
+              output: {
+                title: "Verifying exact-head independent evidence",
+                summary: "PR #" + prNumber + "; head " + expectedHead + ". Candidate PR code is not executed by this workflow."
+              }
+            });
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: prNumber, per_page: 100
+            });
+            const changedPaths = files.flatMap((file) =>
+              [file.filename, file.previous_filename].filter(Boolean)
+            );
+
+            const under = (path, prefix) => path.startsWith(prefix);
+            const anyPath = (path, prefixes) => prefixes.some((prefix) => under(path, prefix));
+            const isPnpm = (path) => ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"].includes(path);
+            const isTsconfig = (path) => /^tsconfig[^/]*\.json$/.test(path);
+            const qualityDocs = new Set([
+              "docs/ARCHITECTURE.md",
+              "docs/TEST-MATRIX.md",
+              "docs/VALIDATION-WORKFLOW.md",
+              "docs/CLOUD-TOOLCHAIN-CAPABILITY-REGISTRY.md",
+              "docs/DEVELOPMENT-READINESS-AUDIT.md"
+            ]);
+
+            const qualityApplies = changedPaths.some((path) =>
+              anyPath(path, ["lib/", "tests/", "scripts/", "artifacts/", ".github/workflows/"]) ||
+              isPnpm(path) || isTsconfig(path) || qualityDocs.has(path)
+            );
+            const m4Applies = changedPaths.some((path) =>
+              anyPath(path, ["lib/", "scripts/", "tests/fixtures/vite-pwa-project/", ".github/workflows/"]) ||
+              path === "tests/pipeline.test.ts" || isPnpm(path) || isTsconfig(path)
+            );
+            const emulatorApplies = changedPaths.some((path) =>
+              anyPath(path, ["lib/", "scripts/", "tests/", "examples/react-native-chat-demo/"]) ||
+              isPnpm(path) ||
+              path === ".github/workflows/android-emulator-device-test.yml" ||
+              path === "docs/ANDROID-EMULATOR-REQUIREMENTS.md" ||
+              path === ".github/workflows/community-chat-demo-builder-apk.yml" ||
+              path === "docs/TEST-MATRIX.md" ||
+              path === "docs/VALIDATION-WORKFLOW.md"
+            );
+
+            const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+              owner, repo, ref: expectedHead, per_page: 100
+            });
+            const latestCheck = (name) => checkRuns
+              .filter((check) => check.name === name && check.head_sha === expectedHead)
+              .sort((a, b) =>
+                Date.parse(b.started_at || b.created_at) - Date.parse(a.started_at || a.created_at)
+              )[0];
+
+            const requirements = [
+              { name: "CodeQL", required: true },
+              { name: "Analyze (javascript-typescript)", required: true },
+              { name: "Analyze (actions)", required: true },
+              { name: "Typecheck, unit tests, and workspace build", required: qualityApplies },
+              { name: "Build and validate real M4 APK", required: m4Applies },
+              { name: "m5-flutter-build", required: true },
+              { name: "m6-build-test", required: true },
+              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies }
+            ];
+
+            const results = [];
+            const blockers = [];
+            for (const requirement of requirements) {
+              if (!requirement.required) {
+                results.push("- NOT_APPLICABLE — " + requirement.name +
+                  " (PR paths do not match the workflow trigger filters)");
+                continue;
+              }
+              const check = latestCheck(requirement.name);
+              if (!check) {
+                blockers.push("Missing exact-head check: " + requirement.name);
+                results.push("- BLOCKED — " + requirement.name + ": missing on " + expectedHead);
+              } else if (check.status !== "completed" || check.conclusion !== "success") {
+                const state = check.status + "/" + (check.conclusion || "pending");
+                blockers.push("Check not successful: " + requirement.name + " (" + state + ")");
+                results.push("- BLOCKED — " + requirement.name + ": " + state);
+              } else {
+                results.push("- PASS — " + requirement.name + " (check " + check.id + ")");
+              }
+            }
+
+            let openAlerts = null;
+            try {
+              const alerts = await github.paginate(github.rest.codeScanning.listAlertsForRepo, {
+                owner, repo, state: "open", per_page: 100
+              });
+              openAlerts = alerts.length;
+              if (openAlerts !== 0) {
+                blockers.push("Repository has " + openAlerts + " open code-scanning alert(s)");
+              }
+            } catch (error) {
+              blockers.push("Could not verify open code-scanning alerts: " + error.message);
+            }
+
+            const conclusion = blockers.length === 0 ? "success" : "failure";
+            const title = conclusion === "success"
+              ? "Exact-head independent evidence PASS"
+              : "Exact-head independent evidence BLOCKED";
+            const summary = [
+              "PR #" + prNumber,
+              "Head SHA: " + expectedHead,
+              "Base SHA: " + pull.base.sha,
+              "Result: " + conclusion.toUpperCase(),
+              "Open code-scanning alerts: " + (openAlerts === null ? "NOT_VERIFIED" : openAlerts),
+              "",
+              ...results,
+              "",
+              "Copilot Code Review remains a separate active Ruleset control. A Copilot request workflow or this evidence check is not a human APPROVED review.",
+              "This workflow uses GitHub API metadata only; it does not checkout or execute candidate PR code."
+            ].join("\n");
+            const outputText = blockers.length
+              ? "Blockers:\n- " + blockers.join("\n- ")
+              : "All applicable exact-head checks succeeded and the repository has zero open code-scanning alerts.";
+
+            await github.rest.checks.update({
+              owner,
+              repo,
+              check_run_id: created.data.id,
+              status: "completed",
+              conclusion,
+              output: { title, summary, text: outputText }
+            });
+
+            core.info(summary);
+            if (blockers.length) core.setFailed(blockers.join("; "));
