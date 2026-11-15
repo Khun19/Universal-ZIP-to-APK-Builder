@@ -144,14 +144,14 @@ jobs:
               )[0];
 
             const requirements = [
-              { name: "CodeQL", required: true, app: "github-advanced-security" },
-              { name: "Analyze (javascript-typescript)", required: true, app: "github-actions" },
-              { name: "Analyze (actions)", required: true, app: "github-actions" },
-              { name: "Typecheck, unit tests, and workspace build", required: qualityApplies, app: "github-actions" },
-              { name: "Build and validate real M4 APK", required: m4Applies, app: "github-actions" },
-              { name: "m5-flutter-build", required: true, app: "github-actions" },
-              { name: "m6-build-test", required: true, app: "github-actions" },
-              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies, app: "github-actions" }
+              { name: "CodeQL", required: true, app: "github-advanced-security", appId: 57789 },
+              { name: "Analyze (javascript-typescript)", required: true, app: "github-actions", appId: 15368 },
+              { name: "Analyze (actions)", required: true, app: "github-actions", appId: 15368 },
+              { name: "Typecheck, unit tests, and workspace build", required: qualityApplies, app: "github-actions", appId: 15368 },
+              { name: "Build and validate real M4 APK", required: m4Applies, app: "github-actions", appId: 15368 },
+              { name: "m5-flutter-build", required: true, app: "github-actions", appId: 15368 },
+              { name: "m6-build-test", required: true, app: "github-actions", appId: 15368 },
+              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies, app: "github-actions", appId: 15368 }
             ];
 
             const results = [];
@@ -166,9 +166,9 @@ jobs:
               if (!check) {
                 blockers.push("Missing exact-head check: " + requirement.name);
                 results.push("- BLOCKED — " + requirement.name + ": missing on " + expectedHead);
-              } else if (check.app?.slug !== requirement.app) {
+              } else if (check.app?.slug !== requirement.app || check.app?.id !== requirement.appId) {
                 blockers.push("Unexpected check producer for " + requirement.name +
-                  ": " + (check.app?.slug || "unknown"));
+                  ": " + (check.app?.slug || "unknown") + "/" + (check.app?.id || "unknown"));
                 results.push("- BLOCKED — " + requirement.name + ": unexpected producer");
               } else if (check.status !== "completed" || check.conclusion !== "success") {
                 const state = check.status + "/" + (check.conclusion || "pending");
@@ -176,7 +176,7 @@ jobs:
                 results.push("- BLOCKED — " + requirement.name + ": " + state);
               } else {
                 results.push("- PASS — " + requirement.name + " (trusted app " +
-                  requirement.app + "; check " + check.id + ")");
+                  requirement.app + "/" + requirement.appId + "; check " + check.id + ")");
               }
             }
 
