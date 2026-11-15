@@ -75,6 +75,89 @@ function getDefaultImportLocalName(sourceFile, moduleNames) {
   return null;
 }
 
+function collectBindingNames(name, output) {
+  if (ts.isIdentifier(name)) {
+    output.add(name.text);
+    return;
+  }
+  if (ts.isArrayBindingPattern(name) || ts.isObjectBindingPattern(name)) {
+    for (const element of name.elements) {
+      if (ts.isOmittedExpression(element)) continue;
+      collectBindingNames(element.name, output);
+    }
+  }
+}
+
+function hasShadowingDeclaration(root, names, allowedDeclarations = new Set()) {
+  let shadowed = false;
+  const visit = (node) => {
+    if (shadowed) return;
+    let binding = null;
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node)) {
+      binding = node.name;
+    } else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name) {
+      binding = node.name;
+    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+      binding = node.variableDeclaration.name;
+    }
+    if (binding && !allowedDeclarations.has(node)) {
+      const declared = new Set();
+      collectBindingNames(binding, declared);
+      if ([...declared].some((name) => names.has(name))) {
+        shadowed = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return shadowed;
+}
+
+function assignmentTargetTouches(node, names) {
+  if (!node) return false;
+  if (ts.isIdentifier(node)) return names.has(node.text);
+  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+    return assignmentTargetTouches(node.expression, names);
+  }
+  if (ts.isArrayLiteralExpression(node) || ts.isObjectLiteralExpression(node) ||
+      ts.isArrayBindingPattern(node) || ts.isObjectBindingPattern(node)) {
+    return node.elements.some((element) => {
+      const target = ts.isPropertyAssignment(element) ? element.initializer : element;
+      return assignmentTargetTouches(target, names);
+    });
+  }
+  if (ts.isSpreadElement(node) || ts.isSpreadAssignment(node)) {
+    return assignmentTargetTouches(node.expression, names);
+  }
+  return false;
+}
+
+function hasUnsafeMutation(root, names) {
+  let mutated = false;
+  const visit = (node) => {
+    if (mutated) return;
+    if (ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+        assignmentTargetTouches(node.left, names)) {
+      mutated = true;
+      return;
+    }
+    if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+        (node.operator === ts.SyntaxKind.PlusPlusToken ||
+         node.operator === ts.SyntaxKind.MinusMinusToken ||
+         node.operator === ts.SyntaxKind.DeleteKeyword) &&
+        assignmentTargetTouches(node.operand, names)) {
+      mutated = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return mutated;
+}
+
 function isDefaultAppFunction(node) {
   if (!ts.isFunctionDeclaration(node) || node.name?.text !== "App") return false;
   const modifiers = node.modifiers ?? [];
@@ -106,7 +189,7 @@ function unwrapExpression(node) {
   return current;
 }
 
-function hasResetHandler(attribute) {
+function hasResetHandler(attribute, setterName = "setCount") {
   if (!attribute || !attribute.initializer || !ts.isJsxExpression(attribute.initializer)) return false;
   const handler = unwrapExpression(attribute.initializer.expression);
   if (!handler || !ts.isArrowFunction(handler)) return false;
@@ -114,7 +197,7 @@ function hasResetHandler(attribute) {
   if (!body || !ts.isCallExpression(body)) return false;
   const callee = unwrapExpression(body.expression);
   return Boolean(
-    callee && ts.isIdentifier(callee) && callee.text === "setCount" &&
+    callee && ts.isIdentifier(callee) && callee.text === setterName &&
     body.arguments.length === 1 &&
     ts.isNumericLiteral(body.arguments[0]) &&
     Number(body.arguments[0].text) === 0
@@ -131,8 +214,9 @@ function hasResetText(element, sourceFile) {
 }
 
 function hasCountStateBinding(appFunction, sourceFile) {
-  if (!hasNamedImport(sourceFile, "react", "useState")) return false;
-  let found = false;
+  const useStateName = getNamedImportLocalName(sourceFile, "react", "useState");
+  if (!useStateName) return false;
+  let stateDeclaration = null;
   const visit = (node) => {
     if (node !== appFunction.body && ts.isFunctionLike(node)) return;
     if (ts.isVariableDeclaration(node) &&
@@ -143,29 +227,34 @@ function hasCountStateBinding(appFunction, sourceFile) {
         ? unwrapExpression(call.expression)
         : null;
       const [countElement, setterElement] = node.name.elements;
-      if (callee && ts.isIdentifier(callee) && callee.text === "useState" &&
+      if (callee && ts.isIdentifier(callee) && callee.text === useStateName &&
           countElement && setterElement &&
           ts.isBindingElement(countElement) && ts.isBindingElement(setterElement) &&
           ts.isIdentifier(countElement.name) && countElement.name.text === "count" &&
           ts.isIdentifier(setterElement.name) && setterElement.name.text === "setCount" &&
-          call.arguments.length >= 1 &&
+          call.arguments.length === 1 &&
           ts.isNumericLiteral(call.arguments[0]) &&
           Number(call.arguments[0].text) === 0) {
-        found = true;
+        stateDeclaration = node;
         return;
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(appFunction.body);
-  return found;
+  if (!stateDeclaration) return false;
+  const protectedNames = new Set([useStateName, "setCount"]);
+  return !hasShadowingDeclaration(appFunction.body, protectedNames, new Set([stateDeclaration])) &&
+    !hasUnsafeMutation(appFunction.body, protectedNames);
 }
 
 function hasResetPressable(sourceFile) {
-  if (!hasNamedImport(sourceFile, "react-native", "Pressable") ||
-      !hasNamedImport(sourceFile, "react-native", "Text")) return false;
+  const pressableName = getNamedImportLocalName(sourceFile, "react-native", "Pressable");
+  const textName = getNamedImportLocalName(sourceFile, "react-native", "Text");
+  if (pressableName !== "Pressable" || textName !== "Text") return false;
   const appFunction = sourceFile.statements.find(isDefaultAppFunction);
   if (!appFunction?.body || !hasCountStateBinding(appFunction, sourceFile)) return false;
+  if (hasShadowingDeclaration(appFunction.body, new Set([pressableName, textName]))) return false;
 
   let found = false;
   const visitReturnedJsx = (node) => {
@@ -204,6 +293,8 @@ function readAppSourceDeclaration(statement, readFileBinding) {
   if (!readFileBinding || !ts.isVariableStatement(statement)) return false;
   return statement.declarationList.declarations.some((declaration) => {
     if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "appSource" ||
+        (statement.declarationList.flags & ts.NodeFlags.Const) === 0 ||
+        statement.declarationList.declarations.length !== 1 ||
         !declaration.initializer || !ts.isCallExpression(declaration.initializer)) return false;
     const expression = declaration.initializer.expression;
     const readsFile = readFileBinding.kind === "named"
@@ -256,6 +347,10 @@ function hasResetAssertions(sourceFile) {
       ? { kind: "namespace", localName: namespaceReadFile }
       : null;
   if (!testName || !assertName || !readFileBinding) return false;
+  const readerName = readFileBinding.localName;
+  const protectedNames = new Set([testName, assertName, readerName]);
+  if (hasShadowingDeclaration(sourceFile, protectedNames) ||
+      hasUnsafeMutation(sourceFile, protectedNames)) return false;
 
   // Only a top-level node:test registration is executed by the test runner.
   // A test() call hidden inside an uncalled function must not qualify.
@@ -271,6 +366,12 @@ function hasResetAssertions(sourceFile) {
     const appSourceIndex = statements.findIndex((item) =>
       readAppSourceDeclaration(item, readFileBinding));
     if (appSourceIndex < 0) continue;
+    const appSourceDeclaration = statements[appSourceIndex].declarationList.declarations.find(
+      (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "appSource"
+    );
+    const callbackNames = new Set(["appSource"]);
+    if (hasShadowingDeclaration(callback.body, callbackNames, new Set([appSourceDeclaration])) ||
+        hasUnsafeMutation(callback.body, callbackNames)) continue;
 
     const kinds = new Set();
     for (let index = appSourceIndex + 1; index < statements.length; index += 1) {
