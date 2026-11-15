@@ -281,7 +281,7 @@ test("M6 binding integrity: callback-local assert shadow cannot spoof executed a
     '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
     '  assert.match(appSource, /Reset counter/);',
     '});'
-  ].join("\\n");
+  ].join("\n");
   assert.equal(classify({ candidateTestSource: shadowedTest }).behaviorChanged, false);
 });
 
@@ -296,7 +296,7 @@ test("M6 binding integrity: callback parameter shadow cannot spoof executed asse
     '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
     '  assert.match(appSource, /Reset counter/);',
     '});'
-  ].join("\\n");
+  ].join("\n");
   assert.equal(classify({ candidateTestSource: shadowedTest }).behaviorChanged, false);
 });
 
@@ -312,7 +312,7 @@ test("M6 binding integrity: reassigned assert.match cannot spoof executed assert
     '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
     '  assert.match(appSource, /Reset counter/);',
     '});'
-  ].join("\\n");
+  ].join("\n");
   assert.equal(classify({ candidateTestSource: mutatedTest }).behaviorChanged, false);
 });
 
@@ -328,7 +328,7 @@ test("M6 binding integrity: callback-local fake fs reader cannot qualify as sour
     '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
     '  assert.match(appSource, /Reset counter/);',
     '});'
-  ].join("\\n");
+  ].join("\n");
   assert.equal(classify({ candidateTestSource: fakeReaderTest }).behaviorChanged, false);
 });
 
@@ -341,7 +341,7 @@ test("M6 binding integrity: locally shadowed useState and no-op setter cannot qu
     "  const [count, setCount] = useState(0);",
     '  return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
     "}"
-  ].join("\\n");
+  ].join("\n");
   assert.equal(classify({ candidateAppSource: fakeStateApp }).behaviorChanged, false);
 });
 
@@ -354,6 +354,6 @@ test("M6 binding integrity: reassigned useState setter cannot qualify", () => {
     "  setCount = () => {};",
     '  return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
     "}"
-  ].join("\\n");
+  ].join("\n");
   assert.equal(classify({ candidateAppSource: reassignedSetterApp }).behaviorChanged, false);
 });
