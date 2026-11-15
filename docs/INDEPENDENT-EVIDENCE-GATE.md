@@ -31,7 +31,7 @@ It verifies:
 - Any change under `.github/workflows/`, `.github/actions/`, or either CODEOWNERS file requires a repository-owner comment containing `Trust Configuration Audit: PASS`, the exact `Head SHA`, and exact `Base SHA`. This makes changes to trusted CI and ownership definitions an explicit Founder audit rather than silently trusting candidate PR code.
 - Missing, pending, failed, skipped-when-applicable, stale, producer-mismatched, or SHA-mismatched evidence is a failure. A path-filtered workflow may be marked `NOT_APPLICABLE` only when the PR does not touch its declared trigger paths.
 
-The workflow re-evaluates after PR updates, review submissions, and completion of relevant CI workflows. A later exact-head evaluation can supersede an earlier pending/failure result.
+The workflow re-evaluates after `pull_request_target` PR updates and completion of relevant CI workflows. Manual rechecks must dispatch the workflow on trusted `main` with the exact PR number and head SHA. Do not trigger this privileged gate from `pull_request_review` or `issue_comment` events: those events may execute a workflow definition supplied by the candidate PR branch. A later exact-head evaluation can supersede an earlier pending/failure result.
 
 ## Evidence tiers
 
