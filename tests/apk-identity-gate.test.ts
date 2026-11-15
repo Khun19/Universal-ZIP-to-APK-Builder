@@ -104,7 +104,7 @@ const candidateTestSource = [
   'test("reset counter behavior", () => {',
   '  const appSource = readFileSync("App.js", "utf8");',
   '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
-  "  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);",
+  "  assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
   "  assert.match(appSource, /Reset counter/);",
   "});"
 ].join("\n");
@@ -170,7 +170,7 @@ test("M6 baseline gate: template-literal text cannot spoof app or test AST evide
     '  const appSource = readFileSync("App.js", "utf8");',
     "  const example = " + tick,
     '    assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
-    "    assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);",
+    "    assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
     "    assert.match(appSource, /Reset counter/);",
     "  " + tick + ";",
     "});"
@@ -197,7 +197,7 @@ test("M6 baseline gate: comments and assertions outside node:test callbacks cann
     'import assert from "node:assert";',
     'const appSource = readFileSync("App.js", "utf8");',
     'assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
-    "assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);",
+    "assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
     "assert.match(appSource, /Reset counter/);",
     'test("empty callback", () => {});'
   ].join("\n");
