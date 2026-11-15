@@ -57,6 +57,16 @@ test("Gradle security preflight rejects project-controlled daemon registry and G
   });
 });
 
+test("Gradle security preflight does not hide a property after a continued comment", () => {
+  withProject((root) => {
+    fs.writeFileSync(
+      path.join(root, "gradle.properties"),
+      ["# ignored comment\\\\", "org.gradle.daemon.registry.base=/tmp/attacker/registry"].join("\\n"),
+    );
+    assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+  });
+});
+
 test("Gradle security preflight decodes escaped keys and Java-properties continuations", () => {
   withProject((root) => {
     fs.writeFileSync(
