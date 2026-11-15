@@ -46,7 +46,15 @@
       "device_result": "PASS",
       "evidence": "User-confirmed physical-phone PASS on 2026-10-30 for the Increment 0→1 and Reset 1→0 interactions. The APK bytes, SHA-256, application ID, source commit, workflow run ID, and artifact ID were independently verified from the exact GitHub Actions artifact. Device-side SHA, screenshots, and logcat were not independently captured.",
       "target_behavior": "Install and launch the M6 React Native app; verify the counter increments from 0 to 1 and Reset returns it to 0.",
-      "device_tested_at": "2026-10-30"
+      "device_tested_at": "2026-10-30",
+      "evidence_tier": "USER_CONFIRMED",
+      "device_evidence": {
+        "source": "USER_CONFIRMATION",
+        "device_sha256_captured": false,
+        "screenshots_captured": false,
+        "logcat_captured": false,
+        "independent_capture": false
+      }
     }
   ]
 }
