@@ -11,6 +11,13 @@ export function selectLatestM6Baseline(registry) {
     .filter((record) => record &&
       record.application_id === "com.builder.m6reactnative" &&
       record.device_result === "PASS" &&
+      record.evidence_tier === "INDEPENDENTLY_VERIFIED" &&
+      record.device_evidence?.source === "INDEPENDENT_CAPTURE" &&
+      record.device_evidence?.independent_capture === true &&
+      record.device_evidence?.device_sha256_captured === true &&
+      record.device_evidence?.device_sha256 === record.sha256 &&
+      record.device_evidence?.screenshots_captured === true &&
+      record.device_evidence?.logcat_captured === true &&
       SHA256.test(record.sha256 || "") &&
       SHA40.test(record.source_commit || "") &&
       typeof record.device_tested_at === "string" &&
