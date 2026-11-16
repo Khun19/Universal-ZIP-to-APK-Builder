@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluateCandidate } from "../scripts/apk-identity-gate.mjs";
+import { classifyBehaviorDiff, selectLatestM6Baseline } from "../scripts/m6-behavior-diff-gate.mjs";
 
 const sha = "a".repeat(64);
 const base = {
@@ -22,6 +23,15 @@ test("rejects an APK whose hash was already device-tested", () => {
   const result = evaluateCandidate({ ...base, registry: { tested_apks: [{ sha256: sha, device_result: "PASS" }] } });
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes("ALREADY_DEVICE_TESTED_IDENTICAL_APK"));
+});
+
+test("candidate registry edits cannot suppress a duplicate recorded in the trusted registry snapshot", () => {
+  const candidateRegistry = { tested_apks: [] };
+  const trustedRegistrySnapshot = { tested_apks: [{ sha256: sha, device_result: "PASS" }] };
+  assert.equal(evaluateCandidate({ ...base, registry: candidateRegistry }).eligible, true);
+  const trustedResult = evaluateCandidate({ ...base, registry: trustedRegistrySnapshot });
+  assert.equal(trustedResult.eligible, false);
+  assert.ok(trustedResult.blockers.includes("ALREADY_DEVICE_TESTED_IDENTICAL_APK"));
 });
 
 test("blocks missing provenance", () => {
@@ -52,4 +62,425 @@ test("blocks a missing test target", () => {
 test("blocks an unexpected application ID", () => {
   const result = evaluateCandidate({ ...base, provenance: { ...base.provenance, application_id: "com.unexpected.app" } });
   assert.ok(result.blockers.includes("APPLICATION_ID_MISMATCH"));
+});
+
+const baselineSha = "c".repeat(40);
+
+const baselineAppSource = [
+  'import { useState } from "react";',
+  'import { Pressable, Text } from "react-native";',
+  "export default function App() {",
+  "  const [count, setCount] = useState(0);",
+  "  return (",
+  '    <Pressable accessibilityLabel="Increment tap count" onPress={() => setCount(1)}>',
+  "      <Text>Increment</Text>",
+  "    </Pressable>",
+  "  );",
+  "}"
+].join("\n");
+
+const candidateAppSource = [
+  'import { useState } from "react";',
+  'import { Pressable, Text } from "react-native";',
+  "export default function App() {",
+  "  const [count, setCount] = useState(0);",
+  "  return (",
+  '    <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
+  "      <Text>Reset counter</Text>",
+  "    </Pressable>",
+  "  );",
+  "}"
+].join("\n");
+
+const baselineTestSource = [
+  'import { test } from "node:test";',
+  'import assert from "node:assert";',
+  'import * as fs from "fs";',
+  'import * as path from "path";',
+  'test("baseline fixture", () => {',
+  '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+  '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+  "  assert.match(appSource, /Increment/);",
+  "});"
+].join("\n");
+
+const candidateTestSource = [
+  'import { test } from "node:test";',
+  'import assert from "node:assert";',
+  'import * as fs from "fs";',
+  'import * as path from "path";',
+  'test("reset counter behavior", () => {',
+  '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+  '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+  '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+  "  assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
+  "  assert.match(appSource, /Reset counter/);",
+  "});"
+].join("\n");
+
+function classify(overrides = {}) {
+  return classifyBehaviorDiff({
+    mergeBase: baselineSha,
+    baselineCommit: baselineSha,
+    appDiffExitCode: 1,
+    testDiffExitCode: 1,
+    baselineAppSource,
+    candidateAppSource,
+    baselineTestSource,
+    candidateTestSource,
+    ...overrides
+  });
+}
+
+function independentlyVerifiedBaseline({
+  sha256 = "a".repeat(64),
+  source_commit = "1".repeat(40),
+  device_tested_at = "2026-10-15"
+} = {}) {
+  return {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    evidence_tier: "INDEPENDENTLY_VERIFIED",
+    sha256,
+    source_commit,
+    device_tested_at,
+    device_evidence: {
+      source: "INDEPENDENT_CAPTURE",
+      independent_capture: true,
+      device_sha256_captured: true,
+      device_sha256: sha256,
+      screenshots_captured: true,
+      logcat_captured: true
+    }
+  };
+}
+
+test("M6 registry baseline: selects the latest independently verified physical-device M6 APK", () => {
+  const older = independentlyVerifiedBaseline();
+  const latest = independentlyVerifiedBaseline({
+    sha256: "b".repeat(64),
+    source_commit: baselineSha,
+    device_tested_at: "2026-10-16"
+  });
+  assert.equal(selectLatestM6Baseline({ tested_apks: [older, latest] }).source_commit, baselineSha);
+});
+
+test("M6 registry baseline: excludes USER_CONFIRMED PR #109 evidence and legacy records", () => {
+  const verified = independentlyVerifiedBaseline({ device_tested_at: "2026-10-20" });
+  const userConfirmed = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    evidence_tier: "USER_CONFIRMED",
+    sha256: "b".repeat(64),
+    source_commit: "2".repeat(40),
+    device_tested_at: "2026-10-30",
+    device_evidence: {
+      source: "USER_CONFIRMATION",
+      device_sha256_captured: false,
+      screenshots_captured: false,
+      logcat_captured: false,
+      independent_capture: false
+    }
+  };
+  const legacy = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    sha256: "c".repeat(64),
+    source_commit: "3".repeat(40),
+    device_tested_at: "2026-10-31"
+  };
+  assert.equal(
+    selectLatestM6Baseline({ tested_apks: [verified, userConfirmed, legacy] }).sha256,
+    verified.sha256
+  );
+});
+
+test("M6 registry baseline: missing, user-confirmed-only, legacy, or invalid baseline fails closed", () => {
+  const userConfirmedOnly = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    evidence_tier: "USER_CONFIRMED",
+    sha256: "b".repeat(64),
+    source_commit: "2".repeat(40),
+    device_tested_at: "2026-10-30",
+    device_evidence: { source: "USER_CONFIRMATION", independent_capture: false }
+  };
+  const legacyOnly = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    sha256: "c".repeat(64),
+    source_commit: "3".repeat(40),
+    device_tested_at: "2026-10-31"
+  };
+  assert.throws(() => selectLatestM6Baseline({ tested_apks: [] }), /M6_REGISTRY_BASELINE_MISSING/);
+  assert.throws(() => selectLatestM6Baseline({ tested_apks: [userConfirmedOnly] }), /M6_REGISTRY_BASELINE_MISSING/);
+  assert.throws(() => selectLatestM6Baseline({ tested_apks: [legacyOnly] }), /M6_REGISTRY_BASELINE_MISSING/);
+  assert.throws(() => selectLatestM6Baseline(null), /M6_REGISTRY_INVALID/);
+});
+
+test("M6 baseline gate: paired semantic app and executed test additions qualify", () => {
+  const result = classify();
+  assert.equal(result.behaviorChanged, true);
+  assert.equal(result.appBehaviorAdded, true);
+  assert.equal(result.testCoverageAdded, true);
+  assert.equal(result.targetBehavior, "Reset tap count to zero using the Reset counter button");
+});
+
+test("M6 baseline gate: a reset behavior already present in the trusted baseline is not new", () => {
+  const result = classify({
+    baselineAppSource: candidateAppSource,
+    baselineTestSource: candidateTestSource
+  });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.targetBehavior, null);
+});
+
+test("M6 baseline gate: template-literal text cannot spoof app or test AST evidence", () => {
+  const tick = String.fromCharCode(96);
+  const templateAppSource = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  const [count, setCount] = useState(0);",
+    "  const example = " + tick,
+    '    <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
+    "      <Text>Reset counter</Text>",
+    "    </Pressable>",
+    "  " + tick + ";",
+    "  return null;",
+    "}"
+  ].join("\n");
+  const templateTestSource = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert";',
+    'import * as fs from "fs";',
+  'import * as path from "path";',
+    'test("string decoy", () => {',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+  '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    "  const example = " + tick,
+    '    assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    "    assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
+    "    assert.match(appSource, /Reset counter/);",
+    "  " + tick + ";",
+    "});"
+  ].join("\n");
+  const result = classify({
+    candidateAppSource: templateAppSource,
+    candidateTestSource: templateTestSource
+  });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.appBehaviorAdded, false);
+  assert.equal(result.testCoverageAdded, false);
+});
+
+test("M6 baseline gate: reset JSX inside an unused nested function cannot qualify", () => {
+  const nestedFunctionAppSource = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  const [count, setCount] = useState(0);",
+    "  function Unused() {",
+    '    return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
+    "  }",
+    "  return null;",
+    "}"
+  ].join("\n");
+  const result = classify({ candidateAppSource: nestedFunctionAppSource });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.appBehaviorAdded, false);
+});
+
+test("M6 baseline gate: comments and assertions outside node:test callbacks cannot qualify", () => {
+  const commentAppSource = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  const [count, setCount] = useState(0);",
+    '  // <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}>',
+    "  // <Text>Reset counter</Text>",
+    "  return null;",
+    "}"
+  ].join("\n");
+  const outsideCallbackTestSource = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert";',
+    'import * as fs from "fs";',
+  'import * as path from "path";',
+    'const appSource = fs.readFileSync("App.js", "utf8");',
+    'assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    "assert.match(appSource, /onPress=.*setCount\\(0\\)/);",
+    "assert.match(appSource, /Reset counter/);",
+    'test("empty callback", () => {});'
+  ].join("\n");
+  const result = classify({
+    candidateAppSource: commentAppSource,
+    candidateTestSource: outsideCallbackTestSource
+  });
+  assert.equal(result.behaviorChanged, false);
+});
+
+test("M6 baseline gate: unchanged and one-sided diffs remain ineligible", () => {
+  for (const [appDiffExitCode, testDiffExitCode] of [[0, 0], [1, 0], [0, 1]]) {
+    assert.equal(classify({ appDiffExitCode, testDiffExitCode }).behaviorChanged, false);
+  }
+});
+
+test("M6 baseline gate: unrelated paired changes do not invent a behavior target", () => {
+  const result = classify({
+    candidateAppSource: baselineAppSource,
+    candidateTestSource: baselineTestSource
+  });
+  assert.equal(result.behaviorChanged, false);
+  assert.equal(result.targetBehavior, null);
+});
+
+test("M6 baseline gate: missing merge-base and non-ancestor baseline fail closed", () => {
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: "", baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1 }), /M6_DIFF_MERGE_BASE_MISSING/);
+  assert.throws(() => classifyBehaviorDiff({ mergeBase: "d".repeat(40), baselineCommit: baselineSha, appDiffExitCode: 1, testDiffExitCode: 1 }), /M6_BASELINE_NOT_ANCESTOR/);
+});
+
+test("M6 baseline gate: git execution errors fail closed", () => {
+  assert.throws(() => classify({ appDiffExitCode: 128 }), /M6_DIFF_EXECUTION_FAILED/);
+  assert.throws(() => classify({ testDiffExitCode: 2 }), /M6_DIFF_EXECUTION_FAILED/);
+});
+
+test("M6 baseline gate: source parse failures fail closed", () => {
+  assert.throws(() => classify({ candidateAppSource: "export default function App() { return <Pressable>" }), /M6_SOURCE_PARSE_FAILED/);
+  assert.throws(() => classify({ candidateTestSource: "import { test } from 'node:test'; test('broken', () => {" }), /M6_SOURCE_PARSE_FAILED/);
+});
+
+
+test("M6 binding integrity: callback-local assert shadow cannot spoof executed assertions", () => {
+  const shadowedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("shadowed assert", () => {',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+  '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  const assert = { match() {} };',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: shadowedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: callback parameter shadow cannot spoof executed assertions", () => {
+  const shadowedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("shadowed assert parameter", (assert) => {',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+  '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: shadowedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: reassigned assert.match cannot spoof executed assertions", () => {
+  const mutatedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("mutated assert", () => {',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+  '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  assert.match = () => {};',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: mutatedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: callback-local fake fs reader cannot qualify as source evidence", () => {
+  const fakeReaderTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("fake fs reader", () => {',
+    '  const fs = { readFileSync: () => "fake App.js source" };',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+  '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: fakeReaderTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: locally shadowed useState and no-op setter cannot qualify", () => {
+  const fakeStateApp = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  const useState = () => [0, () => {}];",
+    "  const [count, setCount] = useState(0);",
+    '  return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
+    "}"
+  ].join("\n");
+  assert.equal(classify({ candidateAppSource: fakeStateApp }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: reassigned useState setter cannot qualify", () => {
+  const reassignedSetterApp = [
+    'import { useState } from "react";',
+    'import { Pressable, Text } from "react-native";',
+    "export default function App() {",
+    "  let [count, setCount] = useState(0);",
+    "  setCount = () => {};",
+    '  return <Pressable accessibilityLabel="Reset tap count" onPress={() => setCount(0)}><Text>Reset counter</Text></Pressable>;',
+    "}"
+  ].join("\n");
+  assert.equal(classify({ candidateAppSource: reassignedSetterApp }).behaviorChanged, false);
+});
+
+
+test("M6 binding integrity: reflective assert mutation cannot spoof executed assertions", () => {
+  const mutatedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("reflectively mutated assert", () => {',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+    '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  Reflect.set(assert, "match", () => {});',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: mutatedTest }).behaviorChanged, false);
+});
+
+test("M6 binding integrity: fake path resolver cannot redirect the source reader", () => {
+  const redirectedTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import * as fs from "node:fs";',
+    'import * as path from "node:path";',
+    'test("redirected fixture path", () => {',
+    '  path.resolve = () => "/tmp/fake-fixtures";',
+    '  const fixtureDir = path.resolve("./tests/fixtures/react-native-project");',
+    '  const appSource = fs.readFileSync(path.join(fixtureDir, "App.js"), "utf8");',
+    '  assert.match(appSource, /accessibilityLabel="Reset tap count"/);',
+    '  assert.match(appSource, /onPress=.*setCount\\\\(0\\\\)/);',
+    '  assert.match(appSource, /Reset counter/);',
+    '});'
+  ].join("\n");
+  assert.equal(classify({ candidateTestSource: redirectedTest }).behaviorChanged, false);
 });
