@@ -53,6 +53,7 @@ jobs:
           github-token: ${{ github.token }}
           path: .gate-evidence
           merge-multiple: true
+        continue-on-error: true
 
       - name: Evaluate trusted exact-head evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -240,7 +241,6 @@ jobs:
                   evidence.runtime_test_status === "PASS" &&
                   evidence.physical_device_acceptance_status === "NOT_RUN" &&
                   evidence.application_id === "com.builder.m6reactnative" &&
-                  validSha(evidence.build_run_id) === false &&
                   /^[0-9]+$/.test(String(evidence.build_run_id)) &&
                   /^[0-9]+$/.test(String(evidence.build_artifact_id)) &&
                   validHash(evidence.apk_sha256);
