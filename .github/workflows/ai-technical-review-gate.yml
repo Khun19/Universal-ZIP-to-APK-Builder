@@ -44,11 +44,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Download trusted M6 emulator evidence
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'M6 Exact APK Emulator Acceptance'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: m6-exact-apk-emulator-evidence-*
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: .gate-evidence
+          merge-multiple: true
+
       - name: Evaluate trusted exact-head evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { owner, repo } = context.repo;
+            const fs = require("fs");
+            const path = require("path");
             const event = context.eventName;
             let prNumber = null;
             let expectedHead = null;
@@ -58,14 +70,34 @@ jobs:
               expectedHead = context.payload.pull_request?.head?.sha ?? null;
             } else if (event === "workflow_run") {
               const run = context.payload.workflow_run;
-              expectedHead = run?.head_sha ?? null;
-              prNumber = run?.pull_requests?.find((item) => item.number)?.number ?? null;
-              if (!prNumber && expectedHead) {
+              if (run?.name === "M6 Exact APK Emulator Acceptance") {
+                if (run.conclusion !== "success" || run.head_branch !== "main" ||
+                    run.path !== ".github/workflows/m6-emulator-acceptance.yml") {
+                  core.setFailed("M6 emulator evidence must come from a successful trusted-main workflow run.");
+                  return;
+                }
+                const evidencePath = path.join(".gate-evidence", ".ci-evidence", "emulator-test-provenance.json");
+                if (!fs.existsSync(evidencePath)) {
+                  core.setFailed("Trusted M6 emulator evidence artifact is missing its provenance record.");
+                  return;
+                }
+                const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
+                expectedHead = evidence.source_commit ?? null;
                 const openPulls = await github.paginate(github.rest.pulls.list, {
                   owner, repo, state: "open", base: "main", per_page: 100
                 });
                 const matchingPull = openPulls.find((item) => item.head.sha === expectedHead);
                 prNumber = matchingPull?.number ?? null;
+              } else {
+                expectedHead = run?.head_sha ?? null;
+                prNumber = run?.pull_requests?.find((item) => item.number)?.number ?? null;
+                if (!prNumber && expectedHead) {
+                  const openPulls = await github.paginate(github.rest.pulls.list, {
+                    owner, repo, state: "open", base: "main", per_page: 100
+                  });
+                  const matchingPull = openPulls.find((item) => item.head.sha === expectedHead);
+                  prNumber = matchingPull?.number ?? null;
+                }
               }
             } else if (event === "workflow_dispatch") {
               if (context.ref !== "refs/heads/main") {
@@ -153,8 +185,7 @@ jobs:
               { name: "Build and validate real M4 APK", required: m4Applies, app: "github-actions", appId: 15368 },
               { name: "m5-flutter-build", required: true, app: "github-actions", appId: 15368 },
               { name: "m6-build-test", required: true, app: "github-actions", appId: 15368 },
-              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies, app: "github-actions", appId: 15368 },
-              { name: "exact-apk-emulator-acceptance", required: m6ExactApplies, app: "github-actions", appId: 15368 }
+              { name: "Build with Builder and test on Android Emulator", required: emulatorApplies, app: "github-actions", appId: 15368 }
             ];
 
             const results = [];
@@ -180,6 +211,76 @@ jobs:
               } else {
                 results.push("- PASS — " + requirement.name + " (trusted app " +
                   requirement.app + "/" + requirement.appId + "; check " + check.id + ")");
+              }
+            }
+
+            if (m6ExactApplies) {
+              const evidencePath = ".gate-evidence/.ci-evidence/emulator-test-provenance.json";
+              let evidence = null;
+              if (event === "workflow_run" &&
+                  context.payload.workflow_run?.name === "M6 Exact APK Emulator Acceptance" &&
+                  fs.existsSync(evidencePath)) {
+                evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
+              }
+              const validSha = (value) => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
+              const validHash = (value) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+              if (!evidence) {
+                blockers.push("Missing trusted-main exact-artifact M6 emulator evidence; run M6 Exact APK Emulator Acceptance from main with this PR head's successful M6 build run and exact artifact ID.");
+                results.push("- BLOCKED — trusted-main M6 emulator evidence artifact not found");
+              } else {
+                const run = context.payload.workflow_run;
+                const identityValid =
+                  evidence.evidence_type === "m6-exact-apk-emulator-acceptance" &&
+                  evidence.source_commit === expectedHead &&
+                  evidence.workflow_sha === run.head_sha &&
+                  evidence.workflow_run_id === String(run.id) &&
+                  evidence.build_status === "PASS" &&
+                  evidence.provenance_status === "PASS" &&
+                  evidence.emulator_acceptance_status === "PASS" &&
+                  evidence.runtime_test_status === "PASS" &&
+                  evidence.physical_device_acceptance_status === "NOT_RUN" &&
+                  evidence.application_id === "com.builder.m6reactnative" &&
+                  validSha(evidence.build_run_id) === false &&
+                  /^[0-9]+$/.test(String(evidence.build_run_id)) &&
+                  /^[0-9]+$/.test(String(evidence.build_artifact_id)) &&
+                  validHash(evidence.apk_sha256);
+                if (!identityValid) {
+                  blockers.push("Trusted M6 emulator evidence has missing, mismatched, or invalid identity/status fields.");
+                  results.push("- BLOCKED — M6 evidence record failed source/run/artifact/hash/status validation");
+                } else {
+                  try {
+                    const buildRun = (await github.rest.actions.getWorkflowRun({
+                      owner, repo, run_id: Number(evidence.build_run_id)
+                    })).data;
+                    const expectedBranch = pull.head.ref;
+                    const buildArtifactList = await github.rest.actions.listWorkflowRunArtifacts({
+                      owner, repo, run_id: Number(evidence.build_run_id), per_page: 100
+                    });
+                    const exactArtifact = buildArtifactList.data.artifacts.find((artifact) =>
+                      artifact.id === Number(evidence.build_artifact_id) &&
+                      artifact.name === "m6-build-apk" && !artifact.expired
+                    );
+                    const buildValid =
+                      buildRun.head_sha === expectedHead &&
+                      buildRun.head_branch === expectedBranch &&
+                      buildRun.conclusion === "success" &&
+                      buildRun.path === ".github/workflows/ubuntu-m6-build-test.yml" &&
+                      buildRun.event === "pull_request" &&
+                      Boolean(exactArtifact);
+                    if (!buildValid) {
+                      blockers.push("M6 evidence build run/artifact does not match the current PR head, branch, trusted workflow, and exact artifact ID.");
+                      results.push("- BLOCKED — M6 build run/artifact linkage mismatch");
+                    } else {
+                      results.push("- PASS — trusted-main emulator evidence binds PR head " +
+                        expectedHead + " to build run " + evidence.build_run_id +
+                        ", artifact " + evidence.build_artifact_id + ", APK SHA-256 " +
+                        evidence.apk_sha256 + "; physical-device acceptance remains NOT_RUN");
+                    }
+                  } catch (error) {
+                    blockers.push("Could not independently verify M6 build run/artifact linkage: " + error.message);
+                    results.push("- BLOCKED — M6 build run/artifact metadata unavailable");
+                  }
+                }
               }
             }
 
