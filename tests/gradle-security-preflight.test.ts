@@ -61,7 +61,7 @@ test("Gradle security preflight does not hide a property after a continued comme
   withProject((root) => {
     fs.writeFileSync(
       path.join(root, "gradle.properties"),
-      ["# ignored comment\\\\", "org.gradle.daemon.registry.base=/tmp/attacker/registry"].join("\\n"),
+      ["# ignored comment\\", "org.gradle.daemon.registry.base=/tmp/attacker/registry"].join("\n"),
     );
     assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
   });
