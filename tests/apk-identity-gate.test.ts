@@ -132,14 +132,89 @@ function classify(overrides = {}) {
   });
 }
 
-test("M6 registry baseline: selects the latest valid physical-device-tested M6 APK", () => {
-  const older = { application_id: "com.builder.m6reactnative", device_result: "PASS", sha256: "a".repeat(64), source_commit: "1".repeat(40), device_tested_at: "2026-10-15" };
-  const latest = { ...older, sha256: "b".repeat(64), source_commit: baselineSha, device_tested_at: "2026-10-16" };
+function independentlyVerifiedBaseline({
+  sha256 = "a".repeat(64),
+  source_commit = "1".repeat(40),
+  device_tested_at = "2026-10-15"
+} = {}) {
+  return {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    evidence_tier: "INDEPENDENTLY_VERIFIED",
+    sha256,
+    source_commit,
+    device_tested_at,
+    device_evidence: {
+      source: "INDEPENDENT_CAPTURE",
+      independent_capture: true,
+      device_sha256_captured: true,
+      device_sha256: sha256,
+      screenshots_captured: true,
+      logcat_captured: true
+    }
+  };
+}
+
+test("M6 registry baseline: selects the latest independently verified physical-device M6 APK", () => {
+  const older = independentlyVerifiedBaseline();
+  const latest = independentlyVerifiedBaseline({
+    sha256: "b".repeat(64),
+    source_commit: baselineSha,
+    device_tested_at: "2026-10-16"
+  });
   assert.equal(selectLatestM6Baseline({ tested_apks: [older, latest] }).source_commit, baselineSha);
 });
 
-test("M6 registry baseline: missing or invalid baseline fails closed", () => {
+test("M6 registry baseline: excludes USER_CONFIRMED PR #109 evidence and legacy records", () => {
+  const verified = independentlyVerifiedBaseline({ device_tested_at: "2026-10-20" });
+  const userConfirmed = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    evidence_tier: "USER_CONFIRMED",
+    sha256: "b".repeat(64),
+    source_commit: "2".repeat(40),
+    device_tested_at: "2026-10-30",
+    device_evidence: {
+      source: "USER_CONFIRMATION",
+      device_sha256_captured: false,
+      screenshots_captured: false,
+      logcat_captured: false,
+      independent_capture: false
+    }
+  };
+  const legacy = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    sha256: "c".repeat(64),
+    source_commit: "3".repeat(40),
+    device_tested_at: "2026-10-31"
+  };
+  assert.equal(
+    selectLatestM6Baseline({ tested_apks: [verified, userConfirmed, legacy] }).sha256,
+    verified.sha256
+  );
+});
+
+test("M6 registry baseline: missing, user-confirmed-only, legacy, or invalid baseline fails closed", () => {
+  const userConfirmedOnly = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    evidence_tier: "USER_CONFIRMED",
+    sha256: "b".repeat(64),
+    source_commit: "2".repeat(40),
+    device_tested_at: "2026-10-30",
+    device_evidence: { source: "USER_CONFIRMATION", independent_capture: false }
+  };
+  const legacyOnly = {
+    application_id: "com.builder.m6reactnative",
+    device_result: "PASS",
+    sha256: "c".repeat(64),
+    source_commit: "3".repeat(40),
+    device_tested_at: "2026-10-31"
+  };
   assert.throws(() => selectLatestM6Baseline({ tested_apks: [] }), /M6_REGISTRY_BASELINE_MISSING/);
+  assert.throws(() => selectLatestM6Baseline({ tested_apks: [userConfirmedOnly] }), /M6_REGISTRY_BASELINE_MISSING/);
+  assert.throws(() => selectLatestM6Baseline({ tested_apks: [legacyOnly] }), /M6_REGISTRY_BASELINE_MISSING/);
   assert.throws(() => selectLatestM6Baseline(null), /M6_REGISTRY_INVALID/);
 });
 
