@@ -99,7 +99,7 @@ function inspectVersionCatalogFile(filePath, projectRoot) {
   }
 
   const contents = readFileSync(filePath, "utf8");
-  if (!/\\*\\/|\\\\u/.test(contents)) return [];
+  if (!/\*\/|\\u/.test(contents)) return [];
 
   return [{
     path: relative(projectRoot, filePath),
