@@ -123,7 +123,7 @@ test("Gradle security preflight rejects code-injection sequences in nested TOML 
         "[versions]",
         'malicious-version = "1.0*/payload"',
         'malicious-alias = "\\u0061"',
-      ].join("\\n"),
+      ].join("\n"),
     );
 
     const result = inspectGradleProject(root);
