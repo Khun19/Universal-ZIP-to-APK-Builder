@@ -113,6 +113,83 @@ test("Gradle security preflight rejects registry symlinks", () => {
   });
 });
 
+test("Gradle security preflight ignores injection-looking TOML comments and accepts a local catalog import", () => {
+  withProject((root) => {
+    const catalogDirectory = path.join(root, "custom", "catalogs");
+    fs.mkdirSync(catalogDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(catalogDirectory, "custom.versions.toml"),
+      [
+        "# comment containing */ and \\u0061 is not a catalog value",
+        "[versions]",
+        'safe = "1.2.3"',
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(root, "settings.gradle"),
+      [
+        "// comment containing */ and \\u0061 is ignored",
+        "dependencyResolutionManagement {",
+        "  versionCatalogs {",
+        '    create("libs") { from(files("custom/catalogs/custom.versions.toml")) }',
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+
+    assert.doesNotThrow(() => assertGradleProjectSafe(root));
+    assert.deepStrictEqual(inspectGradleProject(root).findings, []);
+  });
+});
+
+test("Gradle security preflight rejects unsafe inline version-catalog values in settings scripts", () => {
+  withProject((root) => {
+    fs.writeFileSync(
+      path.join(root, "settings.gradle.kts"),
+      [
+        "dependencyResolutionManagement {",
+        "  versionCatalogs {",
+        '    create("libs") { version("bad", "1.0*/payload") }',
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+  });
+});
+
+test("Gradle security preflight rejects remote and dynamically resolved version-catalog imports", () => {
+  withProject((root) => {
+    fs.writeFileSync(
+      path.join(root, "settings.gradle"),
+      [
+        "dependencyResolutionManagement {",
+        "  versionCatalogs {",
+        '    create("libs") { from("com.example:catalog:1.+") }',
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+  });
+});
+
+test("Gradle security preflight rejects local catalog paths that escape the extracted project", () => {
+  withProject((root) => {
+    fs.writeFileSync(
+      path.join(root, "settings.gradle"),
+      [
+        "dependencyResolutionManagement {",
+        "  versionCatalogs {",
+        '    create("libs") { from(files("../outside.versions.toml")) }',
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+  });
+});
+
 test("Gradle security preflight rejects code-injection sequences in nested TOML version catalogs", () => {
   withProject((root) => {
     const catalogDirectory = path.join(root, "gradle");
