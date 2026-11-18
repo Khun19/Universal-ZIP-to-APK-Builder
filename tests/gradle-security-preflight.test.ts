@@ -214,6 +214,48 @@ test("Gradle security preflight rejects local catalog paths that escape the extr
   });
 });
 
+test("Gradle security preflight rejects catalog imports through symlinked directories", () => {
+  withProject((root) => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "rz-gradle-catalog-outside-"));
+    try {
+      fs.writeFileSync(path.join(outside, "catalog.versions.toml"), '[versions]\nsafe = "1.0.0"\n');
+      fs.symlinkSync(outside, path.join(root, "external-catalogs"), "dir");
+      fs.writeFileSync(
+        path.join(root, "settings.gradle"),
+        [
+          "dependencyResolutionManagement {",
+          "  versionCatalogs {",
+          '    create("libs") { from(files("external-catalogs/catalog.versions.toml")) }',
+          "  }",
+          "}",
+        ].join("\n"),
+      );
+      assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+test("Gradle security preflight rejects catalog imports from skipped dependency trees", () => {
+  withProject((root) => {
+    const directory = path.join(root, "node_modules", "catalog-package");
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, "catalog.versions.toml"), '[versions]\nsafe = "1.0.0"\n');
+    fs.writeFileSync(
+      path.join(root, "settings.gradle"),
+      [
+        "dependencyResolutionManagement {",
+        "  versionCatalogs {",
+        '    create("libs") { from(files("node_modules/catalog-package/catalog.versions.toml")) }',
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+  });
+});
+
 test("Gradle security preflight rejects code-injection sequences in nested TOML version catalogs", () => {
   withProject((root) => {
     const catalogDirectory = path.join(root, "gradle");
