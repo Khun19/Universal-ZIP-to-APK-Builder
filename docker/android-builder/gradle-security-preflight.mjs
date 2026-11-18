@@ -11,6 +11,7 @@ const MAX_ENTRIES = 100_000;
 const MAX_DEPTH = 64;
 const MAX_PROPERTIES_BYTES = 1024 * 1024;
 const MAX_CATALOG_BYTES = 1024 * 1024;
+const MAX_SETTINGS_BYTES = 1024 * 1024;
 
 function trailingBackslashes(value) {
   let count = 0;
@@ -92,13 +93,111 @@ function decodeJavaPropertyEscapes(value) {
   return decoded;
 }
 
+function stripComments(contents, syntax) {
+  let output = "";
+  let index = 0;
+
+  while (index < contents.length) {
+    const character = contents[index];
+    const next = contents[index + 1];
+
+    if (syntax === "toml" && character === "#") {
+      while (index < contents.length && contents[index] !== "\n") index += 1;
+      if (index < contents.length) output += contents[index++];
+      continue;
+    }
+
+    if (syntax === "gradle" && character === "/" && next === "/") {
+      while (index < contents.length && contents[index] !== "\n") index += 1;
+      if (index < contents.length) output += contents[index++];
+      continue;
+    }
+
+    if (syntax === "gradle" && character === "/" && next === "*") {
+      index += 2;
+      while (index < contents.length && !(contents[index] === "*" && contents[index + 1] === "/")) index += 1;
+      if (index < contents.length) index += 2;
+      continue;
+    }
+
+    if (character === "\"" || character === "'") {
+      const delimiter = contents.startsWith(character.repeat(3), index) ? character.repeat(3) : character;
+      output += delimiter;
+      index += delimiter.length;
+      const escapes = character === "\"" || syntax === "gradle";
+
+      while (index < contents.length) {
+        if (escapes && contents[index] === "\\") {
+          output += contents[index++];
+          if (index < contents.length) output += contents[index++];
+          continue;
+        }
+        if (contents.startsWith(delimiter, index)) {
+          output += delimiter;
+          index += delimiter.length;
+          break;
+        }
+        output += contents[index++];
+      }
+      continue;
+    }
+
+    output += character;
+    index += 1;
+  }
+
+  return output;
+}
+
+function inspectGradleSettingsFile(filePath, projectRoot) {
+  const fileStat = lstatSync(filePath);
+  if (fileStat.size > MAX_SETTINGS_BYTES) {
+    throw new Error("Gradle security preflight could not safely inspect " +
+      relative(projectRoot, filePath) + ": settings file exceeds the " +
+      MAX_SETTINGS_BYTES + "-byte safety limit.");
+  }
+
+  const contents = stripComments(readFileSync(filePath, "utf8"), "gradle");
+  if (!/\bversionCatalogs\b/.test(contents)) return [];
+
+  const findings = [];
+  if (/\*\/|\\u/.test(contents)) {
+    findings.push({
+      path: relative(projectRoot, filePath),
+      reason: "contains an unsafe inline Gradle version-catalog value",
+    });
+  }
+
+  for (const match of contents.matchAll(/\bfrom\s*\(([^)]*)\)/g)) {
+    const argument = match[1].trim();
+    const localFile = argument.match(/^files\s*\(\s*(['"])([^'"]+\.toml)\1\s*\)$/i);
+    if (!localFile) {
+      findings.push({
+        path: relative(projectRoot, filePath),
+        reason: "imports a remote or dynamically resolved version catalog that cannot be verified before Gradle execution",
+      });
+      continue;
+    }
+
+    const catalogPath = localFile[2].replace(/\\/g, "/");
+    if (catalogPath.startsWith("/") || /^[a-z]:\//i.test(catalogPath) || catalogPath.split("/").includes("..")) {
+      findings.push({
+        path: relative(projectRoot, filePath),
+        reason: "references a version catalog outside the extracted project root",
+      });
+    }
+  }
+
+  return findings;
+}
+
 function inspectVersionCatalogFile(filePath, projectRoot) {
   const fileStat = lstatSync(filePath);
   if (fileStat.size > MAX_CATALOG_BYTES) {
     throw new Error(`Gradle security preflight could not safely inspect ${relative(projectRoot, filePath)}: TOML file exceeds the ${MAX_CATALOG_BYTES}-byte safety limit.`);
   }
 
-  const contents = readFileSync(filePath, "utf8");
+  const contents = stripComments(readFileSync(filePath, "utf8"), "toml");
   if (!/\*\/|\\u/.test(contents)) return [];
 
   return [{
@@ -168,7 +267,7 @@ export function inspectGradleProject(projectRoot) {
       const name = entry.name.toLowerCase();
 
       if (entry.isSymbolicLink()) {
-        if (name === "registry.bin" || name === "gradle.properties" || name.endsWith(".toml")) {
+        if (name === "registry.bin" || name === "gradle.properties" || name.endsWith(".toml") || name === "settings.gradle" || name === "settings.gradle.kts") {
           findings.push({
             path: relative(root, target),
             reason: "is a symbolic link and cannot be trusted as a Gradle security input",
@@ -192,6 +291,8 @@ export function inspectGradleProject(projectRoot) {
         findings.push(...inspectPropertiesFile(target, root));
       } else if (name.endsWith(".toml")) {
         findings.push(...inspectVersionCatalogFile(target, root));
+      } else if (name === "settings.gradle" || name === "settings.gradle.kts") {
+        findings.push(...inspectGradleSettingsFile(target, root));
       }
     }
   }
@@ -205,6 +306,6 @@ export function assertGradleProjectSafe(projectRoot) {
 
   const summary = findings.map((finding) => `${finding.path}: ${finding.reason}`).join("; ");
   throw new Error(
-    `[Gradle security preflight] Build blocked before Gradle execution: ${summary}. Remove untrusted Gradle daemon registry inputs and version-catalog injection sequences from the uploaded project.`,
+    `[Gradle security preflight] Build blocked before Gradle execution: ${summary}. Remove untrusted Gradle daemon registry inputs and unsafe local or remote version-catalog definitions from the uploaded project.`,
   );
 }
