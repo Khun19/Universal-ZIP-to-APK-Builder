@@ -113,6 +113,27 @@ test("Gradle security preflight rejects registry symlinks", () => {
   });
 });
 
+test("Gradle security preflight rejects code-injection sequences in nested TOML version catalogs", () => {
+  withProject((root) => {
+    const catalogDirectory = path.join(root, "gradle");
+    fs.mkdirSync(catalogDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(catalogDirectory, "libs.versions.toml"),
+      [
+        "[versions]",
+        'malicious-version = "1.0*/payload"',
+        'malicious-alias = "\\u0061"',
+      ].join("\\n"),
+    );
+
+    const result = inspectGradleProject(root);
+    assert.equal(result.findings.length, 1);
+    assert.equal(result.findings[0].path, path.join("gradle", "libs.versions.toml"));
+    assert.match(result.findings[0].reason, /version-catalog code-injection/);
+    assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+  });
+});
+
 test("Gradle security preflight fails closed when the project root cannot be inspected", () => {
   const missingRoot = path.join(os.tmpdir(), `rz-gradle-preflight-missing-${process.pid}`);
   assert.throws(() => assertGradleProjectSafe(missingRoot));
