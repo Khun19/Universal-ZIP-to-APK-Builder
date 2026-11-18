@@ -10,6 +10,7 @@ const SKIP_DIRECTORIES = new Set([".git", "node_modules", "build"]);
 const MAX_ENTRIES = 100_000;
 const MAX_DEPTH = 64;
 const MAX_PROPERTIES_BYTES = 1024 * 1024;
+const MAX_CATALOG_BYTES = 1024 * 1024;
 
 function trailingBackslashes(value) {
   let count = 0;
@@ -91,6 +92,21 @@ function decodeJavaPropertyEscapes(value) {
   return decoded;
 }
 
+function inspectVersionCatalogFile(filePath, projectRoot) {
+  const fileStat = lstatSync(filePath);
+  if (fileStat.size > MAX_CATALOG_BYTES) {
+    throw new Error(`Gradle security preflight could not safely inspect ${relative(projectRoot, filePath)}: TOML file exceeds the ${MAX_CATALOG_BYTES}-byte safety limit.`);
+  }
+
+  const contents = readFileSync(filePath, "utf8");
+  if (!/\\*\\/|\\\\u/.test(contents)) return [];
+
+  return [{
+    path: relative(projectRoot, filePath),
+    reason: "contains a Gradle version-catalog code-injection sequence",
+  }];
+}
+
 function inspectPropertiesFile(filePath, projectRoot) {
   const fileStat = lstatSync(filePath);
   if (fileStat.size > MAX_PROPERTIES_BYTES) {
@@ -152,7 +168,7 @@ export function inspectGradleProject(projectRoot) {
       const name = entry.name.toLowerCase();
 
       if (entry.isSymbolicLink()) {
-        if (name === "registry.bin" || name === "gradle.properties") {
+        if (name === "registry.bin" || name === "gradle.properties" || name.endsWith(".toml")) {
           findings.push({
             path: relative(root, target),
             reason: "is a symbolic link and cannot be trusted as a Gradle security input",
@@ -174,6 +190,8 @@ export function inspectGradleProject(projectRoot) {
         });
       } else if (name === "gradle.properties") {
         findings.push(...inspectPropertiesFile(target, root));
+      } else if (name.endsWith(".toml")) {
+        findings.push(...inspectVersionCatalogFile(target, root));
       }
     }
   }
@@ -187,6 +205,6 @@ export function assertGradleProjectSafe(projectRoot) {
 
   const summary = findings.map((finding) => `${finding.path}: ${finding.reason}`).join("; ");
   throw new Error(
-    `[Gradle security preflight] Build blocked before Gradle execution: ${summary}. Remove project-controlled daemon registry settings and registry.bin files from the uploaded project.`,
+    `[Gradle security preflight] Build blocked before Gradle execution: ${summary}. Remove untrusted Gradle daemon registry inputs and version-catalog injection sequences from the uploaded project.`,
   );
 }
