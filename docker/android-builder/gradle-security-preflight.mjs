@@ -149,6 +149,49 @@ function stripComments(contents, syntax) {
   return output;
 }
 
+function validateLocalCatalogReference(projectRoot, catalogPath) {
+  const normalizedPath = catalogPath.replace(/\\/g, "/");
+  const segments = normalizedPath.split("/");
+  if (normalizedPath.startsWith("/") || /^[a-z]:\//i.test(normalizedPath) || segments.includes("..")) {
+    return "references a version catalog outside the extracted project root";
+  }
+  if (segments.some((segment) => SKIP_DIRECTORIES.has(segment.toLowerCase()))) {
+    return "references a version catalog in a directory excluded from security scanning";
+  }
+
+  const target = resolve(projectRoot, normalizedPath);
+  const relativePath = relative(projectRoot, target);
+  if (relativePath === ".." || relativePath.startsWith("../") || relativePath.startsWith("..\\")) {
+    return "references a version catalog outside the extracted project root";
+  }
+
+  let current = projectRoot;
+  for (const segment of relativePath.split(/[\\/]/)) {
+    current = join(current, segment);
+    let currentStat;
+    try {
+      currentStat = lstatSync(current);
+    } catch {
+      return "references a local version catalog that does not exist";
+    }
+    if (currentStat.isSymbolicLink()) {
+      return "references a version catalog through a symbolic link";
+    }
+    if (current !== target && !currentStat.isDirectory()) {
+      return "references a version catalog through a non-directory path component";
+    }
+  }
+
+  let targetStat;
+  try {
+    targetStat = lstatSync(target);
+  } catch {
+    return "references a local version catalog that does not exist";
+  }
+  if (!targetStat.isFile()) return "references a version catalog that is not a regular file";
+  return null;
+}
+
 function inspectGradleSettingsFile(filePath, projectRoot) {
   const fileStat = lstatSync(filePath);
   if (fileStat.size > MAX_SETTINGS_BYTES) {
@@ -180,11 +223,11 @@ function inspectGradleSettingsFile(filePath, projectRoot) {
       continue;
     }
 
-    const catalogPath = localFile[2].replace(/\\/g, "/");
-    if (catalogPath.startsWith("/") || /^[a-z]:\//i.test(catalogPath) || catalogPath.split("/").includes("..")) {
+    const pathFinding = validateLocalCatalogReference(projectRoot, localFile[2]);
+    if (pathFinding) {
       findings.push({
         path: relative(projectRoot, filePath),
-        reason: "references a version catalog outside the extracted project root",
+        reason: pathFinding,
       });
     }
   }
