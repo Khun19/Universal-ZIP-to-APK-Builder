@@ -142,6 +142,28 @@ test("Gradle security preflight ignores injection-looking TOML comments and acce
   });
 });
 
+test("Gradle security preflight scans custom catalog paths for group name and plugin ID payloads", () => {
+  withProject((root) => {
+    const directory = path.join(root, "custom", "catalogs");
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, "extra.versions.toml"),
+      [
+        "[libraries]",
+        'bad-group = { module = "org.example*/artifact", version = "1.0" }',
+        'bad-name = { module = "org.example:bad*/artifact", version = "1.0" }',
+        "[plugins]",
+        'bad-plugin = { id = "com.example.bad*/plugin", version = "1.0" }',
+      ].join("\n"),
+    );
+
+    const result = inspectGradleProject(root);
+    assert.equal(result.findings.length, 1);
+    assert.equal(result.findings[0].path, path.join("custom", "catalogs", "extra.versions.toml"));
+    assert.match(result.findings[0].reason, /version-catalog code-injection/);
+  });
+});
+
 test("Gradle security preflight rejects unsafe inline version-catalog values in settings scripts", () => {
   withProject((root) => {
     fs.writeFileSync(
@@ -149,7 +171,7 @@ test("Gradle security preflight rejects unsafe inline version-catalog values in 
       [
         "dependencyResolutionManagement {",
         "  versionCatalogs {",
-        '    create("libs") { version("bad", "1.0*/payload") }',
+        '    create("libs") { version("bad", "1.0*/payload"); version("unicode", "\\u0061") }',
         "  }",
         "}",
       ].join("\n"),
@@ -158,20 +180,22 @@ test("Gradle security preflight rejects unsafe inline version-catalog values in 
   });
 });
 
-test("Gradle security preflight rejects remote and dynamically resolved version-catalog imports", () => {
-  withProject((root) => {
-    fs.writeFileSync(
-      path.join(root, "settings.gradle"),
-      [
-        "dependencyResolutionManagement {",
-        "  versionCatalogs {",
-        '    create("libs") { from("com.example:catalog:1.+") }',
-        "  }",
-        "}",
-      ].join("\n"),
-    );
-    assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
-  });
+test("Gradle security preflight rejects fixed and dynamically resolved remote version-catalog imports", () => {
+  for (const coordinate of ["com.example:catalog:1.0.0", "com.example:catalog:1.+"]) {
+    withProject((root) => {
+      fs.writeFileSync(
+        path.join(root, "settings.gradle"),
+        [
+          "dependencyResolutionManagement {",
+          "  versionCatalogs {",
+          '    create("libs") { from("' + coordinate + '") }',
+          "  }",
+          "}",
+        ].join("\n"),
+      );
+      assert.throws(() => assertGradleProjectSafe(root), /Gradle security preflight/);
+    });
+  }
 });
 
 test("Gradle security preflight rejects local catalog paths that escape the extracted project", () => {
