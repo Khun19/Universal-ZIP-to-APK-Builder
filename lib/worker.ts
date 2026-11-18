@@ -9,10 +9,23 @@ import { injectAndroidWrapper } from './template.ts';
 import { buildWebProject, findWebProjectRoot } from './web-builder.ts';
 import { syncCapacitorAndroid } from './capacitor-builder.ts';
 import { parseBuildTimeoutMs } from '@workspace/shared';
+import { assertGradleProjectSafe } from '../docker/android-builder/gradle-security-preflight.mjs';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const BUILD_TIMEOUT_MS = parseBuildTimeoutMs(process.env.BUILD_TIMEOUT_MS);
+
+function preflightGradleProject(projectPath: string, logs: string[]): string | undefined {
+  try {
+    assertGradleProjectSafe(projectPath);
+    logs.push('Gradle daemon registry security preflight passed.');
+    return undefined;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logs.push(`Error: ${message}`);
+    return message;
+  }
+}
 
 export interface BuildJobResult {
   success: boolean;
@@ -878,6 +891,13 @@ export async function executeBuildJob(
 
     logs.push(`Starting build execution for strategy: ${strategy.strategyName}`);
 
+    // Inspect the extracted archive before dependency scripts or any build
+    // tool can invoke Gradle with project-controlled daemon registry settings.
+    const initialGradleSecurityError = preflightGradleProject(projectPath, logs);
+    if (initialGradleSecurityError) {
+      return { success: false, logs, error: initialGradleSecurityError };
+    }
+
     // If Web Wrapper strategy, build web app first then inject Android template
     if (strategy.strategyName === 'web-wrapper') {
       logs.push('Building web application before Android wrapper...');
@@ -1014,6 +1034,8 @@ export async function executeBuildJob(
 
       const reactNativeAndroidProject = findAndroidProjectRoot(projectPath);
       if (reactNativeAndroidProject) {
+        const gradleSecurityError = preflightGradleProject(projectPath, logs);
+        if (gradleSecurityError) return { success: false, logs, error: gradleSecurityError };
         ensureReactNativeHermesCommand(projectPath, reactNativeAndroidProject, logs);
         ensureReactNativeTermuxCmakeTooling(projectPath, reactNativeAndroidProject, logs);
       }
@@ -1080,6 +1102,9 @@ export async function executeBuildJob(
         return { success: false, logs, error };
       }
       const flutterAndroidProjectPath = path.join(projectPath, 'android');
+      const gradleSecurityError = preflightGradleProject(projectPath, logs);
+      if (gradleSecurityError) return { success: false, logs, error: gradleSecurityError };
+
       const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
       const localPropertiesPath = path.join(flutterAndroidProjectPath, 'local.properties');
 
@@ -1169,6 +1194,9 @@ export async function executeBuildJob(
       logs.push(`Error: ${error}`);
       return { success: false, logs, error };
     }
+
+    const gradleSecurityError = preflightGradleProject(projectPath, logs);
+    if (gradleSecurityError) return { success: false, logs, error: gradleSecurityError };
 
     const sdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
     const localPropertiesPath = path.join(

@@ -14,4 +14,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl unzip git 
 USER builder
 WORKDIR /workspace
 COPY --chown=builder:builder run-build.mjs /opt/worker/run-build.mjs
+COPY --chown=builder:builder gradle-security-preflight.mjs /opt/worker/gradle-security-preflight.mjs
 ENTRYPOINT ["node", "/opt/worker/run-build.mjs"]

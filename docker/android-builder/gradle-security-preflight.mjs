@@ -1,0 +1,354 @@
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+
+const FORBIDDEN_PROPERTIES = new Set([
+  "org.gradle.daemon.registry.base",
+  "systemprop.org.gradle.daemon.registry.base",
+  "systemprop.gradle.user.home",
+]);
+const SKIP_DIRECTORIES = new Set([".git", "node_modules", "build"]);
+const MAX_ENTRIES = 100_000;
+const MAX_DEPTH = 64;
+const MAX_PROPERTIES_BYTES = 1024 * 1024;
+const MAX_CATALOG_BYTES = 1024 * 1024;
+const MAX_SETTINGS_BYTES = 1024 * 1024;
+
+function trailingBackslashes(value) {
+  let count = 0;
+  for (let index = value.length - 1; index >= 0 && value[index] === "\\"; index -= 1) count += 1;
+  return count;
+}
+
+function logicalPropertyLines(contents) {
+  const physicalLines = contents.split(/\r?\n/);
+  const logicalLines = [];
+  let current = "";
+  let continuing = false;
+
+  for (const physicalLine of physicalLines) {
+    const line = continuing ? physicalLine.replace(/^[ \t\f]+/, "") : physicalLine;
+    if (!continuing) {
+      const first = line.replace(/^[ \t\f]+/, "");
+      if (!first || first.startsWith("#") || first.startsWith("!")) {
+        logicalLines.push(line);
+        continue;
+      }
+    }
+    if (trailingBackslashes(line) % 2 === 1) {
+      current += line.slice(0, -1);
+      continuing = true;
+      continue;
+    }
+    current += line;
+    logicalLines.push(current);
+    current = "";
+    continuing = false;
+  }
+
+  if (current || continuing) logicalLines.push(current);
+  return logicalLines;
+}
+
+function extractPropertyKey(line) {
+  let escaped = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === "=" || character === ":" || /\s/.test(character)) return line.slice(0, index);
+  }
+  return line;
+}
+
+function decodeJavaPropertyEscapes(value) {
+  let decoded = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character !== "\\") {
+      decoded += character;
+      continue;
+    }
+    const next = value[index + 1];
+    if (next === undefined) {
+      decoded += "\\";
+      continue;
+    }
+    if (next === "u") {
+      const hex = value.slice(index + 2, index + 6);
+      if (/^[0-9a-f]{4}$/i.test(hex)) {
+        decoded += String.fromCharCode(Number.parseInt(hex, 16));
+        index += 5;
+        continue;
+      }
+    }
+    decoded += next;
+    index += 1;
+  }
+  return decoded;
+}
+
+function stripComments(contents, syntax) {
+  let output = "";
+  let index = 0;
+
+  while (index < contents.length) {
+    const character = contents[index];
+    const next = contents[index + 1];
+
+    if (syntax === "toml" && character === "#") {
+      while (index < contents.length && contents[index] !== "\n") index += 1;
+      if (index < contents.length) output += contents[index++];
+      continue;
+    }
+
+    if (syntax === "gradle" && character === "/" && next === "/") {
+      while (index < contents.length && contents[index] !== "\n") index += 1;
+      if (index < contents.length) output += contents[index++];
+      continue;
+    }
+
+    if (syntax === "gradle" && character === "/" && next === "*") {
+      index += 2;
+      while (index < contents.length && !(contents[index] === "*" && contents[index + 1] === "/")) index += 1;
+      if (index < contents.length) index += 2;
+      continue;
+    }
+
+    if (character === "\"" || character === "'") {
+      const delimiter = contents.startsWith(character.repeat(3), index) ? character.repeat(3) : character;
+      output += delimiter;
+      index += delimiter.length;
+      const escapes = character === "\"" || syntax === "gradle";
+
+      while (index < contents.length) {
+        if (escapes && contents[index] === "\\") {
+          output += contents[index++];
+          if (index < contents.length) output += contents[index++];
+          continue;
+        }
+        if (contents.startsWith(delimiter, index)) {
+          output += delimiter;
+          index += delimiter.length;
+          break;
+        }
+        output += contents[index++];
+      }
+      continue;
+    }
+
+    output += character;
+    index += 1;
+  }
+
+  return output;
+}
+
+function validateLocalCatalogReference(projectRoot, catalogPath) {
+  const normalizedPath = catalogPath.replace(/\\/g, "/");
+  const segments = normalizedPath.split("/");
+  if (normalizedPath.startsWith("/") || /^[a-z]:\//i.test(normalizedPath) || segments.includes("..")) {
+    return "references a version catalog outside the extracted project root";
+  }
+  if (segments.some((segment) => SKIP_DIRECTORIES.has(segment.toLowerCase()))) {
+    return "references a version catalog in a directory excluded from security scanning";
+  }
+
+  const target = resolve(projectRoot, normalizedPath);
+  const relativePath = relative(projectRoot, target);
+  if (relativePath === ".." || relativePath.startsWith("../") || relativePath.startsWith("..\\")) {
+    return "references a version catalog outside the extracted project root";
+  }
+
+  let current = projectRoot;
+  for (const segment of relativePath.split(/[\\/]/)) {
+    current = join(current, segment);
+    let currentStat;
+    try {
+      currentStat = lstatSync(current);
+    } catch {
+      return "references a local version catalog that does not exist";
+    }
+    if (currentStat.isSymbolicLink()) {
+      return "references a version catalog through a symbolic link";
+    }
+    if (current !== target && !currentStat.isDirectory()) {
+      return "references a version catalog through a non-directory path component";
+    }
+  }
+
+  let targetStat;
+  try {
+    targetStat = lstatSync(target);
+  } catch {
+    return "references a local version catalog that does not exist";
+  }
+  if (!targetStat.isFile()) return "references a version catalog that is not a regular file";
+  return null;
+}
+
+function inspectGradleSettingsFile(filePath, projectRoot) {
+  const fileStat = lstatSync(filePath);
+  if (fileStat.size > MAX_SETTINGS_BYTES) {
+    throw new Error("Gradle security preflight could not safely inspect " +
+      relative(projectRoot, filePath) + ": settings file exceeds the " +
+      MAX_SETTINGS_BYTES + "-byte safety limit.");
+  }
+
+  const contents = stripComments(readFileSync(filePath, "utf8"), "gradle");
+  if (!/\bversionCatalogs\b/.test(contents)) return [];
+
+  const findings = [];
+  if (/\*\/|\\u/.test(contents)) {
+    findings.push({
+      path: relative(projectRoot, filePath),
+      reason: "contains an unsafe inline Gradle version-catalog value",
+    });
+  }
+
+  const fromPattern = /\bfrom\s*\(/g;
+  for (const match of contents.matchAll(fromPattern)) {
+    const remaining = contents.slice(match.index + match[0].length);
+    const localFile = remaining.match(/^\s*files\s*\(\s*(['"])([^'"]+\.toml)\1\s*\)\s*\)/i);
+    if (!localFile) {
+      findings.push({
+        path: relative(projectRoot, filePath),
+        reason: "imports a remote or dynamically resolved version catalog that cannot be verified before Gradle execution",
+      });
+      continue;
+    }
+
+    const pathFinding = validateLocalCatalogReference(projectRoot, localFile[2]);
+    if (pathFinding) {
+      findings.push({
+        path: relative(projectRoot, filePath),
+        reason: pathFinding,
+      });
+    }
+  }
+  return findings;
+}
+
+function inspectVersionCatalogFile(filePath, projectRoot) {
+  const fileStat = lstatSync(filePath);
+  if (fileStat.size > MAX_CATALOG_BYTES) {
+    throw new Error(`Gradle security preflight could not safely inspect ${relative(projectRoot, filePath)}: TOML file exceeds the ${MAX_CATALOG_BYTES}-byte safety limit.`);
+  }
+
+  const contents = stripComments(readFileSync(filePath, "utf8"), "toml");
+  if (!/\*\/|\\u/.test(contents)) return [];
+
+  return [{
+    path: relative(projectRoot, filePath),
+    reason: "contains a Gradle version-catalog code-injection sequence",
+  }];
+}
+
+function inspectPropertiesFile(filePath, projectRoot) {
+  const fileStat = lstatSync(filePath);
+  if (fileStat.size > MAX_PROPERTIES_BYTES) {
+    throw new Error(`Gradle security preflight could not safely inspect ${relative(projectRoot, filePath)}: properties file exceeds the ${MAX_PROPERTIES_BYTES}-byte safety limit.`);
+  }
+
+  const contents = readFileSync(filePath, "utf8");
+  const findings = [];
+  for (const logicalLine of logicalPropertyLines(contents)) {
+    const uncommented = logicalLine.replace(/^\uFEFF/, "").trimStart();
+    if (!uncommented || uncommented.startsWith("#") || uncommented.startsWith("!")) continue;
+
+    const decodedLine = decodeJavaPropertyEscapes(uncommented).toLowerCase();
+    const propertyKey = decodeJavaPropertyEscapes(extractPropertyKey(uncommented)).trim().toLowerCase();
+    const suspicious = FORBIDDEN_PROPERTIES.has(propertyKey) ||
+      decodedLine.includes("org.gradle.daemon.registry.base") ||
+      decodedLine.includes("systemprop.gradle.user.home");
+
+    if (suspicious) {
+      findings.push({
+        path: relative(projectRoot, filePath),
+        reason: "contains a project-controlled Gradle daemon registry or Gradle user-home setting",
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * Inspect an extracted, untrusted project before invoking Gradle or Flutter's
+ * Android build. This does not upgrade or alter the pinned M6 toolchain.
+ */
+export function inspectGradleProject(projectRoot) {
+  const root = resolve(projectRoot);
+  const rootStat = lstatSync(root);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    throw new Error("Gradle security preflight requires a real project directory.");
+  }
+
+  const findings = [];
+  const pending = [{ directory: root, depth: 0 }];
+  let visitedEntries = 0;
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current) continue;
+    if (current.depth > MAX_DEPTH) {
+      throw new Error(`Gradle security preflight exceeded the maximum directory depth (${MAX_DEPTH}).`);
+    }
+
+    const entries = readdirSync(current.directory, { withFileTypes: true });
+    for (const entry of entries) {
+      visitedEntries += 1;
+      if (visitedEntries > MAX_ENTRIES) {
+        throw new Error(`Gradle security preflight exceeded the maximum entry count (${MAX_ENTRIES}).`);
+      }
+
+      const target = join(current.directory, entry.name);
+      const name = entry.name.toLowerCase();
+
+      if (entry.isSymbolicLink()) {
+        if (name === "registry.bin" || name === "gradle.properties" || name.endsWith(".toml") || name === "settings.gradle" || name === "settings.gradle.kts") {
+          findings.push({
+            path: relative(root, target),
+            reason: "is a symbolic link and cannot be trusted as a Gradle security input",
+          });
+        }
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRECTORIES.has(name)) pending.push({ directory: target, depth: current.depth + 1 });
+        continue;
+      }
+
+      if (!entry.isFile()) continue;
+      if (name === "registry.bin") {
+        findings.push({
+          path: relative(root, target),
+          reason: "contains a project-shipped Gradle daemon registry",
+        });
+      } else if (name === "gradle.properties") {
+        findings.push(...inspectPropertiesFile(target, root));
+      } else if (name.endsWith(".toml")) {
+        findings.push(...inspectVersionCatalogFile(target, root));
+      } else if (name === "settings.gradle" || name === "settings.gradle.kts") {
+        findings.push(...inspectGradleSettingsFile(target, root));
+      }
+    }
+  }
+
+  return { projectRoot: root, findings };
+}
+
+export function assertGradleProjectSafe(projectRoot) {
+  const { findings } = inspectGradleProject(projectRoot);
+  if (findings.length === 0) return;
+
+  const summary = findings.map((finding) => `${finding.path}: ${finding.reason}`).join("; ");
+  throw new Error(
+    `[Gradle security preflight] Build blocked before Gradle execution: ${summary}. Remove untrusted Gradle daemon registry inputs and unsafe local or remote version-catalog definitions from the uploaded project.`,
+  );
+}
