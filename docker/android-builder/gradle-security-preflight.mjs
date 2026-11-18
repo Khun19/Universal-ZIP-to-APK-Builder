@@ -168,9 +168,10 @@ function inspectGradleSettingsFile(filePath, projectRoot) {
     });
   }
 
-  for (const match of contents.matchAll(/\bfrom\s*\(([^)]*)\)/g)) {
-    const argument = match[1].trim();
-    const localFile = argument.match(/^files\s*\(\s*(['"])([^'"]+\.toml)\1\s*\)$/i);
+  const fromPattern = /\bfrom\s*\(/g;
+  for (const match of contents.matchAll(fromPattern)) {
+    const remaining = contents.slice(match.index + match[0].length);
+    const localFile = remaining.match(/^\s*files\s*\(\s*(['"])([^'"]+\.toml)\1\s*\)\s*\)/i);
     if (!localFile) {
       findings.push({
         path: relative(projectRoot, filePath),
@@ -187,7 +188,6 @@ function inspectGradleSettingsFile(filePath, projectRoot) {
       });
     }
   }
-
   return findings;
 }
 
