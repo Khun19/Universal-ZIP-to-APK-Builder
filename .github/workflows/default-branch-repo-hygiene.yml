@@ -104,17 +104,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh label create stale --color C0C0C0 --description "No recent activity" --force
+          if [[ "$APPLY" == "true" ]]; then
+            gh label create stale --color C0C0C0 --description "No recent activity" --force
+          fi
           python3 <<'PY'
           import json, os, subprocess, datetime
           repo = os.environ["GITHUB_REPOSITORY"]
           days = int(os.environ.get("STALE_DAYS") or "45")
           apply = os.environ.get("APPLY") == "true"
           items = subprocess.check_output(
-              ["gh", "api", "--paginate", f"repos/{repo}/issues?state=open&per_page=100"],
+              ["gh", "api", "--paginate", "--slurp", f"repos/{repo}/issues?state=open&per_page=100"],
               text=True
           )
-          issues = json.loads(items)
+          pages = json.loads(items)
+          issues = [item for page in pages for item in page]
           cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
           for item in issues:
               if "pull_request" in item:
