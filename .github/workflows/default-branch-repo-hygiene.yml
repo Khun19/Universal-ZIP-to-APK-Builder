@@ -1,0 +1,138 @@
+name: Default Branch Repo Hygiene
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+    inputs:
+      apply_cleanup:
+        description: "Apply branch deletions and issue labels (otherwise preview only)"
+        required: true
+        type: boolean
+        default: false
+      stale_days:
+        description: "Age threshold for stale branches/issues"
+        required: true
+        type: number
+        default: 45
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: repo-hygiene-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set safe mode and threshold
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "APPLY=false" >> "$GITHUB_ENV"
+            echo "STALE_DAYS=45" >> "$GITHUB_ENV"
+          else
+            echo "APPLY=${{ inputs.apply_cleanup }}" >> "$GITHUB_ENV"
+            days="${{ inputs.stale_days }}"
+            if [[ -z "$days" || ! "$days" =~ ^[0-9]+$ || "$days" -lt 1 ]]; then
+              echo "Invalid stale_days; must be a positive integer" >&2
+              exit 1
+            fi
+            echo "STALE_DAYS=$days" >> "$GITHUB_ENV"
+          fi
+          echo "Default schedule is preview-only. Apply mode is manual and explicit."
+
+      - name: Branch hygiene
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --prune origin
+          default_branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)"
+          if [[ -z "$default_branch" ]]; then default_branch="main"; fi
+          protected=("main" "master" "develop" "development" "production")
+          is_protected() {
+            local branch="$1"
+            [[ "$branch" == "$default_branch" ]] && return 0
+            for p in "${protected[@]}"; do [[ "$branch" == "$p" ]] && return 0; done
+            [[ "$branch" == release/* || "$branch" == hotfix/* || "$branch" == gh-pages ]] && return 0
+            return 1
+          }
+          cutoff="$(date -u -d "$STALE_DAYS days ago" +%s)"
+          while IFS= read -r ref; do
+            branch="${ref#refs/remotes/origin/}"
+            [[ "$branch" == origin/* || "$branch" == HEAD ]] && continue
+            is_protected "$branch" && continue
+            last_commit="$(git rev-parse "$ref")"
+            last_time="$(git log -1 --format=%ct "$ref")"
+            if git merge-base --is-ancestor "$ref" "origin/$default_branch"; then
+              echo "Merged branch candidate: $branch"
+              if [[ "$APPLY" == "true" ]]; then
+                gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/$branch"
+                echo "Deleted merged branch: $branch"
+              else
+                echo "PREVIEW: would delete merged branch $branch"
+              fi
+            elif [[ "$last_time" -lt "$cutoff" ]]; then
+              echo "Stale unmerged branch candidate: $branch ($last_commit)"
+              if [[ "$APPLY" == "true" ]]; then
+                tag="archive/${branch//\//-}-$(date -u +%Y%m%d)-${last_commit:0:7}"
+                git tag "$tag" "$last_commit"
+                git push origin "$tag"
+                gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/$branch"
+                echo "Archived and deleted stale branch: $branch -> $tag"
+              else
+                echo "PREVIEW: would archive and delete stale unmerged branch $branch"
+              fi
+            fi
+          done < <(git for-each-ref --format='%(refname)' refs/remotes/origin)
+
+      - name: Stale issue label triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh label create stale --color C0C0C0 --description "No recent activity" --force
+          python3 <<'PY'
+          import json, os, subprocess, datetime
+          repo = os.environ["GITHUB_REPOSITORY"]
+          days = int(os.environ.get("STALE_DAYS") or "45")
+          apply = os.environ.get("APPLY") == "true"
+          items = subprocess.check_output(
+              ["gh", "api", "--paginate", f"repos/{repo}/issues?state=open&per_page=100"],
+              text=True
+          )
+          issues = json.loads(items)
+          cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+          for item in issues:
+              if "pull_request" in item:
+                  continue
+              updated = datetime.datetime.fromisoformat(item["updated_at"].replace("Z","+00:00"))
+              if updated >= cutoff or "stale" in [label["name"] for label in item.get("labels",[])]:
+                  continue
+              print(f"Stale candidate #{item['number']}: {item['title']}")
+              if apply:
+                  subprocess.run(["gh","issue","edit",str(item["number"]),"--add-label","stale"],check=True)
+              else:
+                  print(f"PREVIEW: would add stale label to #{item['number']}")
+          PY
+
+      - name: Report mode
+        run: |
+          echo "Apply mode: $APPLY"
+          echo "Stale threshold: $STALE_DAYS days"
+          if [[ "$APPLY" != "true" ]]; then
+            echo "No destructive actions or issue-label changes were applied."
+          fi
