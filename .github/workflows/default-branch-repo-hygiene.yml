@@ -3,6 +3,9 @@ name: Default Branch Repo Hygiene
 on:
   schedule:
     - cron: "0 2 * * 1"
+  pull_request:
+    paths:
+      - ".github/workflows/default-branch-repo-hygiene.yml"
   workflow_dispatch:
     inputs:
       apply_cleanup:
@@ -38,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
             echo "APPLY=false" >> "$GITHUB_ENV"
             echo "STALE_DAYS=45" >> "$GITHUB_ENV"
           else
@@ -50,7 +53,7 @@ jobs:
             fi
             echo "STALE_DAYS=$days" >> "$GITHUB_ENV"
           fi
-          echo "Default schedule is preview-only. Apply mode is manual and explicit."
+          echo "Scheduled and pull-request runs are preview-only."
 
       - name: Branch hygiene
         shell: bash
@@ -80,7 +83,6 @@ jobs:
               echo "Merged branch candidate: $branch"
               if [[ "$APPLY" == "true" ]]; then
                 gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/$branch"
-                echo "Deleted merged branch: $branch"
               else
                 echo "PREVIEW: would delete merged branch $branch"
               fi
@@ -91,7 +93,6 @@ jobs:
                 git tag "$tag" "$last_commit"
                 git push origin "$tag"
                 gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/$branch"
-                echo "Archived and deleted stale branch: $branch -> $tag"
               else
                 echo "PREVIEW: would archive and delete stale unmerged branch $branch"
               fi
